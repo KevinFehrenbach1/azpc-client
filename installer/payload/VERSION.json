@@ -1,9 +1,9 @@
 {
-  "packageVersion": "0.4.73",
+  "packageVersion": "0.4.74",
   "watcherVersion": "0.4.21",
   "addonVersion": "0.4.27",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Keeps the AZPC watcher fully detached and invisible by launching it through wscript.exe; retains v0.4.72 re-pairing fix. Addon/accounting logic unchanged.",
-  "version": "0.4.73"
+  "notes": "Preserves proven re-pairing and launches the long-running watcher through wscript.exe so no console window remains visible.",
+  "version": "0.4.74"
 }

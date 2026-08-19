@@ -86,22 +86,20 @@ function Write-Launcher([string]$WatcherTarget, [string]$StateDir) {
 
 
 function Write-HiddenWatcherLauncher([string]$WatcherTarget, [string]$StateDir) {
-    # Use Windows Script Host as the long-running launch surface. wscript.exe has
-    # no console window, so the watcher remains alive in the background without
-    # leaving a PowerShell/command window attached to the user session.
-    $launcher = Join-Path $WatcherTarget "AZPC-Watcher-Hidden.vbs"
+    # Use wscript.exe as the parent process so the long-running PowerShell watcher
+    # has no visible console window. Activation remains on the proven synchronous
+    # PowerShell path so Setup gets a reliable exit code.
+    $vbsPath = Join-Path $WatcherTarget "START-AZPC-WATCHER-HIDDEN.vbs"
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
-    $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-
-    $q = '"'
-    $cmd = $q + $ps + $q + ' -NoProfile -ExecutionPolicy Bypass -File ' + $q + $script + $q + ' -DataDir ' + $q + $StateDir + $q
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $cmd = '"' + $psExe + '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script + '" -DataDir "' + $StateDir + '"'
+    $escaped = $cmd.Replace('"','""')
     $vbs = @(
         'Set shell = CreateObject("WScript.Shell")',
-        'cmd = ' + '"' + ($cmd -replace '"','""') + '"',
-        'shell.Run cmd, 0, False'
+        ('shell.Run "{0}", 0, False' -f $escaped)
     )
-    Set-Content -LiteralPath $launcher -Value $vbs -Encoding ASCII
-    return $launcher
+    Set-Content -LiteralPath $vbsPath -Value $vbs -Encoding ASCII
+    return $vbsPath
 }
 
 function Stop-AzpcWatcherInstances([string]$WatcherTarget, [string]$StateDir) {
@@ -209,7 +207,6 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
             $wsh = New-Object -ComObject WScript.Shell
             $startup = [Environment]::GetFolderPath("Startup")
             $startupLink = $wsh.CreateShortcut((Join-Path $startup "AZPC Watcher.lnk"))
-            $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir
             $startupLink.TargetPath = (Join-Path $env:SystemRoot "System32\wscript.exe")
             $startupLink.Arguments = ('"{0}"' -f $hiddenLauncher)
             $startupLink.WorkingDirectory = $WatcherTarget
@@ -224,7 +221,7 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
     }
 }
 
-Say ""; Say "AZPC TBC Anniversary installer v0.4.73" Yellow
+Say ""; Say "AZPC TBC Anniversary installer v0.4.74" Yellow
 Say "This installs the WoW addon and your private AZPC watcher." Cyan
 Say "No shared AZPC server secret is included in this package." DarkGray
 
@@ -289,10 +286,7 @@ if (-not $skipActivation) {
     $activationStartedUtc = [DateTime]::UtcNow
     # Keep activation completely hidden. This prevents the extra watcher/PowerShell
     # command window from flashing or remaining open during graphical Setup.
-    $activationScript = Join-Path $watcherTarget "AZPC-Watcher.ps1"
-    $activationArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$activationScript,'-DataDir',$stateDir,'-SetupCode',$SetupCode,'-ActivateOnly')
-    $activationProc = Start-Process -FilePath (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe") -ArgumentList $activationArgs -WindowStyle Hidden -Wait -PassThru
-    if ($activationProc.ExitCode -ne 0) { throw "AZPC watcher activation failed with exit code $($activationProc.ExitCode)." }
+    & powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File (Join-Path $watcherTarget "AZPC-Watcher.ps1") -DataDir $stateDir -SetupCode $SetupCode -ActivateOnly
     if ($LASTEXITCODE -ne 0) {
         Say "Activation failed. Existing watcher credentials were NOT replaced." Red
         throw "Watcher activation failed."
@@ -323,7 +317,7 @@ try {
 
 $installResult = @{
     ok = $true
-    packageVersion = "0.4.72"
+    packageVersion = "0.4.74"
     watcherVersion = "0.4.21"
     addonVersion = "0.4.27"
     connectionMode = $installMode

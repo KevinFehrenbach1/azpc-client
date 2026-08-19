@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Azerothian Price Checker"
-#define MyAppVersion "0.4.73"
+#define MyAppVersion "0.4.74"
 #define MyAppPublisher "Kevin Fehrenbach"
 #define MyAppURL "https://azpc.market"
 #define MyAppExeName "AZPC-Setup.exe"
@@ -22,7 +22,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName={#MyAppName}
-VersionInfoVersion=0.4.73.0
+VersionInfoVersion=0.4.74.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=AZPC TBC Anniversary Setup Wizard
 VersionInfoProductName={#MyAppName}
