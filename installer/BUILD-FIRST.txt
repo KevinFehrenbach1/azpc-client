@@ -1,4 +1,4 @@
-AZPC SETUP WIZARD BUILD - v0.4.72 RE-PAIR FIX
+AZPC SETUP WIZARD BUILD - v0.4.73 RE-PAIR FIX
 ================================================
 
 BASELINE
@@ -24,3 +24,9 @@ GITHUB
 DO NOT replace the public v0.3.1 release yet. Test the newly compiled EXE first.
 After clean/re-pair testing passes, publish it as GitHub release v0.3.2 with asset name EXACTLY AZPC-Setup.exe.
 AZPC.market already uses /releases/latest/download/AZPC-Setup.exe, so no Worker change will be needed.
+
+
+V0.4.73 DETACHED WATCHER FIX
+- Scheduled/background watcher now launches through wscript.exe + AZPC-Watcher-Hidden.vbs.
+- No persistent PowerShell/command window should remain visible.
+- Re-pairing behavior from v0.4.72 is preserved.

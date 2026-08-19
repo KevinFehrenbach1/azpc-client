@@ -85,6 +85,25 @@ function Write-Launcher([string]$WatcherTarget, [string]$StateDir) {
 
 
 
+function Write-HiddenWatcherLauncher([string]$WatcherTarget, [string]$StateDir) {
+    # Use Windows Script Host as the long-running launch surface. wscript.exe has
+    # no console window, so the watcher remains alive in the background without
+    # leaving a PowerShell/command window attached to the user session.
+    $launcher = Join-Path $WatcherTarget "AZPC-Watcher-Hidden.vbs"
+    $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
+    $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+
+    $q = '"'
+    $cmd = $q + $ps + $q + ' -NoProfile -ExecutionPolicy Bypass -File ' + $q + $script + $q + ' -DataDir ' + $q + $StateDir + $q
+    $vbs = @(
+        'Set shell = CreateObject("WScript.Shell")',
+        'cmd = ' + '"' + ($cmd -replace '"','""') + '"',
+        'shell.Run cmd, 0, False'
+    )
+    Set-Content -LiteralPath $launcher -Value $vbs -Encoding ASCII
+    return $launcher
+}
+
 function Stop-AzpcWatcherInstances([string]$WatcherTarget, [string]$StateDir) {
     # Installer upgrades must restart the watcher process itself. Replacing the
     # .ps1 on disk does NOT update an already-running PowerShell process.
@@ -114,8 +133,9 @@ function Stop-AzpcWatcherInstances([string]$WatcherTarget, [string]$StateDir) {
 function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
     $taskName = "AZPC Watcher"
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
-    $powershell = Join-Path $env:SystemRoot "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-    $arguments = ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -DataDir "{1}"' -f $script,$StateDir)
+    $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir
+    $wscript = Join-Path $env:SystemRoot "System32\wscript.exe"
+    $arguments = ('"{0}"' -f $hiddenLauncher)
 
     # Remove the older Startup-folder shortcut so only one watcher starts at logon.
     try {
@@ -162,7 +182,7 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
         $trigger.UserId = $principal.UserId
 
         $action = $task.Actions.Create(0) # TASK_ACTION_EXEC
-        $action.Path = $powershell
+        $action.Path = $wscript
         $action.Arguments = $arguments
         $action.WorkingDirectory = $WatcherTarget
 
@@ -189,8 +209,9 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
             $wsh = New-Object -ComObject WScript.Shell
             $startup = [Environment]::GetFolderPath("Startup")
             $startupLink = $wsh.CreateShortcut((Join-Path $startup "AZPC Watcher.lnk"))
-            $startupLink.TargetPath = (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe")
-            $startupLink.Arguments = ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -DataDir "{1}"' -f (Join-Path $WatcherTarget "AZPC-Watcher.ps1"),$StateDir)
+            $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir
+            $startupLink.TargetPath = (Join-Path $env:SystemRoot "System32\wscript.exe")
+            $startupLink.Arguments = ('"{0}"' -f $hiddenLauncher)
             $startupLink.WorkingDirectory = $WatcherTarget
             $startupLink.Description = "Azerothian Price Checker Watcher"
             $startupLink.Save()
@@ -203,7 +224,7 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
     }
 }
 
-Say ""; Say "AZPC TBC Anniversary installer v0.4.72" Yellow
+Say ""; Say "AZPC TBC Anniversary installer v0.4.73" Yellow
 Say "This installs the WoW addon and your private AZPC watcher." Cyan
 Say "No shared AZPC server secret is included in this package." DarkGray
 
@@ -268,7 +289,10 @@ if (-not $skipActivation) {
     $activationStartedUtc = [DateTime]::UtcNow
     # Keep activation completely hidden. This prevents the extra watcher/PowerShell
     # command window from flashing or remaining open during graphical Setup.
-    & powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File (Join-Path $watcherTarget "AZPC-Watcher.ps1") -DataDir $stateDir -SetupCode $SetupCode -ActivateOnly
+    $activationScript = Join-Path $watcherTarget "AZPC-Watcher.ps1"
+    $activationArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$activationScript,'-DataDir',$stateDir,'-SetupCode',$SetupCode,'-ActivateOnly')
+    $activationProc = Start-Process -FilePath (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe") -ArgumentList $activationArgs -WindowStyle Hidden -Wait -PassThru
+    if ($activationProc.ExitCode -ne 0) { throw "AZPC watcher activation failed with exit code $($activationProc.ExitCode)." }
     if ($LASTEXITCODE -ne 0) {
         Say "Activation failed. Existing watcher credentials were NOT replaced." Red
         throw "Watcher activation failed."
