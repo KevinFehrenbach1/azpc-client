@@ -33,6 +33,6 @@ jobs:
       - name: Upload unsigned test installer
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Setup-v0.4.72-TEST
+          name: AZPC-Setup-v0.4.73-TEST
           path: installer/output/AZPC-Setup.exe
           if-no-files-found: error
