@@ -1,0 +1,26 @@
+AZPC SETUP WIZARD BUILD - v0.4.72 RE-PAIR FIX
+================================================
+
+BASELINE
+- Branched ONLY from the retained v0.4.71 EXE builder.
+- Addon remains v0.4.27; accounting/addon logic is untouched.
+- Watcher becomes v0.4.21.
+
+FIXES
+- Supplying a setup code ALWAYS forces activation/re-pairing instead of returning stale credentials.
+- Re-pair to the same AZPC account rotates/replaces the watcher credential while preserving the server-side client identity/history.
+- If this Windows client identity belongs to another AZPC account, watcher creates a fresh local client identity and retries the same unconsumed setup code once.
+- Failed re-pair restores the old local client ID and does not overwrite the old credentials.
+- Setup verifies watcher-credentials.json was actually refreshed before it reports success.
+- install-result.json now reports paired, connectionMode, watcherClientId, watcher/addon versions, and credentialUpdatedAtUtc (never the secret token).
+- Activation PowerShell is launched with -WindowStyle Hidden to prevent the watcher command window from appearing during Setup.
+
+BUILD LOCALLY
+1. Open installer\AZPC-Setup.iss in Inno Setup Compiler 6.
+2. Build -> Compile (Ctrl+F9).
+3. Output: installer\output\AZPC-Setup.exe
+
+GITHUB
+DO NOT replace the public v0.3.1 release yet. Test the newly compiled EXE first.
+After clean/re-pair testing passes, publish it as GitHub release v0.3.2 with asset name EXACTLY AZPC-Setup.exe.
+AZPC.market already uses /releases/latest/download/AZPC-Setup.exe, so no Worker change will be needed.

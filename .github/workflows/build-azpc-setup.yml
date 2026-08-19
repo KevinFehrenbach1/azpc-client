@@ -1,0 +1,38 @@
+name: Build AZPC Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup 6
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile installer
+        shell: powershell
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found after Inno Setup install." }
+          & $iscc ".\installer\AZPC-Setup.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify output
+        shell: powershell
+        run: |
+          $exe = ".\installer\output\AZPC-Setup.exe"
+          if (-not (Test-Path $exe)) { throw "AZPC-Setup.exe was not produced." }
+          Get-FileHash $exe -Algorithm SHA256
+          Get-Item $exe | Format-List Name,Length,LastWriteTimeUtc
+
+      - name: Upload unsigned test installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AZPC-Setup-v0.4.72-TEST
+          path: installer/output/AZPC-Setup.exe
+          if-no-files-found: error
