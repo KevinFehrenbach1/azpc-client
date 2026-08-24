@@ -2,6 +2,6 @@
 ## Title: Azerothian Price Checker
 ## Notes: AZPC TBC Anniversary auction tracking and private trading ledger.
 ## Author: Kevin Fehrenbach
-## Version: 0.4.27
+## Version: 0.4.29
 ## SavedVariables: AZPCDB
 AZPC.lua

@@ -31,7 +31,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.21"
+        version = "0.4.24"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -190,7 +190,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.21"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.24"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -518,13 +518,18 @@ function Get-PrivateClientId {
     return $id
 }
 
-function Read-PrivateState {
+function Read-PrivateState([string]$ClientId) {
     if (-not (Test-Path -LiteralPath $PrivateStateFile)) {
-        return @{ uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
+        return @{ clientId = $ClientId; uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
     }
 
     try {
         $obj = Get-Content -LiteralPath $PrivateStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $savedClientId = [string]$obj.clientId
+        if ([string]::IsNullOrWhiteSpace($savedClientId) -or $savedClientId -ne $ClientId) {
+            Write-Log "PRIVATE SYNC: account/client changed; resetting the account-scoped upload cache so this account receives its full ledger."
+            return @{ clientId = $ClientId; uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
+        }
         $set = @{}
         foreach ($id in @($obj.uploadedEventIds)) {
             if ($id) { $set[[string]$id] = $true }
@@ -533,9 +538,9 @@ function Read-PrivateState {
         foreach ($id in @($obj.uploadedSettlementEventIds)) {
             if ($id) { $settlementSet[[string]$id] = $true }
         }
-        return @{ uploadedEventIds = $set; uploadedSettlementEventIds = $settlementSet }
+        return @{ clientId = $ClientId; uploadedEventIds = $set; uploadedSettlementEventIds = $settlementSet }
     } catch {
-        return @{ uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
+        return @{ clientId = $ClientId; uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
     }
 }
 
@@ -549,7 +554,7 @@ function Save-PrivateState($State) {
     if ($settlementIds.Count -gt 10000) {
         $settlementIds = @($settlementIds | Select-Object -Last 10000)
     }
-    @{ uploadedEventIds = $ids; uploadedSettlementEventIds = $settlementIds } |
+    @{ clientId = [string]$State.clientId; uploadedEventIds = $ids; uploadedSettlementEventIds = $settlementIds } |
         ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath $PrivateStateFile -Encoding UTF8
 }
@@ -669,6 +674,10 @@ function Convert-AzpcLuaToTransactions([string]$Text) {
         $netProceeds = Get-LuaNullableNumberValue $block "netProceeds"
         $realizedProfit = Get-LuaNullableNumberValue $block "realizedProfit"
         $costBasis = Get-LuaNullableNumberValue $block "costBasis"
+        $actualQuantity = Get-LuaNullableNumberValue $block "actualQuantity"
+        $ledgerQuantityBefore = Get-LuaNullableNumberValue $block "ledgerQuantityBefore"
+        $remainingQuantity = Get-LuaNullableNumberValue $block "remainingQuantity"
+        $remainingCostBasis = Get-LuaNullableNumberValue $block "remainingCostBasis"
         $settlementKey = Get-LuaStringValue $block "settlementKey"
         $matchedListing = Get-LuaNullableBooleanValue $block "matchedListing"
         $realizedProfitKnown = Get-LuaNullableBooleanValue $block "realizedProfitKnown"
@@ -717,6 +726,16 @@ function Convert-AzpcLuaToTransactions([string]$Text) {
             $canonicalParts += $(if ($null -eq $realizedProfitKnown) { "" } else { [string]$realizedProfitKnown })
             $canonicalParts += [string]$settlementKey
         }
+        elseif ($kind -eq "inventory_reconciled") {
+            # Reconciliation rows are enriched on the next WoW login/P&L rebuild
+            # with their authoritative remaining quantity and FIFO basis. Include
+            # those checkpoint fields in identity so the enriched row is uploaded
+            # even if the startup watcher already saw the earlier sparse version.
+            $canonicalParts += $(if ($null -eq $actualQuantity) { "" } else { [string]$actualQuantity })
+            $canonicalParts += $(if ($null -eq $ledgerQuantityBefore) { "" } else { [string]$ledgerQuantityBefore })
+            $canonicalParts += $(if ($null -eq $remainingQuantity) { "" } else { [string]$remainingQuantity })
+            $canonicalParts += $(if ($null -eq $remainingCostBasis) { "" } else { [string]$remainingCostBasis })
+        }
 
         $canonical = [string]::Join("|", [string[]]$canonicalParts)
 
@@ -746,6 +765,10 @@ function Convert-AzpcLuaToTransactions([string]$Text) {
             netProceeds = if ($null -eq $netProceeds) { $null } else { [Int64]$netProceeds }
             realizedProfit = if ($null -eq $realizedProfit) { $null } else { [Int64]$realizedProfit }
             costBasis = if ($null -eq $costBasis) { $null } else { [Int64]$costBasis }
+            actualQuantity = if ($null -eq $actualQuantity) { $null } else { [Int64]$actualQuantity }
+            ledgerQuantityBefore = if ($null -eq $ledgerQuantityBefore) { $null } else { [Int64]$ledgerQuantityBefore }
+            remainingQuantity = if ($null -eq $remainingQuantity) { $null } else { [Int64]$remainingQuantity }
+            remainingCostBasis = if ($null -eq $remainingCostBasis) { $null } else { [Int64]$remainingCostBasis }
             settlementKey = if ([string]::IsNullOrWhiteSpace([string]$settlementKey)) { $null } else { [string]$settlementKey }
             matchedListing = $matchedListing
             realizedProfitKnown = $realizedProfitKnown
@@ -783,7 +806,8 @@ function Upload-NewPrivateTransactions([string]$Text, [string]$WatcherToken, [st
         "buyout_attempt", "purchase_confirmed", "bid_attempt",
         "sell_post_attempt", "sell_post_acknowledged",
         "sell_posted", "sell_posted_confirmed", "sale_confirmed",
-        "sale_settled", "auction_expired", "listing_unresolved", "craft_confirmed"
+        "sale_settled", "auction_expired", "listing_unresolved", "craft_confirmed",
+        "inventory_reconciled"
     )
     $privateAllowedKindSet = @{}
     foreach ($allowedKind in $privateAllowedKinds) {
@@ -872,7 +896,7 @@ function Upload-NewPrivateTransactions([string]$Text, [string]$WatcherToken, [st
     }
 }
 
-Write-Log "AZPC Watcher v0.4.21 Re-pair Fix starting."
+Write-Log "AZPC Watcher v0.4.24 Account-Scoped Ledger Sync starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -890,7 +914,7 @@ Write-Log ("Endpoint: " + $Endpoint)
 Write-Heartbeat "running" $azpcFile
 
 $state = Read-State
-$privateState = Read-PrivateState
+$privateState = Read-PrivateState $privateClientId
 $lastObservedWrite = [datetime]::MinValue
 $lastServerHeartbeat = if ($initialHeartbeatOk) { Get-Date } else { [datetime]::MinValue }
 

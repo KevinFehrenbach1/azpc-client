@@ -1,10 +1,10 @@
-AZPC SETUP WIZARD BUILD - v0.4.74 RE-PAIR FIX
+AZPC SETUP WIZARD BUILD - v0.4.75 CURRENT CLIENT PAYLOAD
 ================================================
 
 BASELINE
-- Branched ONLY from the retained v0.4.71 EXE builder.
-- Addon remains v0.4.27; accounting/addon logic is untouched.
-- Watcher becomes v0.4.21.
+- Retains the proven v0.4.74 re-pair/setup builder.
+- Addon updated to v0.4.29.
+- Watcher updated to v0.4.24.
 
 FIXES
 - Supplying a setup code ALWAYS forces activation/re-pairing instead of returning stale credentials.
@@ -22,5 +22,5 @@ BUILD LOCALLY
 
 GITHUB
 DO NOT replace the public v0.3.1 release yet. Test the newly compiled EXE first.
-After clean/re-pair testing passes, publish it as GitHub release v0.3.2 with asset name EXACTLY AZPC-Setup.exe.
+After clean/re-pair testing passes, publish it as the latest GitHub release with asset name EXACTLY AZPC-Setup.exe.
 AZPC.market already uses /releases/latest/download/AZPC-Setup.exe, so no Worker change will be needed.

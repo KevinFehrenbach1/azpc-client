@@ -153,7 +153,7 @@ local function ensureDB()
         AZPCDB.meta.stackPnlMigration419At = now()
     end
 
-    AZPCDB.version = 424
+    AZPCDB.version = 429
     if AZPCDB.settings.mailDebug == nil then
         AZPCDB.settings.mailDebug = false
     end
@@ -2285,6 +2285,57 @@ local function syncSettlementTransactionPnl(row)
     end
 end
 
+local function applyInventoryReconciliation(row)
+    if not row or row.kind ~= "inventory_reconciled" then return 0, 0 end
+
+    local remaining = math.max(0, math.floor((tonumber(row.quantity) or 0) + 0.5))
+    local consumed = 0
+    local basis = 0
+    if remaining <= 0 then return 0, 0 end
+
+    -- Explicitly record units that left this character without a captured AH
+    -- settlement. Consume them from the same oldest-first purchase lots used by
+    -- realized P&L so future rebuilds cannot resurrect phantom inventory.
+    for _, tx in ipairs(AZPCDB.transactions or {}) do
+        if remaining <= 0 then break end
+        if settlementMatchesPurchase(tx, row) then
+            local purchasedQty = tonumber(tx.quantity) or 0
+            local consumedQty = tonumber(tx.pnlConsumedQuantity) or 0
+            local available = math.max(0, purchasedQty - consumedQty)
+            if available > 0 then
+                local unitCost = purchaseUnitCost(tx)
+                if unitCost then
+                    local take = math.min(remaining, available)
+                    basis = basis + (unitCost * take)
+                    tx.pnlConsumedQuantity = consumedQty + take
+                    tx.pnlConsumedAt = tonumber(row.timestamp) or now()
+                    remaining = remaining - take
+                    consumed = consumed + take
+                end
+            end
+        end
+    end
+
+    row.reconciledQuantity = consumed
+    row.reconciledMissingQuantity = remaining
+    row.reconciledCostBasis = math.floor(basis + 0.5)
+    local openQuantity = 0
+    local openBasis = 0
+    for _, tx in ipairs(AZPCDB.transactions or {}) do
+        if settlementMatchesPurchase(tx, row) then
+            local available = math.max(0, (tonumber(tx.quantity) or 0) - (tonumber(tx.pnlConsumedQuantity) or 0))
+            local unitCost = purchaseUnitCost(tx)
+            if available > 0 and unitCost then
+                openQuantity = openQuantity + available
+                openBasis = openBasis + (available * unitCost)
+            end
+        end
+    end
+    row.remainingQuantity = openQuantity
+    row.remainingCostBasis = math.floor(openBasis + 0.5)
+    return consumed, remaining
+end
+
 local function rebuildRealizedPnl()
     ensureDB()
 
@@ -2295,17 +2346,36 @@ local function rebuildRealizedPnl()
         end
     end
 
+    local timeline = {}
+    for _, row in ipairs(AZPCDB.mailboxSettlements or {}) do
+        table.insert(timeline, { timestamp = tonumber(row.timestamp) or 0, order = 1, settlement = row })
+    end
+    for _, tx in ipairs(AZPCDB.transactions or {}) do
+        if tx.kind == "inventory_reconciled" then
+            table.insert(timeline, { timestamp = tonumber(tx.timestamp) or 0, order = 2, reconciliation = tx })
+        end
+    end
+    table.sort(timeline, function(a, b)
+        if a.timestamp == b.timestamp then return a.order < b.order end
+        return a.timestamp < b.timestamp
+    end)
+
     local knownPnl = 0
     local knownRows = 0
     local unknownRows = 0
-    for _, row in ipairs(AZPCDB.mailboxSettlements or {}) do
-        applyRealizedPnl(row)
-        syncSettlementTransactionPnl(row)
-        if row.realizedProfitKnown then
-            knownPnl = knownPnl + (tonumber(row.realizedProfit) or 0)
-            knownRows = knownRows + 1
-        else
-            unknownRows = unknownRows + 1
+    for _, entry in ipairs(timeline) do
+        if entry.reconciliation then
+            applyInventoryReconciliation(entry.reconciliation)
+        elseif entry.settlement then
+            local row = entry.settlement
+            applyRealizedPnl(row)
+            syncSettlementTransactionPnl(row)
+            if row.realizedProfitKnown then
+                knownPnl = knownPnl + (tonumber(row.realizedProfit) or 0)
+                knownRows = knownRows + 1
+            else
+                unknownRows = unknownRows + 1
+            end
         end
     end
 
@@ -2314,6 +2384,60 @@ local function rebuildRealizedPnl()
     AZPCDB.meta.realizedPnlUnknownRows = unknownRows
     AZPCDB.meta.realizedPnlRebuiltAt = now()
     dirtySinceFlush = true
+end
+
+local function reconcileItemInventory(itemId, actualQuantity)
+    ensureDB()
+    updateCharacterMeta()
+    itemId = tonumber(itemId)
+    actualQuantity = tonumber(actualQuantity)
+    if not itemId or itemId <= 0 or actualQuantity == nil or actualQuantity < 0 then
+        print("|cff00ff98AZPC|r: Usage: |cffffff00/azpc reconcile ITEM_ID ACTUAL_OWNED_QUANTITY|r")
+        return
+    end
+    itemId = math.floor(itemId + 0.5)
+    actualQuantity = math.floor(actualQuantity + 0.5)
+
+    rebuildRealizedPnl()
+    local ledgerQuantity = 0
+    local itemName = nil
+    for _, tx in ipairs(AZPCDB.transactions or {}) do
+        if tx.kind == "purchase_confirmed"
+            and tonumber(tx.itemId) == itemId
+            and tostring(tx.character or "") == tostring(AZPCDB.meta.character or "")
+            and tostring(tx.realm or "") == tostring(AZPCDB.meta.realm or "")
+            and tostring(tx.faction or "") == tostring(AZPCDB.meta.faction or "") then
+            local available = math.max(0, (tonumber(tx.quantity) or 0) - (tonumber(tx.pnlConsumedQuantity) or 0))
+            ledgerQuantity = ledgerQuantity + available
+            itemName = itemName or tx.name
+        end
+    end
+
+    local missing = ledgerQuantity - actualQuantity
+    if missing <= 0 then
+        print("|cff00ff98AZPC|r: No downward reconciliation needed for "
+            .. tostring(itemName or ("item " .. itemId)) .. ". Ledger "
+            .. tostring(ledgerQuantity) .. ", actual " .. tostring(actualQuantity) .. ".")
+        return
+    end
+
+    addTransaction({
+        kind = "inventory_reconciled",
+        source = "MANUAL_INVENTORY_RECONCILIATION",
+        itemId = itemId,
+        name = itemName or ("Item " .. tostring(itemId)),
+        quantity = missing,
+        actualQuantity = actualQuantity,
+        ledgerQuantityBefore = ledgerQuantity,
+        status = "uncaptured_disposal_fifo",
+        timestamp = now(),
+    })
+    rebuildRealizedPnl()
+    print("|cff00ff98AZPC|r: INVENTORY RECONCILED: " .. tostring(itemName or ("item " .. itemId))
+        .. " | ledger " .. tostring(ledgerQuantity)
+        .. " -> actual " .. tostring(actualQuantity)
+        .. " | " .. tostring(missing) .. " phantom unit(s) consumed FIFO.")
+    print("|cff00ff98AZPC|r: This adjustment is retained during future P&L rebuilds.")
 end
 
 local function printRealizedPnl()
@@ -2967,6 +3091,10 @@ SlashCmdList["AZPC"] = function(msg)
         print("|cff00ff98AZPC|r: Realized P&L allocations rebuilt from confirmed purchases + mailbox settlements.")
         printRealizedPnl()
 
+    elseif string.match(msg, "^reconcile%s+") then
+        local itemId, actualQuantity = string.match(msg, "^reconcile%s+(%d+)%s+(%d+)%s*$")
+        reconcileItemInventory(itemId, actualQuantity)
+
     elseif msg == "maildebug on" then
         ensureDB()
         AZPCDB.settings.mailDebug = true
@@ -3036,6 +3164,7 @@ SlashCmdList["AZPC"] = function(msg)
         print("  /azpc settlements - DISPLAY ONLY: show normalized SOLD/EXPIRED settlements")
         print("  /azpc pnl - DISPLAY ONLY: show realized personal AH profit/loss")
         print("  /azpc pnl rebuild - rebuild purchase-cost allocations for P&L")
+        print("  /azpc reconcile ITEM_ID ACTUAL_QTY - permanently consume phantom FIFO inventory")
         print("  /azpc maildebug on|off - toggle raw mailbox diagnostic capture/output")
         print("  /azpc settlements clear - clear settlement test records + reset match flags")
         print("  /azpc ledger clear - clear ONLY personal AH records")
@@ -3057,7 +3186,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         installCraftHook()
         updateCharacterMeta()
         rebuildRealizedPnl()
-        print("|cff00ff98AZPC|r v0.4.27 CRAFT COST BASIS CAPTURE loaded. Buyer-found sales now wait for terminal mailbox settlement instead of being marked unresolved.")
+        print("|cff00ff98AZPC|r v0.4.29 RECONCILIATION SYNC loaded. Corrected quantity and remaining FIFO basis are exported to My Trading.")
 
     elseif event == "MAIL_SHOW" then
         if AZPCDB.settings.mailDebug then

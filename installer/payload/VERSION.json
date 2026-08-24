@@ -1,9 +1,9 @@
 {
-  "packageVersion": "0.4.74",
-  "watcherVersion": "0.4.21",
-  "addonVersion": "0.4.27",
+  "packageVersion": "0.4.75",
+  "watcherVersion": "0.4.24",
+  "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Preserves proven re-pairing and launches the long-running watcher through wscript.exe so no console window remains visible.",
-  "version": "0.4.74"
+  "notes": "Packages addon reconciliation sync v0.4.29 and account-scoped watcher sync v0.4.24 while preserving the proven re-pairing installer flow.",
+  "version": "0.4.75"
 }
