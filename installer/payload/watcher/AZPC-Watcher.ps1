@@ -31,7 +31,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.24"
+        version = "0.4.25"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -85,25 +85,11 @@ function Get-WatcherCredentials([string]$RequestedSetupCode) {
         $detail = $_.Exception.Message
         if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $detail += " | " + $_.ErrorDetails.Message }
 
-        # If this Windows profile was previously attached to a DIFFERENT AZPC
-        # account, the old client ID is intentionally owned by that account.
-        # The server rejects stealing it before consuming the setup code. Create
-        # a fresh local identity and retry the SAME one-time code exactly once.
+        # Alpha safety lock: one Windows watcher identity belongs to one AZPC
+        # account. Never create a second identity automatically, because doing
+        # so can replay the shared local SavedVariables ledger into that account.
         if ($forceActivation -and ($detail -match '(?i)already linked to another account')) {
-            $oldClientId = $clientId
-            $clientId = [guid]::NewGuid().ToString()
-            Set-Content -LiteralPath $ClientIdFile -Value $clientId -Encoding UTF8
-            Write-Log ("WATCHER ACTIVATION: previous client identity belongs to another AZPC account; creating a fresh identity for this account (old=" + $oldClientId + ").")
-            try {
-                $response = Invoke-AzpcActivation $clientId
-            } catch {
-                # Restore the old local client ID if the retry fails so a bad
-                # code/network error never destroys the previous connection.
-                Set-Content -LiteralPath $ClientIdFile -Value $oldClientId -Encoding UTF8
-                $retryDetail = $_.Exception.Message
-                if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $retryDetail += " | " + $_.ErrorDetails.Message }
-                throw "AZPC watcher activation failed after creating a fresh client identity: $retryDetail"
-            }
+            throw "AZPC watcher account switch refused. This Windows watcher is already linked to another AZPC account. Alpha builds support one account per Windows watcher installation. Existing credentials and history were not changed."
         } else {
             throw "AZPC watcher activation failed: $detail"
         }
@@ -190,7 +176,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.24"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.25"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -526,9 +512,11 @@ function Read-PrivateState([string]$ClientId) {
     try {
         $obj = Get-Content -LiteralPath $PrivateStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
         $savedClientId = [string]$obj.clientId
-        if ([string]::IsNullOrWhiteSpace($savedClientId) -or $savedClientId -ne $ClientId) {
-            Write-Log "PRIVATE SYNC: account/client changed; resetting the account-scoped upload cache so this account receives its full ledger."
-            return @{ clientId = $ClientId; uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
+        if ([string]::IsNullOrWhiteSpace($savedClientId)) {
+            Write-Log "PRIVATE SYNC: migrating the existing upload cache to this client without replaying historical events."
+            $savedClientId = $ClientId
+        } elseif ($savedClientId -ne $ClientId) {
+            throw "PRIVATE SYNC REFUSED: local upload cache belongs to a different watcher client. Historical replay is blocked."
         }
         $set = @{}
         foreach ($id in @($obj.uploadedEventIds)) {
@@ -540,7 +528,8 @@ function Read-PrivateState([string]$ClientId) {
         }
         return @{ clientId = $ClientId; uploadedEventIds = $set; uploadedSettlementEventIds = $settlementSet }
     } catch {
-        return @{ clientId = $ClientId; uploadedEventIds = @{}; uploadedSettlementEventIds = @{} }
+        Write-Log ("PRIVATE SYNC REFUSED: upload cache could not be safely loaded. " + $_.Exception.Message)
+        throw
     }
 }
 
@@ -896,7 +885,7 @@ function Upload-NewPrivateTransactions([string]$Text, [string]$WatcherToken, [st
     }
 }
 
-Write-Log "AZPC Watcher v0.4.24 Account-Scoped Ledger Sync starting."
+Write-Log "AZPC Watcher v0.4.25 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId

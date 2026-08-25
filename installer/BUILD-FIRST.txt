@@ -1,10 +1,12 @@
-AZPC SETUP WIZARD BUILD - v0.4.75 CURRENT CLIENT PAYLOAD
+AZPC SETUP WIZARD BUILD - v0.4.76 ALPHA ACCOUNT LOCK
 ================================================
 
 BASELINE
-- Retains the proven v0.4.74 re-pair/setup builder.
+- Retains the proven v0.4.75 installer builder.
 - Addon updated to v0.4.29.
-- Watcher updated to v0.4.24.
+- Watcher updated to v0.4.25.
+- Cross-account reconnects are refused without creating a new client identity.
+- Existing upload caches are preserved during upgrades; unsafe cache mismatch/corruption stops sync instead of replaying history.
 
 FIXES
 - Supplying a setup code ALWAYS forces activation/re-pairing instead of returning stale credentials.

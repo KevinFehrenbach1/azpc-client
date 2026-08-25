@@ -71,7 +71,7 @@ function Write-Launcher([string]$WatcherTarget, [string]$StateDir) {
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
     $lines = @(
         '@echo off',
-        'title AZPC Watcher v0.4.24',
+        'title AZPC Watcher v0.4.25',
         ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}" -DataDir "{1}"' -f $script,$StateDir),
         'if errorlevel 1 (',
         '  echo.',
@@ -221,7 +221,7 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
     }
 }
 
-Say ""; Say "AZPC TBC Anniversary installer v0.4.75" Yellow
+Say ""; Say "AZPC TBC Anniversary installer v0.4.76" Yellow
 Say "This installs the WoW addon and your private AZPC watcher." Cyan
 Say "No shared AZPC server secret is included in this package." DarkGray
 
@@ -317,8 +317,8 @@ try {
 
 $installResult = @{
     ok = $true
-    packageVersion = "0.4.75"
-    watcherVersion = "0.4.24"
+    packageVersion = "0.4.76"
+    watcherVersion = "0.4.25"
     addonVersion = "0.4.29"
     connectionMode = $installMode
     paired = (-not $skipActivation)
