@@ -134,6 +134,7 @@ function Get-RemoteManifest {
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
     $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.3' } -TimeoutSec 30
+    if($manifest -is [string]){ $manifest=$manifest.TrimStart([char]0xFEFF) | ConvertFrom-Json }
     Test-Manifest $manifest
     if($manifest.game -ne $Game){ throw 'Release game does not match your selection.' }
     return $manifest
