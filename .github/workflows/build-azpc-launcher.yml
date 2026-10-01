@@ -69,9 +69,36 @@ jobs:
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' './launcher/AZPC-Launcher-Setup.iss'
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
           Get-FileHash ./launcher/output/AZPC-Launcher-Setup.exe -Algorithm SHA256
+      - name: Verify installed EXE opens a visible launcher window
+        shell: powershell
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'AZPC installed test'
+          $setup = (Resolve-Path './launcher/output/AZPC-Launcher-Setup.exe').Path
+          $install = Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',('/DIR="'+$destination+'"')) -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Installer failed.' }
+          $exe = Join-Path $destination 'AZPC-Launcher.exe'
+          $p = Start-Process $exe -PassThru
+          try {
+            $visible = $null
+            for ($attempt=0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Seconds 1
+              if ($p.HasExited) { throw ('Installed launcher exited with code '+$p.ExitCode) }
+              $children = @(Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$p.Id))
+              foreach ($child in $children) {
+                $gui = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($gui -and $gui.MainWindowHandle -ne 0 -and $gui.MainWindowTitle -eq 'AZPC Launcher') { $visible=$gui }
+              }
+              if ($visible) { break }
+            }
+            if (-not $visible) { throw 'Installed EXE did not open a visible AZPC window.' }
+            Write-Host 'PASS: installed EXE opens a visible AZPC launcher window.'
+          } finally {
+            Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$p.Id) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.0-Windows-TEST
+          name: AZPC-Launcher-0.2.1-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error

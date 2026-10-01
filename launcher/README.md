@@ -1,4 +1,4 @@
-# AZPC Launcher 0.2.0
+# AZPC Launcher 0.2.1
 
 Windows 10/11 launcher for the existing Anniversary addon and watcher. Installs per Windows user and uses Windows PowerShell 5.1, Windows Forms, and the .NET Framework already included with Windows. No separate runtime download is needed.
 
