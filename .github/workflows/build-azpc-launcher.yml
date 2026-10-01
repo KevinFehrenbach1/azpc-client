@@ -1,0 +1,104 @@
+name: Build AZPC Launcher
+on:
+  workflow_dispatch:
+  push:
+    branches: [launcher/windows-v1]
+    paths:
+      - 'launcher/**'
+      - 'installer/payload/**'
+      - '.github/workflows/build-azpc-launcher.yml'
+  pull_request:
+    paths:
+      - 'launcher/**'
+      - 'installer/payload/**'
+      - '.github/workflows/build-azpc-launcher.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check syntax, updates, rollback, and history preservation
+        shell: powershell
+        run: ./launcher/tests/Run.Tests.ps1
+      - name: Build launcher and update bundle
+        shell: powershell
+        run: ./launcher/Build.ps1
+      - name: Verify live release lookup and component download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          . ./launcher/Launcher.Core.ps1
+          $manifest = Get-RemoteManifest -ApiToken $env:GH_TOKEN
+          $work = Join-Path $env:RUNNER_TEMP 'azpc-live-download'
+          New-Item -ItemType Directory $work -Force | Out-Null
+          $payload = Get-UpdatePayload $manifest $work
+          $versions = Read-JsonFile (Join-Path $payload 'VERSION.json')
+          Write-Host ('Verified released addon ' + $versions.addonVersion + ' and watcher ' + $versions.watcherVersion)
+      - name: Smoke test launcher window
+        shell: powershell
+        run: |
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'azpc-ui-smoke'
+          New-Item -ItemType Directory $env:LOCALAPPDATA -Force | Out-Null
+          $script = (Resolve-Path './launcher/dist/launcher/AZPC-Launcher.ps1').Path
+          foreach ($page in @('Overview','Updates','Settings')) {
+            $stdout = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stdout.txt')
+            $stderr = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stderr.txt')
+            $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-PreviewPage',$page) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Start-Sleep -Seconds 8
+            if ($p.HasExited) { Get-Content $stdout,$stderr; throw ('Launcher exited on '+$page) }
+            try {
+              Add-Type -AssemblyName System.Drawing,System.Windows.Forms
+              $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bitmap = New-Object Drawing.Bitmap($screen.Width,$screen.Height)
+              $graphics = [Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
+              $bitmap.Save((Join-Path (Resolve-Path './launcher/output') ('launcher-'+$page+'.png')))
+              $graphics.Dispose(); $bitmap.Dispose()
+            } finally { Stop-Process -Id $p.Id -Force }
+            if ((Get-Item $stderr).Length -gt 0) { Get-Content $stderr; throw ('UI errors on '+$page) }
+          }
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Build per-user installer
+        shell: powershell
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' './launcher/AZPC-Launcher-Setup.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+          Get-FileHash ./launcher/output/AZPC-Launcher-Setup.exe -Algorithm SHA256
+      - name: Verify installed EXE opens a visible launcher window
+        shell: powershell
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'AZPC installed test'
+          $setup = (Resolve-Path './launcher/output/AZPC-Launcher-Setup.exe').Path
+          $install = Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',('/DIR="'+$destination+'"')) -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Installer failed.' }
+          $exe = Join-Path $destination 'AZPC-Launcher.exe'
+          $p = Start-Process $exe -PassThru
+          try {
+            $visible = $null
+            for ($attempt=0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Seconds 1
+              if ($p.HasExited) { throw ('Installed launcher exited with code '+$p.ExitCode) }
+              $children = @(Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$p.Id))
+              foreach ($child in $children) {
+                $gui = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($gui -and $gui.MainWindowHandle -ne 0 -and $gui.MainWindowTitle -eq 'AZPC Launcher') { $visible=$gui }
+              }
+              if ($visible) { break }
+            }
+            if (-not $visible) { throw 'Installed EXE did not open a visible AZPC window.' }
+            Write-Host 'PASS: installed EXE opens a visible AZPC launcher window.'
+          } finally {
+            Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$p.Id) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+      - name: Upload test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: AZPC-Launcher-0.2.2-Windows-TEST
+          path: launcher/output/*
+          if-no-files-found: error

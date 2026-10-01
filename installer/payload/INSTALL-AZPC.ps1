@@ -1,6 +1,7 @@
-﻿param(
+param(
     [string]$WowRoot = "",
-    [string]$SetupCode = ""
+    [string]$SetupCode = "",
+    [switch]$FunctionsOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,7 +86,7 @@ function Write-Launcher([string]$WatcherTarget, [string]$StateDir) {
 
 
 
-function Write-HiddenWatcherLauncher([string]$WatcherTarget, [string]$StateDir) {
+function Write-HiddenWatcherLauncher([string]$WatcherTarget, [string]$StateDir, [string]$WowRoot = "") {
     # Use wscript.exe as the parent process so the long-running PowerShell watcher
     # has no visible console window. Activation remains on the proven synchronous
     # PowerShell path so Setup gets a reliable exit code.
@@ -93,6 +94,7 @@ function Write-HiddenWatcherLauncher([string]$WatcherTarget, [string]$StateDir) 
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
     $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     $cmd = '"' + $psExe + '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script + '" -DataDir "' + $StateDir + '"'
+    if ($WowRoot) { $cmd += ' -WowRoot "' + $WowRoot + '"' }
     $escaped = $cmd.Replace('"','""')
     $vbs = @(
         'Set shell = CreateObject("WScript.Shell")',
@@ -128,10 +130,10 @@ function Stop-AzpcWatcherInstances([string]$WatcherTarget, [string]$StateDir) {
     } catch { }
 }
 
-function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
+function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir, [string]$WowRoot = "") {
     $taskName = "AZPC Watcher"
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
-    $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir
+    $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir $WowRoot
     $wscript = Join-Path $env:SystemRoot "System32\wscript.exe"
     $arguments = ('"{0}"' -f $hiddenLauncher)
 
@@ -220,6 +222,8 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir) {
         }
     }
 }
+
+if ($FunctionsOnly) { return }
 
 Say ""; Say "AZPC TBC Anniversary installer v0.4.76" Yellow
 Say "This installs the WoW addon and your private AZPC watcher." Cyan
@@ -347,3 +351,4 @@ if ($installMode -eq 'new') {
     Say "Your previous watcher profile is still stored on this PC, but Windows startup now points to this new watcher." DarkGray
 }
 if ($autoStartConfigured) { Say "The selected watcher will start automatically about 15 seconds after you sign into Windows." DarkGray }
+
