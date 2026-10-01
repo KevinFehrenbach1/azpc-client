@@ -40,3 +40,33 @@ callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==2)
 function GetInboxInvoiceInfo() return 'seller','Peacebloom','Buyer',0,210,0,10,0,0,0,nil end
 callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==2)
 print('PASS: confirmed buyer/seller mailbox records, net seller proceeds, repeated mailbox dedup and no invented quantity')
+local days=30
+local returnedQuantity=7
+local subject='Auction expired: Peacebloom'
+local money,cod=0,0
+function GetInboxNumItems() return 1 end
+function GetInboxInvoiceInfo() return nil end
+function GetInboxHeaderInfo() return nil,nil,'Auction House',subject,money,cod,days end
+function GetInboxItem() return 'Peacebloom',2447,nil,returnedQuantity end
+callback(nil,'MAIL_SHOW')
+assert(#AZPCForeverDB.trades==3)
+assert(AZPCForeverDB.trades[3].tradeExport:find('|expired|2447|Peacebloom|7|0|',1,true))
+stamp=stamp+75;days=days-75/86400+15/86400
+callback(nil,'MAIL_INBOX_UPDATE');callback(nil,'MAIL_SHOW');SlashCmdList.AZPCFOREVER('mail')
+assert(#AZPCForeverDB.trades==3,'reopening mail and expiry estimate drift must not duplicate returns')
+-- Saved dedupe state survives addon reload.
+frames={};assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
+callback(nil,'ADDON_LOADED','AZPCForever');callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==3)
+function GetInboxNumItems() return 2 end
+callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4,'two identical returned stacks are separate records')
+function GetInboxNumItems() return 1 end
+returnedQuantity=nil;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4,'unresolved attachment count must wait')
+returnedQuantity=9;subject='A gift';callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4,'ordinary mail is not an expired auction')
+subject='Auction cancelled: Peacebloom';callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4,'cancelled mail is not falsely labelled expired')
+subject='Auction expired: Other item';callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4,'subject and attachment must agree')
+subject='Auction expired: Peacebloom';money=1;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4)
+money=0;cod=1;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==4)
+cod=0;days=29;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==5,'a later distinct return is recorded')
+AUCTION_EXPIRED_MAIL_SUBJECT='Auktion abgelaufen: %s';subject='Auktion abgelaufen: Peacebloom';returnedQuantity=11
+callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==6,'localized auction subject template is supported')
+print('PASS: expired stack quantity, no trade value, reopen/reload dedupe, identical stacks, missing metadata, unrelated mail and localized subjects')

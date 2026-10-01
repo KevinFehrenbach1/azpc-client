@@ -54,6 +54,26 @@ try {
     }
     Send-ForeverTrades 'test-client' 'test-token'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.sent').Count -eq 1) 'Only acknowledged upload is marked sent'
+    $expired=$trade.Replace('unique-mail-id|buy','expired-mail-id|expired').Replace('|3|100|','|7|0|')
+    $event=Convert-ForeverTrade $expired
+    Assert ($event.kind -eq 'expired' -and $event.quantity -eq 7 -and $event.copper -eq 0) 'Expired returns preserve stack count without proceeds'
+    $rejected=$false;try {Convert-ForeverTrade ($expired.Replace('|7|0|','|7|1|')) | Out-Null} catch {$rejected=$true}
+    Assert $rejected 'Expired returns reject invented proceeds'
+    Collect-ForeverTrades ('{ ["tradeExport"]="'+$expired+'" }')
+    Collect-ForeverTrades ('{ ["tradeExport"]="'+$expired+'" }')
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.json').Count -eq 2) 'Expired return queues exactly once'
+    $script:ForeverUploadAttempt=[datetime]::MinValue
+    function Invoke-RestMethod {throw 'simulated offline receiver'}
+    Send-ForeverTrades 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.sent').Count -eq 1) 'Offline expired return stays queued'
+    $script:ForeverUploadAttempt=[datetime]::MinValue
+    function Invoke-RestMethod {param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
+        $sent=[Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
+        Assert ($Uri -eq 'https://forever.azpc.market/api/trades/upload' -and $sent.events[0].kind -eq 'expired' -and $sent.events[0].quantity -eq 7 -and $sent.events[0].copper -eq 0) 'Expired return uploads with zero trade value'
+        return @{ok=$true;accepted=1}
+    }
+    Send-ForeverTrades 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.sent').Count -eq 2) 'Acknowledged expired return is marked sent'
     function Invoke-RestMethod {param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
         Assert ($Uri -eq 'https://forever.azpc.market/api/scans/upload') 'Market scans go only to Forever scan receiver'
         Assert ($Headers['x-azpc-watcher-token'] -eq 'test-token') 'Scan upload uses existing watcher credential'

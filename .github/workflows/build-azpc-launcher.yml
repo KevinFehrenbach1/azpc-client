@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 jobs:
+  addon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: lua5.1 watcher/tests/forever-addon.lua
   windows:
     runs-on: windows-latest
     steps:
@@ -102,13 +108,13 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.5-Windows-TEST
+          name: AZPC-Launcher-0.2.6-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: windows
+    needs: [windows, addon]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -116,11 +122,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.5-Windows-TEST
+          name: AZPC-Launcher-0.2.6-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.5 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.5 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.5 - Forever scan uploads" --notes "Shared watcher 0.4.29 uploads queued Forever addon market scans to the authenticated receiver. Captures keep exact beta realm, faction, region and loaded-result scope. Failed uploads remain local for retry; acknowledged scans deduplicate. Includes reliable watcher Start/Stop controls and Forever addon 0.1.1. Install this launcher update, then update the watcher. Existing credentials and SavedVariables are preserved."
+          if gh release view launcher-v0.2.6 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.6 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.6 - Forever expired auction returns" --notes "Forever addon 0.1.2 and shared watcher 0.4.30 capture expired auction mailbox returns and sync them to My Trades. Returned stacks preserve existing quantity and cost basis, with no invented sale or purchase. Includes scan uploads and reliable watcher controls. Close WoW, select Forever, update the addon and watcher, then open your mailbox and /reload."

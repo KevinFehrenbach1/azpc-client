@@ -2,6 +2,7 @@
 ## Title: AZPC Forever
 ## Notes: Captures loaded Forever Beta AH results for the AZPC watcher. Browse/search coverage only.
 ## Author: Kevin Fehrenbach
-## Version: 0.1.1
+## Version: 0.1.2
 ## SavedVariables: AZPCForeverDB
 AZPCForever.lua
+
