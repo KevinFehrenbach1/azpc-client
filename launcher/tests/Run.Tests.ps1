@@ -59,7 +59,7 @@ public static class AzpcRestrictedToken {
     Must-Throw { Assert-ReleaseUrl 'https://evil.example/update.zip' } 'AZPC GitHub release'
     Must-Throw { Assert-ReleaseUrl 'https://github.com/other/repo/releases/download/v1/bundle.zip' } 'AZPC GitHub release'
     Must-Throw { Assert-Version 'latest' } 'invalid version'
-    $manifest=@{schema=1;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.25';launcherVersion='0.1.0';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-components.zip';bundleSha256=('a'*64)}
+    $manifest=@{schema=1;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.26';launcherVersion='0.1.0';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-components.zip';bundleSha256=('a'*64)}
     Test-Manifest $manifest
     $bad=$manifest.Clone(); $bad.game='forever'
     Must-Throw { Test-Manifest $bad } 'Unsupported'
@@ -129,7 +129,7 @@ public static class AzpcRestrictedToken {
     Must-Throw { Get-UpdatePayload $manifest $work } 'checksum mismatch'
     Assert (-not (Test-Path (Join-Path $testRoot 'escaped.ps1'))) 'Archive path traversal did not write files'
     # Tagged-source compatibility uses an immutable commit and verifies every downloaded component.
-    $sourceManifest=@{schema=2;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.25';launcherVersion='0.2.0';sourceCommit=('a'*40);files=@()}
+    $sourceManifest=@{schema=2;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.26';launcherVersion='0.2.0';sourceCommit=('a'*40);files=@()}
     foreach($path in @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')) {
         $sourceManifest.files+=@{path=$path;sha256=(Get-FileHash (Join-Path $payload $path) -Algorithm SHA256).Hash}
     }
