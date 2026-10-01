@@ -26,10 +26,12 @@ jobs:
         shell: powershell
         run: ./launcher/Build.ps1
       - name: Verify live release lookup and component download
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: powershell
         run: |
           . ./launcher/Launcher.Core.ps1
-          $manifest = Get-RemoteManifest
+          $manifest = Get-RemoteManifest -ApiToken $env:GH_TOKEN
           $work = Join-Path $env:RUNNER_TEMP 'azpc-live-download'
           New-Item -ItemType Directory $work -Force | Out-Null
           $payload = Get-UpdatePayload $manifest $work

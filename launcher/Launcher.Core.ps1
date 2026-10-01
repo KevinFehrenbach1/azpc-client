@@ -88,8 +88,10 @@ function Test-Manifest($Manifest) {
     if ([string]$Manifest.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'The update checksum is missing or invalid.' }
 }
 function Get-RemoteManifest {
+    param([string]$ApiToken='')
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.0'; Accept = 'application/vnd.github+json' }
+    if($ApiToken){ $headers['Authorization']='Bearer '+$ApiToken }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $asset = @($release.assets | Where-Object { $_.name -eq 'azpc-update.json' })
     if ($asset.Count -eq 0) {
