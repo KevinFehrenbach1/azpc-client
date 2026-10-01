@@ -25,27 +25,39 @@ jobs:
       - name: Build launcher and update bundle
         shell: powershell
         run: ./launcher/Build.ps1
+      - name: Verify live release lookup and component download
+        shell: powershell
+        run: |
+          . ./launcher/Launcher.Core.ps1
+          $manifest = Get-RemoteManifest
+          $work = Join-Path $env:RUNNER_TEMP 'azpc-live-download'
+          New-Item -ItemType Directory $work -Force | Out-Null
+          $payload = Get-UpdatePayload $manifest $work
+          $versions = Read-JsonFile (Join-Path $payload 'VERSION.json')
+          Write-Host ('Verified released addon ' + $versions.addonVersion + ' and watcher ' + $versions.watcherVersion)
       - name: Smoke test launcher window
         shell: powershell
         run: |
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'azpc-ui-smoke'
           New-Item -ItemType Directory $env:LOCALAPPDATA -Force | Out-Null
           $script = (Resolve-Path './launcher/dist/launcher/AZPC-Launcher.ps1').Path
-          $stdout = Join-Path $env:RUNNER_TEMP 'launcher-stdout.txt'
-          $stderr = Join-Path $env:RUNNER_TEMP 'launcher-stderr.txt'
-          $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"')) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          Start-Sleep -Seconds 8
-          if ($p.HasExited) { Get-Content $stdout,$stderr; throw 'Launcher exited during UI startup.' }
-          try {
-            Add-Type -AssemblyName System.Drawing,System.Windows.Forms
-            $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bitmap = New-Object Drawing.Bitmap($screen.Width,$screen.Height)
-            $graphics = [Drawing.Graphics]::FromImage($bitmap)
-            $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
-            $bitmap.Save((Join-Path (Resolve-Path './launcher/output') 'launcher-smoke.png'))
-            $graphics.Dispose(); $bitmap.Dispose()
-          } finally { Stop-Process -Id $p.Id -Force }
-          if ((Get-Item $stderr).Length -gt 0) { Get-Content $stderr; throw 'UI startup wrote errors.' }
+          foreach ($page in @('Overview','Updates','Settings')) {
+            $stdout = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stdout.txt')
+            $stderr = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stderr.txt')
+            $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-PreviewPage',$page) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            Start-Sleep -Seconds 8
+            if ($p.HasExited) { Get-Content $stdout,$stderr; throw ('Launcher exited on '+$page) }
+            try {
+              Add-Type -AssemblyName System.Drawing,System.Windows.Forms
+              $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bitmap = New-Object Drawing.Bitmap($screen.Width,$screen.Height)
+              $graphics = [Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
+              $bitmap.Save((Join-Path (Resolve-Path './launcher/output') ('launcher-'+$page+'.png')))
+              $graphics.Dispose(); $bitmap.Dispose()
+            } finally { Stop-Process -Id $p.Id -Force }
+            if ((Get-Item $stderr).Length -gt 0) { Get-Content $stderr; throw ('UI errors on '+$page) }
+          }
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup --no-progress -y
