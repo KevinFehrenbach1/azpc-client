@@ -94,7 +94,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
     Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.1.0' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     $target = Join-Path $Workspace 'payload'
     New-Item -ItemType Directory -Path $target -Force | Out-Null

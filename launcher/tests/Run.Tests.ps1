@@ -72,7 +72,7 @@ try {
     Remove-Item $credentials,$identity
     Must-Throw { Install-Watcher $payload $wow '' } 'setup code'
     # Safe extraction tests use a fake network download and real ZIP/checksum logic.
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
     $script:testZip=Join-Path $testRoot 'unsafe.zip'
     $zip=[IO.Compression.ZipFile]::Open($script:testZip,[IO.Compression.ZipArchiveMode]::Create)
     $entry=$zip.CreateEntry('../escaped.ps1'); $writer=New-Object IO.StreamWriter($entry.Open()); $writer.Write('bad'); $writer.Dispose(); $zip.Dispose()
