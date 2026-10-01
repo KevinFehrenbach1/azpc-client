@@ -20,6 +20,36 @@ try {
     Assert (@($rules | Where-Object { $_.IdentityReference -eq $sid -and $_.AccessControlType -eq 'Allow' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl }).Count -gt 0) 'Current user can read and write private jobs'
     Initialize-PrivateJobsDirectory $privateJobs
     Assert (Test-Path $privateJobs) 'Private job permissions can be initialized again on upgrade'
+    # Reproduce a standard-user token with all optional privileges removed, including SeSecurityPrivilege.
+    Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class AzpcRestrictedToken {
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr existing, uint flags, uint disableCount, IntPtr disable, uint deleteCount, IntPtr delete, uint restrictCount, IntPtr restrict, out IntPtr token);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+    public static IntPtr Create() {
+        IntPtr original, limited;
+        if(!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x000A, out original)) throw new Win32Exception();
+        try {
+            if(!CreateRestrictedToken(original,1,0,IntPtr.Zero,0,IntPtr.Zero,0,IntPtr.Zero,out limited)) throw new Win32Exception();
+            return limited;
+        } finally { CloseHandle(original); }
+    }
+}
+'@
+    $token=[AzpcRestrictedToken]::Create()
+    $context=$null
+    try {
+        $context=[Security.Principal.WindowsIdentity]::Impersonate($token)
+        Initialize-PrivateJobsDirectory (Join-Path $testRoot 'no-privilege-jobs')
+        Assert (Test-Path (Join-Path $testRoot 'no-privilege-jobs')) 'Launcher job setup succeeds without SeSecurityPrivilege'
+    } finally {
+        if($context){ $context.Undo(); $context.Dispose() }
+        $null=[AzpcRestrictedToken]::CloseHandle($token)
+    }
     # Validate every shipped PowerShell script without executing installers or watchers.
     Get-ChildItem $script:AppRoot -Filter '*.ps1' -Recurse | Where-Object { $_.FullName -notmatch '\\(dist|output)\\' } | ForEach-Object {
         $tokens=$null; $errors=$null
