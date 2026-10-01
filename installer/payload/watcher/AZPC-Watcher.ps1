@@ -890,7 +890,7 @@ function Upload-NewPrivateTransactions([string]$Text, [string]$WatcherToken, [st
 function Find-ForeverSavedVariables([string]$Root) {
     $roots=@($Root,'C:\Program Files (x86)\World of Warcraft','C:\Program Files\World of Warcraft','D:\World of Warcraft','D:\Games\World of Warcraft','E:\World of Warcraft','E:\Games\World of Warcraft') | Where-Object { $_ } | Select-Object -Unique
     foreach($candidate in $roots) {
-        $accounts=Join-Path $candidate '_classic_beta_\WTF\Account'
+        $accounts=[IO.Path]::Combine($candidate, '_classic_beta_\WTF\Account')
         if(Test-Path -LiteralPath $accounts) {
             Get-ChildItem -LiteralPath $accounts -Filter 'AZPCForever.lua' -File -Recurse -ErrorAction SilentlyContinue |
                 Where-Object { $_.Directory.Name -eq 'SavedVariables' } | Select-Object -ExpandProperty FullName
