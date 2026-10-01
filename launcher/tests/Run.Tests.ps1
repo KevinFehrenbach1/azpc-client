@@ -209,7 +209,7 @@ public static class AzpcRestrictedToken {
     Assert (Test-Path (Join-Path $beta 'Interface/AddOns/AZPCForever/AZPCForever.toc')) 'Forever addon installs in beta'
     Assert ((Get-Content $foreverSaved -Raw).Trim() -eq 'forever-history-sentinel') 'Forever SavedVariables preserved'
     Assert ((Get-FileHash (Join-Path $wow '_anniversary_/Interface/AddOns/AZPC/AZPC.lua')).Hash -eq $beforeTbc) 'Forever install leaves TBC addon unchanged'
-    Assert ((Get-InstalledStatus $wow 'forever').Addon -eq '0.1.1') 'Forever version detection'
+    Assert ((Get-InstalledStatus $wow 'forever').Addon -eq $shipped.foreverAddonVersion) 'Forever version detection'
     $foreverPackage=Join-Path $testRoot 'forever-package'
     New-Item -ItemType Directory (Join-Path $foreverPackage 'addon') -Force | Out-Null
     Copy-Item (Join-Path $payload 'addon/AZPCForever') (Join-Path $foreverPackage 'addon') -Recurse
