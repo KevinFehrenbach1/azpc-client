@@ -39,6 +39,7 @@ $muted=[Drawing.ColorTranslator]::FromHtml('#a6aebb')
 $blue=[Drawing.ColorTranslator]::FromHtml('#4379fa')
 $green=[Drawing.ColorTranslator]::FromHtml('#7bd88a')
 $form=New-Object Windows.Forms.Form
+$form.AutoScaleMode='None'
 $form.Text='AZPC Launcher'; $form.ClientSize=New-Object Drawing.Size(1080,730)
 $form.MinimumSize=New-Object Drawing.Size(1096,769); $form.MaximumSize=$form.MinimumSize
 $form.StartPosition='CenterScreen'; $form.BackColor=$bg; $form.ForeColor=[Drawing.Color]::WhiteSmoke
