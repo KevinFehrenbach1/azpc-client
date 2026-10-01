@@ -70,3 +70,26 @@ cod=0;days=29;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==5,
 AUCTION_EXPIRED_MAIL_SUBJECT='Auktion abgelaufen: %s';subject='Auktion abgelaufen: Peacebloom';returnedQuantity=11
 callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==6,'localized auction subject template is supported')
 print('PASS: expired stack quantity, no trade value, reopen/reload dedupe, identical stacks, missing metadata, unrelated mail and localized subjects')
+for _,row in ipairs(AZPCForeverDB.trades) do
+    local fields=0
+    for _ in (row.tradeExport..'|'):gmatch('(.-)|') do fields=fields+1 end
+    assert(fields==13,'mailbox export must contain exactly 13 fields: '..row.tradeExport)
+end
+print('PASS: actual addon purchase, sale and expired exports contain exactly 13 fields')
+-- Reproduce a record already saved by 0.1.2, including both gsub return values.
+local function legacyEncode(text)
+    return tostring(text or ''):gsub('([^%w%-_%.])',function(c)return string.format('%%%02X',string.byte(c))end)
+end
+AUCTION_EXPIRED_MAIL_SUBJECT=nil;subject='Auction expired: Peacebloom';returnedQuantity=13;days=28
+local anchor=math.floor(stamp+days*86400+0.5)
+local oldBase=table.concat({'Player-test','Forever Test',1,2447,13,legacyEncode('Auction House'),legacyEncode(subject)},':')
+local oldFingerprint=table.concat({'Player-test','Forever Test',1,'expired',2447,13,0,anchor,legacyEncode(nil),legacyEncode('Auction House'),legacyEncode(subject)},':')..':1'
+AZPCForeverDB.expiredMailAnchors[oldBase]={anchor}
+AZPCForeverDB.tradeSeen[oldFingerprint]=true
+local oldFields={'AZPCFTRADE','1',legacyEncode(oldFingerprint),'expired',2447,legacyEncode('Peacebloom'),13,0,stamp,legacyEncode('Forever Test'),'horde',1,legacyEncode('Tester')}
+assert(#oldFields==14,'legacy bug fixture must have the extra field')
+AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(oldFields,'|')}
+local beforeUpgrade=#AZPCForeverDB.trades
+callback(nil,'MAIL_SHOW');SlashCmdList.AZPCFOREVER('mail')
+assert(#AZPCForeverDB.trades==beforeUpgrade,'upgrade must preserve legacy dedupe identity')
+print('PASS: old expired export and saved dedupe anchors survive upgrade without duplicate records')

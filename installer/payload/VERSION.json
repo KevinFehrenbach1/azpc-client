@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.77",
-  "watcherVersion": "0.4.30",
+  "packageVersion": "0.4.78",
+  "watcherVersion": "0.4.31",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Forever mailbox purchases, sales and expired auction returns sync to My Trades. Returns preserve existing inventory and cost basis; market scans upload with offline retry.",
-  "version": "0.4.77",
-  "foreverAddonVersion": "0.1.2"
+  "notes": "Fix Forever mailbox export field count and recover already-saved purchase, sale and expired-return records.",
+  "version": "0.4.78",
+  "foreverAddonVersion": "0.1.3"
 }

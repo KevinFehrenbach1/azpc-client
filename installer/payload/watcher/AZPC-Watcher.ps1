@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.30"
+        version = "0.4.31"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.30"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.31"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -916,6 +916,9 @@ function Convert-ForeverExport([string]$Export) {
 }
 function Convert-ForeverTrade([string]$Export) {
     $f=$Export.Split('|')
+    # Addon 0.1.1/0.1.2 accidentally appended Lua gsub's replacement count.
+    # Recover already-saved records only when that extra field matches the character encoding.
+    if($f.Count -eq 14 -and $f[13] -eq ([string]([regex]::Matches($f[12],'%[0-9A-Fa-f]{2}').Count))){$f=$f[0..12]}
     if($f.Count -ne 13 -or $f[0] -ne 'AZPCFTRADE' -or $f[1] -ne '1' -or $f[3] -notin @('buy','sell','expired') -or $f[10] -notin @('horde','alliance')){throw 'Invalid Forever trade header.'}
     $id=0L;$qty=0L;$copper=0L;$stamp=0L;$region=0
     if(-not [long]::TryParse($f[4],[ref]$id) -or $id -le 0 -or $id -gt 10000000 -or -not [long]::TryParse($f[6],[ref]$qty) -or $qty -le 0 -or $qty -gt 1000000 -or -not [long]::TryParse($f[7],[ref]$copper) -or $copper -lt 0 -or $copper -gt 1000000000000 -or -not [long]::TryParse($f[8],[ref]$stamp) -or $stamp -lt 946684800 -or $stamp -gt 4102444800 -or -not [int]::TryParse($f[11],[ref]$region) -or $region -notin @(1,2,3,4,5,90)){throw 'Invalid Forever trade values.'}
@@ -1016,7 +1019,7 @@ function Collect-ForeverScans([string]$Root) {
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.30 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.31 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId

@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.1.2"
+local addon, VERSION = ..., "0.1.3"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -9,7 +9,7 @@ local function number(value)
     if ok and n and n >= 0 and n < 9007199254740991 then return math.floor(n) end
 end
 local function encode(text)
-    return tostring(text or ""):gsub("([^%w%-_%.])", function(c) return string.format("%%%02X", string.byte(c)) end)
+    return (tostring(text or ""):gsub("([^%w%-_%.])", function(c) return string.format("%%%02X", string.byte(c)) end))
 end
 local function setup()
     if type(AZPCForeverDB) ~= "table" then AZPCForeverDB = {} end
@@ -144,6 +144,9 @@ captureTrades=function()
     for index=1,count do
         local invoice, itemName, otherPlayer, bid, buyout, deposit, fee, delay, hour, minute, invoiceCount = GetInboxInvoiceInfo(index)
         local _, _, sender, subject, money, cod, daysLeft = GetInboxHeaderInfo(index)
+        -- Preserve 0.1.1/0.1.2 mailbox identities while fixing the export shape.
+        -- Those versions included gsub's subject replacement count in the fingerprint.
+        local _, subjectEscapes = tostring(subject or ""):gsub("([^%w%-_%.])", "")
         local returnedName = expiredSubject(subject)
         if returnedName and number(money)==0 and number(cod)==0 then invoice="expired" end
         if invoice == "buyer" or invoice == "seller" or invoice == "expired" then
@@ -167,11 +170,11 @@ captureTrades=function()
                 local expiry=0
                 if type(daysLeft)=="number" and daysLeft>0 then expiry=math.floor((timestamp+daysLeft*86400+30)/60) end
                 if invoice=="expired" then
-                    local base=table.concat({guid,realm,region,id,quantity,encode(sender),encode(subject)},":")
+                    local base=table.concat({guid,realm,region,id,quantity,encode(sender),encode(subject),subjectEscapes},":")
                     expiry=expiredExpiry(base,timestamp,daysLeft) or 0
                 end
                 if expiry>0 then
-                    local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject)},":")
+                    local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject),subjectEscapes},":")
                     occurrences[fingerprint]=(occurrences[fingerprint] or 0)+1
                     fingerprint=fingerprint..":"..occurrences[fingerprint]
                     if not AZPCForeverDB.tradeSeen[fingerprint] then

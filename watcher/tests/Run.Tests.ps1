@@ -42,6 +42,19 @@ try {
     $trade='AZPCFTRADE|1|unique-mail-id|buy|2447|Peacebloom|3|100|1790830800|Classic%20Beta%20PvP%202|horde|90|Tester'
     $event=Convert-ForeverTrade $trade
     Assert ($event.quantity -eq 3 -and $event.copper -eq 100 -and $event.region -eq 90) 'Trade preserves total copper, stack quantity and beta region'
+    foreach($kind in @('buy','sell','expired')) {
+        $current=$trade.Replace('|buy|',('|'+$kind+'|'))
+        if($kind -eq 'expired'){$current=$current.Replace('|3|100|','|3|0|')}
+        $correct=Convert-ForeverTrade $current
+        $legacy=Convert-ForeverTrade ($current+'|0')
+        Assert ($legacy.eventId -eq $correct.eventId -and $legacy.kind -eq $correct.kind -and $legacy.quantity -eq $correct.quantity) 'Recover old addon extra-field exports without changing event identity'
+    }
+    $encoded=$trade.Replace('|Tester','|Test%20Name')
+    Assert ((Convert-ForeverTrade ($encoded+'|1')).character -eq 'Test Name') 'Recover legacy percent-encoded character export'
+    foreach($bad in @(($trade+'|1'),($trade+'|unexpected'),($trade+'|0|0'))) {
+        $rejected=$false;try {Convert-ForeverTrade $bad | Out-Null} catch {$rejected=$true}
+        Assert $rejected 'Reject malformed extra fields beyond the known legacy format'
+    }
     Collect-ForeverTrades ('{ ["tradeExport"]="'+$trade+'" }')
     Collect-ForeverTrades ('{ ["tradeExport"]="'+$trade+'" }')
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.json').Count -eq 1) 'Mailbox trade is queued exactly once'
@@ -92,4 +105,3 @@ try {
     Send-ForeverScans 'test-client' 'test-token'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.sent').Count -eq 1) 'Mismatched acknowledgement does not mark a scan sent'
 } finally { Remove-Item $root -Recurse -Force }
-

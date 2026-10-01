@@ -24,7 +24,7 @@ public static class AzpcStyle {
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Launcher.Core.ps1')
 $script:remote=$null; $script:job=$null; $script:resultPath=''; $script:requestPath=''
-$script:launcherVersion='0.2.6'
+$script:launcherVersion='0.2.7'
 $script:uiRoot=Join-Path $script:ClientRoot 'Launcher'
 $jobs=Join-Path $script:uiRoot 'jobs'
 New-Item -ItemType Directory -Path $jobs -Force | Out-Null
@@ -87,7 +87,7 @@ $navOverview=Button $sidebar 'Overview' 12 115 191 { Show-Page 'Overview' }
 $navUpdates=Button $sidebar 'Updates' 12 168 191 { Show-Page 'Updates' }
 $navSettings=Button $sidebar 'Settings' 12 221 191 { Show-Page 'Settings' }
 $null=Button $sidebar 'Open dashboard' 12 654 191 { Start-Process 'https://azpc.market' }
-$null=Label $sidebar 'Launcher 0.2.6' 25 704 175 20 8
+$null=Label $sidebar 'Launcher 0.2.7' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
 $game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
@@ -187,7 +187,7 @@ function Refresh-Status {
         $folderHint.Text=if($selected -eq 'forever'){'Select the main WoW folder containing _classic_beta_.'}else{'Select the main WoW folder containing _anniversary_.'}
         $addonInstalled.Text=$state.Addon; $watcherInstalled.Text=$state.Watcher
         $connection.Text=if($state.Connected){'Account connected'}else{'Connect your account'}
-        $accountDetail.Text=if($selected -eq 'forever'){'Forever AH scans upload with watcher 0.4.30. Older watchers save scans locally.'}elseif($state.Connected){'Your saved account connection is ready.'}else{'Link the watcher to upload your saved game activity.'}
+        $accountDetail.Text=if($selected -eq 'forever'){'Forever AH scans upload with watcher 0.4.31. Older watchers save scans locally.'}elseif($state.Connected){'Your saved account connection is ready.'}else{'Link the watcher to upload your saved game activity.'}
         $account.Text=if($state.Connected){'Manage account'}else{'Connect account'}
         $watcherStatus.Text=if($state.Running){'Running'}else{'Stopped'}
         $watcherStatus.ForeColor=if($state.Running){$green}else{$muted}
@@ -246,7 +246,7 @@ try {
     }
 } catch { $message.Text='Choose your WoW folder to get started.' }
 if($PreviewGame -eq 'forever'){$game.SelectedIndex=1}
-$game.Add_SelectedIndexChanged({ $script:remote=$null; Save-Settings; Refresh-Status; $message.Text=if((Get-SelectedGame) -eq 'forever'){'Forever Beta selected. Install the addon and update to watcher 0.4.30 for scan uploads.'}else{'Anniversary / TBC selected.'} })
+$game.Add_SelectedIndexChanged({ $script:remote=$null; Save-Settings; Refresh-Status; $message.Text=if((Get-SelectedGame) -eq 'forever'){'Forever Beta selected. Install the addon and update to watcher 0.4.31 for scan uploads.'}else{'Anniversary / TBC selected.'} })
 $timer=New-Object Windows.Forms.Timer; $timer.Interval=1000
 $timer.Add_Tick({
     if ($script:job -and $script:job.HasExited) {
