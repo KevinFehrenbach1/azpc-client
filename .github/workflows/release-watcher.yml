@@ -28,8 +28,8 @@ jobs:
       - name: Build component update and Forever addon
         shell: powershell
         run: |
-          ./launcher/Build.ps1 -ReleaseTag watcher-v0.4.27
-          Compress-Archive -Path ./addons/forever/AZPCForever -DestinationPath ./launcher/output/AZPC-Forever-0.1.0.zip
+          ./launcher/Build.ps1 -ReleaseTag watcher-v0.4.28
+          Compress-Archive -Path ./addons/forever/AZPCForever -DestinationPath ./launcher/output/AZPC-Forever-0.1.1.zip
       - uses: actions/upload-artifact@v4
         with:
           name: forever-watcher-release
@@ -38,7 +38,7 @@ jobs:
             launcher/output/azpc-update.json
             launcher/output/azpc-forever-components.zip
             launcher/output/azpc-forever-update.json
-            launcher/output/AZPC-Forever-0.1.0.zip
+            launcher/output/AZPC-Forever-0.1.1.zip
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test-build, addon-test]
@@ -55,5 +55,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view watcher-v0.4.27 >/dev/null 2>&1; then exit 0; fi
-          gh release create watcher-v0.4.27 release/* --target "$GITHUB_SHA" --latest --title "Watcher 0.4.27 + AZPC Forever 0.1.0" --notes-file addons/forever/README.md
+          if gh release view watcher-v0.4.28 >/dev/null 2>&1; then exit 0; fi
+          gh release create watcher-v0.4.28 release/* --target "$GITHUB_SHA" --latest --title "Watcher 0.4.28 + AZPC Forever 0.1.1" --notes-file addons/forever/README.md

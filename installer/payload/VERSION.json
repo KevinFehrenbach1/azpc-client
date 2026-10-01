@@ -1,10 +1,10 @@
 {
   "packageVersion": "0.4.76",
-  "watcherVersion": "0.4.27",
+  "watcherVersion": "0.4.28",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
   "notes": "Accept Forever Beta region 90 without mapping it to a live region. Process changed saved data once and skip invalid snapshots individually. Forever scans remain local until a compatible website receiver is connected.",
   "version": "0.4.76",
-  "foreverAddonVersion": "0.1.0"
+  "foreverAddonVersion": "0.1.1"
 }
