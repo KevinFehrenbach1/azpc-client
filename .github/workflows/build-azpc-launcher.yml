@@ -119,4 +119,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view launcher-v0.2.3 >/dev/null 2>&1; then exit 0; fi
           gh release create launcher-v0.2.3 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.3 - Forever addon management" --notes "Adds Forever Beta selection, addon installation and updates directly in the launcher. Installs AZPCForever 0.1.0 in _classic_beta_. Shared watcher 0.4.26 collects Forever scans locally; website upload is still pending receiver support. Existing TBC addon, credentials and SavedVariables are preserved. Install this launcher update once, then select Forever Beta and Install addon."

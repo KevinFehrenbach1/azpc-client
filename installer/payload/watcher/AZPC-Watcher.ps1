@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.26"
+        version = "0.4.27"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.26"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.27"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -901,7 +901,7 @@ function Convert-ForeverExport([string]$Export) {
     $records=$Export.Split(';'); $header=$records[0].Split('|')
     if($header.Count -ne 6 -or $header[0] -ne 'AZPCFOREVER' -or $header[1] -ne '1' -or $header[3] -notin @('horde','alliance')) { throw 'Invalid Forever scan header.' }
     $realm=[uri]::UnescapeDataString($header[2]); $region=0; $timestamp=0L
-    if(-not $realm -or $realm.Length -gt 100 -or -not [int]::TryParse($header[4],[ref]$region) -or $region -notin @(1,2,3,4,5) -or -not [long]::TryParse($header[5],[ref]$timestamp) -or $timestamp -le 0 -or $timestamp -gt 4102444800){ throw 'Invalid Forever realm, region, or timestamp.' }
+    if(-not $realm -or $realm.Length -gt 100 -or -not [int]::TryParse($header[4],[ref]$region) -or $region -notin @(1,2,3,4,5,90) -or -not [long]::TryParse($header[5],[ref]$timestamp) -or $timestamp -le 0 -or $timestamp -gt 4102444800){ throw 'Invalid Forever realm, region, or timestamp.' }
     if($records.Count -lt 2 -or $records.Count -gt 5001){ throw 'Invalid Forever scan size.' }
     $rows=@(); $seen=@{}
     foreach($record in $records | Select-Object -Skip 1){
@@ -914,14 +914,18 @@ function Convert-ForeverExport([string]$Export) {
     }
     return @{game='forever';schema=1;realm=$realm;faction=$header[3];region=$region;scope='loaded_browse_results';observations=$rows;timestamp=$timestamp}
 }
+$script:ForeverReadVersions=@{}
 function Collect-ForeverScans([string]$Root) {
     foreach($path in @(Find-ForeverSavedVariables $Root)) {
         try {
-            if((Get-Item -LiteralPath $path).Length -gt 10485760){ throw 'Forever SavedVariables exceeds 10 MB.' }
+            $info=Get-Item -LiteralPath $path
+            $writeVersion=$info.LastWriteTimeUtc.Ticks.ToString()+':'+$info.Length
+            if($script:ForeverReadVersions[$path] -eq $writeVersion){continue}
+            if($info.Length -gt 10485760){ throw 'Forever SavedVariables exceeds 10 MB.' }
             $text=Get-Content -LiteralPath $path -Raw -Encoding UTF8
             foreach($match in [regex]::Matches($text,'\["export"\]\s*=\s*"(AZPCFOREVER\|[^"\r\n]+)"')) {
                 $export=$match.Groups[1].Value
-                $scan=Convert-ForeverExport $export
+                try { $scan=Convert-ForeverExport $export } catch { Write-Log ('FOREVER SCAN REJECTED: '+$_.Exception.Message+' Waiting for new saved data.'); continue }
                 $directory=Join-Path $StateDir 'Forever\scans'
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
                 $sha=[Security.Cryptography.SHA256]::Create()
@@ -934,13 +938,14 @@ function Collect-ForeverScans([string]$Root) {
                     Write-Log ('FOREVER COLLECTED: '+$scan.observations.Count+' items | '+$scan.realm+'/'+$scan.faction+' | saved locally; website upload pending receiver support.')
                 }
             }
+            $script:ForeverReadVersions[$path]=$writeVersion
         } catch { Write-Log ('FOREVER COLLECT ERROR: '+$_.Exception.Message) }
     }
 }
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.26 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.27 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
