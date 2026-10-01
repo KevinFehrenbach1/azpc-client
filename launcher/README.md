@@ -1,4 +1,4 @@
-# AZPC Launcher 0.1.0
+# AZPC Launcher 0.2.0
 
 Windows 10/11 launcher for the existing Anniversary addon and watcher. Installs per Windows user and uses Windows PowerShell 5.1, Windows Forms, and the .NET Framework already included with Windows. No separate runtime download is needed.
 
@@ -12,7 +12,7 @@ Forever appears as unavailable because this repository's addon and watcher targe
 
 ## Updates
 
-The initial launcher bundles addon 0.4.29 and watcher 0.4.25. **Check for updates** reads `azpc-update.json` from the latest non-prerelease release in this repository. Existing releases without this asset produce an explanatory message and leave bundled installation available. Downloaded updates must match SHA-256, repository origin, game, schema, and component versions. ZIP extraction accepts only the four expected files. Updates never downgrade a detected newer component.
+The initial launcher bundles addon 0.4.29 and watcher 0.4.25. **Check for updates** reads `azpc-update.json` from the latest non-prerelease release in this repository. For older releases without this asset, the launcher resolves the release tag to an immutable Git commit and fetches the four payload files with SHA-256 verification. Unreleased branch changes are never installed. Downloaded updates must match SHA-256, repository origin, game, schema, and component versions. ZIP extraction accepts only the four expected files. Updates never downgrade a detected newer component.
 
 Build `launcher/Build.ps1 -ReleaseTag <tag>` on Windows. It emits the launcher EXE, portable ZIP, `azpc-components.zip`, and manifest. Compile `launcher/AZPC-Launcher-Setup.iss` with Inno Setup 6 for the per-user setup EXE. Attach the bundle and manifest together to a reviewed release with the matching tag to enable online updates. Test artifacts are not automatically published or made latest. Build a fresh bundle and manifest whenever either component changes.
 
@@ -29,3 +29,7 @@ Setup codes use private short-lived job files and are not stored in launcher set
 `launcher/tests/Run.Tests.ps1` parses all shipped scripts and checks custom WoW paths, addon backup/rollback, watcher code rollback, account/cache/identity preservation, malformed manifests, valid release extraction, checksum failures, and unsafe ZIP extraction using temporary directories and mocked process/network/startup operations. CI builds the EXE, smoke-tests the window, captures a screenshot, and compiles the setup installer on Windows.
 
 Before public release, use a real Windows/WoW installation to test clean install, existing-user upgrade, account activation, custom paths, watcher startup at sign-in, logout/reload data uploads, and an actual published update. CI cannot validate a real AZPC account or WoW session. EXEs are unsigned test builds until code signing is configured.
+
+## Signing reminder
+
+Windows signing is deferred at the user’s request. Revisit free Store MSIX distribution or qualifying SignPath signing before the next public launcher update.

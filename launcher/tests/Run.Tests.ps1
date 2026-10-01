@@ -89,5 +89,33 @@ try {
     $manifest.bundleSha256=('0'*64)
     Must-Throw { Get-UpdatePayload $manifest $work } 'checksum mismatch'
     Assert (-not (Test-Path (Join-Path $testRoot 'escaped.ps1'))) 'Archive path traversal did not write files'
+    # Tagged-source compatibility uses an immutable commit and verifies every downloaded component.
+    $sourceManifest=@{schema=2;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.25';launcherVersion='0.2.0';sourceCommit=('a'*40);files=@()}
+    foreach($path in @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')) {
+        $sourceManifest.files+=@{path=$path;sha256=(Get-FileHash (Join-Path $payload $path) -Algorithm SHA256).Hash}
+    }
+    function Invoke-WebRequest { param([switch]$UseBasicParsing,$Uri,$OutFile,$TimeoutSec,$Headers)
+        $path=([string]$Uri).Split(@('/installer/payload/'),[StringSplitOptions]::None)[1]
+        Copy-Item -LiteralPath (Join-Path $payload $path) -Destination $OutFile
+    }
+    $sourceWork=Join-Path $testRoot 'source-download'; New-Item -ItemType Directory $sourceWork | Out-Null
+    $extracted=Get-UpdatePayload $sourceManifest $sourceWork
+    Assert ((Get-FileHash (Join-Path $extracted 'watcher/AZPC-Watcher.ps1')).Hash -eq (Get-FileHash (Join-Path $payload 'watcher/AZPC-Watcher.ps1')).Hash) 'Tagged release watcher download validated'
+    $bad=$sourceManifest.Clone(); $bad.sourceCommit='main'
+    Must-Throw { Test-Manifest $bad } 'source commit'
+    $bad=$sourceManifest.Clone(); $bad.files=@(@{path='../escaped.ps1';sha256=('a'*64)})
+    Must-Throw { Test-Manifest $bad } 'source file'
+    $sourceManifest.files[0].sha256=('0'*64)
+    Must-Throw { Get-UpdatePayload $sourceManifest $sourceWork } 'checksum mismatch'
+    # Exercise the release lookup fallback without contacting the live API in a unit test.
+    function Invoke-RestMethod { param($Uri,$Headers,$TimeoutSec)
+        if($Uri -like '*/releases/latest'){ return [pscustomobject]@{tag_name='v0.4.76';assets=@()} }
+        if($Uri -like '*/commits/*'){ return [pscustomobject]@{sha=('b'*40)} }
+        $path=(([string]$Uri).Split(@('/installer/payload/'),[StringSplitOptions]::None)[1]).Split('?')[0]
+        $bytes=[IO.File]::ReadAllBytes((Join-Path $payload $path))
+        return [pscustomobject]@{encoding='base64';size=$bytes.Length;content=[Convert]::ToBase64String($bytes)}
+    }
+    $releaseManifest=Get-RemoteManifest
+    Assert ($releaseManifest.schema -eq 2 -and $releaseManifest.addonVersion -eq '0.4.29' -and $releaseManifest.sourceCommit -eq ('b'*40)) 'Existing release resolved to pinned source versions'
     Write-Host 'All launcher checks passed.'
 } finally { $env:LOCALAPPDATA=$oldLocal; Remove-Item -LiteralPath $testRoot -Recurse -Force }

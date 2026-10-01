@@ -1,4 +1,4 @@
-param([string]$ReleaseTag = 'launcher-v0.1.0')
+param([string]$ReleaseTag = 'launcher-v0.2.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
@@ -17,7 +17,7 @@ $payload = Join-Path $repoRoot 'installer\payload'
 Compress-Archive -Path (Join-Path $payload 'addon'),(Join-Path $payload 'watcher'),(Join-Path $payload 'VERSION.json') -DestinationPath $bundle
 $version = Get-Content (Join-Path $payload 'VERSION.json') -Raw | ConvertFrom-Json
 $manifest = @{
-    schema=1; game='tbc-anniversary'; channel='alpha'; launcherVersion='0.1.0'
+    schema=1; game='tbc-anniversary'; channel='alpha'; launcherVersion='0.2.0'
     addonVersion=$version.addonVersion; watcherVersion=$version.watcherVersion
     bundleUrl=('https://github.com/KevinFehrenbach1/azpc-client/releases/download/'+$ReleaseTag+'/azpc-components.zip')
     bundleSha256=(Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()

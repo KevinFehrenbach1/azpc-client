@@ -69,29 +69,72 @@ function Assert-ReleaseUrl([string]$Url) {
     }
 }
 function Test-Manifest($Manifest) {
-    if ($Manifest.schema -ne 1 -or $Manifest.game -ne 'tbc-anniversary') { throw 'Unsupported update manifest or game version.' }
+    if ($Manifest.schema -notin @(1,2) -or $Manifest.game -ne 'tbc-anniversary') { throw 'Unsupported update manifest or game version.' }
     $null = Assert-Version ([string]$Manifest.addonVersion)
     $null = Assert-Version ([string]$Manifest.watcherVersion)
     $null = Assert-Version ([string]$Manifest.launcherVersion)
+    if ($Manifest.schema -eq 2) {
+        if ([string]$Manifest.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid release source commit.' }
+        $allowed=@('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')
+        $seen=@{}
+        foreach($file in $Manifest.files) {
+            if ($file.path -notin $allowed -or $seen.ContainsKey([string]$file.path) -or [string]$file.sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid release source file or checksum.' }
+            $seen[[string]$file.path]=$true
+        }
+        if($seen.Count -ne 4){ throw 'Release source is incomplete.' }
+        return
+    }
     Assert-ReleaseUrl ([string]$Manifest.bundleUrl)
     if ([string]$Manifest.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'The update checksum is missing or invalid.' }
 }
 function Get-RemoteManifest {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.1.0'; Accept = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.0'; Accept = 'application/vnd.github+json' }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $asset = @($release.assets | Where-Object { $_.name -eq 'azpc-update.json' })
-    if ($asset.Count -ne 1) { throw 'The latest public release does not include launcher updates yet. You can install the bundled versions now; launcher updates will become available when a compatible release is published.' }
+    if ($asset.Count -eq 0) {
+        # Compatibility with existing releases: resolve the released tag once, then pin all files to its immutable commit.
+        $tag=[uri]::EscapeDataString([string]$release.tag_name)
+        $commit=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$script:Repo+'/commits/'+$tag) -Headers $headers -TimeoutSec 30
+        if([string]$commit.sha -notmatch '^[a-f0-9]{40}$'){ throw 'Could not resolve the release commit.' }
+        $files=@(); $versionData=$null
+        foreach($path in @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')) {
+            $entry=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$script:Repo+'/contents/installer/payload/'+$path+'?ref='+$commit.sha) -Headers $headers -TimeoutSec 30
+            if($entry.encoding -ne 'base64' -or [long]$entry.size -gt 5242880){ throw 'Release file is missing or too large.' }
+            $bytes=[Convert]::FromBase64String([string]$entry.content)
+            $hash=[Security.Cryptography.SHA256]::Create()
+            try { $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $hash.Dispose() }
+            $files+=@{path=$path;sha256=$digest}
+            if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
+        }
+        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.0';sourceCommit=[string]$commit.sha;files=$files}
+        Test-Manifest $manifest
+        return $manifest
+    }
+    if($asset.Count -ne 1){ throw 'The release includes multiple update manifests.' }
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
-    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.1.0' } -TimeoutSec 30
+    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.0' } -TimeoutSec 30
     Test-Manifest $manifest
     return $manifest
 }
 function Get-UpdatePayload($Manifest, [string]$Workspace) {
     Test-Manifest $Manifest
-    $archive = Join-Path $Workspace 'bundle.zip'
-    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.1.0' }
+    if($Manifest.schema -eq 2) {
+        $target=Join-Path $Workspace 'payload'
+        foreach($file in $Manifest.files) {
+            $destination=Join-Path $target ([string]$file.path)
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            $url='https://raw.githubusercontent.com/'+$script:Repo+'/'+$Manifest.sourceCommit+'/installer/payload/'+$file.path
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.0'}
+            if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
+        }
+        $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
+        if($versions.addonVersion -ne $Manifest.addonVersion -or $versions.watcherVersion -ne $Manifest.watcherVersion -or $versions.game -ne $Manifest.game){ throw 'Release source versions do not match.' }
+        return $target
+    }
+    $archive = Join-Path $Workspace 'bundle.zip' 
+    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.0' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
