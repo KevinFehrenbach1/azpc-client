@@ -11,6 +11,15 @@ function Must-Throw([scriptblock]$Action,[string]$Pattern) {
     }
 }
 try {
+    $privateJobs=Join-Path $testRoot 'private-jobs'
+    Initialize-PrivateJobsDirectory $privateJobs
+    $acl=[IO.Directory]::GetAccessControl($privateJobs,[Security.AccessControl.AccessControlSections]::Access)
+    $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+    Assert $acl.AreAccessRulesProtected 'Job directory disables inherited permissions'
+    $rules=@($acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
+    Assert (@($rules | Where-Object { $_.IdentityReference -eq $sid -and $_.AccessControlType -eq 'Allow' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl }).Count -gt 0) 'Current user can read and write private jobs'
+    Initialize-PrivateJobsDirectory $privateJobs
+    Assert (Test-Path $privateJobs) 'Private job permissions can be initialized again on upgrade'
     # Validate every shipped PowerShell script without executing installers or watchers.
     Get-ChildItem $script:AppRoot -Filter '*.ps1' -Recurse | Where-Object { $_.FullName -notmatch '\\(dist|output)\\' } | ForEach-Object {
         $tokens=$null; $errors=$null

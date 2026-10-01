@@ -39,7 +39,7 @@ internal static class Launcher
                 process.BeginErrorReadLine(); process.BeginOutputReadLine();
                 process.WaitForExit();
                 string detail; lock(sync) { detail = errors.ToString(); }
-                File.WriteAllText(log, "AZPC Launcher 0.2.1\r\nExit code: " + process.ExitCode + "\r\n" + detail);
+                File.WriteAllText(log, "AZPC Launcher 0.2.2\r\nExit code: " + process.ExitCode + "\r\n" + detail);
                 if (process.ExitCode != 0) {
                     if (detail.Length > 1400) detail = detail.Substring(0,1400);
                     MessageBox.Show("AZPC could not open.\r\n\r\n" + detail + "\r\nStartup log:\r\n" + log,
