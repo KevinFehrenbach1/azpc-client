@@ -38,7 +38,7 @@ try {
     $addon=Join-Path $wow '_anniversary_\Interface\AddOns\AZPC\AZPC.lua'
     Set-Content $addon 'old-addon'
     Install-Addon $payload $wow
-    Assert (@(Get-ChildItem (Join-Path $script:ClientRoot 'Backups') -Directory).Count -eq 1) 'Previous addon backed up'
+    Assert (@(Get-ChildItem (Join-Path $wow '_anniversary_\Interface\AZPC-Backups') -Directory).Count -eq 1) 'Previous addon backed up'
     Assert ((Get-FileHash $saved).Hash -eq $savedHash) 'WoW trading SavedVariables preserved'
     # Force staging rename failure and verify restoration of the previous addon.
     $before=(Get-FileHash $addon).Hash
@@ -80,6 +80,12 @@ try {
     $work=Join-Path $testRoot 'download'; New-Item -ItemType Directory $work | Out-Null
     $manifest.bundleSha256=(Get-FileHash $script:testZip).Hash
     Must-Throw { Get-UpdatePayload $manifest $work } 'unsafe file'
+    $script:testZip=Join-Path $testRoot 'valid.zip'
+    Compress-Archive -Path (Join-Path $payload 'addon'),(Join-Path $payload 'watcher'),(Join-Path $payload 'VERSION.json') -DestinationPath $script:testZip
+    $manifest.bundleSha256=(Get-FileHash $script:testZip).Hash
+    $validWork=Join-Path $testRoot 'valid-download'; New-Item -ItemType Directory $validWork | Out-Null
+    $extracted=Get-UpdatePayload $manifest $validWork
+    Assert ((Get-FileHash (Join-Path $extracted 'addon\AZPC\AZPC.lua')).Hash -eq (Get-FileHash (Join-Path $payload 'addon\AZPC\AZPC.lua')).Hash) 'Valid release bundle extracted and matched its source'
     $manifest.bundleSha256=('0'*64)
     Must-Throw { Get-UpdatePayload $manifest $work } 'checksum mismatch'
     Assert (-not (Test-Path (Join-Path $testRoot 'escaped.ps1'))) 'Archive path traversal did not write files'

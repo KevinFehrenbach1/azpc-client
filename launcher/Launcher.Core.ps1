@@ -127,7 +127,8 @@ function Install-Addon([string]$Payload, [string]$Root) {
     $target = Join-Path $parent 'AZPC'
     $id = [guid]::NewGuid().ToString('N')
     $staged = Join-Path $parent ('AZPC-staging-' + $id)
-    $backup = Join-Path $script:ClientRoot ('Backups\addon-' + $id)
+    # Keep directory swaps on the WoW volume, even when WoW is on D: and the user profile is on C:.
+    $backup = Join-Path $Root ('_anniversary_\Interface\AZPC-Backups\addon-' + $id)
     New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force | Out-Null
     $moved = $false
     try {
