@@ -38,42 +38,44 @@ $card=[Drawing.ColorTranslator]::FromHtml('#282b30')
 $muted=[Drawing.ColorTranslator]::FromHtml('#a6aebb')
 $blue=[Drawing.ColorTranslator]::FromHtml('#4379fa')
 $green=[Drawing.ColorTranslator]::FromHtml('#7bd88a')
+$area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$script:layoutScale=[Math]::Min(1.0,[Math]::Min(($area.Width-20)/1096.0,($area.Height-20)/769.0))
 $form=New-Object Windows.Forms.Form
 $form.AutoScaleMode='None'
-$form.Text='AZPC Launcher'; $form.ClientSize=New-Object Drawing.Size(1080,730)
-$form.MinimumSize=New-Object Drawing.Size(1096,769); $form.MaximumSize=$form.MinimumSize
+$form.Text='AZPC Launcher'; $form.ClientSize=New-Object Drawing.Size([int](1080*$script:layoutScale),[int](730*$script:layoutScale))
+$form.MinimumSize=$form.Size; $form.MaximumSize=$form.Size
 $form.StartPosition='CenterScreen'; $form.BackColor=$bg; $form.ForeColor=[Drawing.Color]::WhiteSmoke
 $form.Font=New-Object Drawing.Font('Segoe UI',10)
 function Panel($Parent,[int]$X,[int]$Y,[int]$W,[int]$H,$Color) {
-    $c=New-Object Windows.Forms.Panel; $c.SetBounds($X,$Y,$W,$H); $c.BackColor=$Color; $Parent.Controls.Add($c); if($W -gt 100 -and $H -gt 50){ [AzpcStyle]::Round($c,8) }; return $c
+    $c=New-Object Windows.Forms.Panel; $c.SetBounds([int]($X*$script:layoutScale),[int]($Y*$script:layoutScale),[int]($W*$script:layoutScale),[int]($H*$script:layoutScale)); $c.BackColor=$Color; $Parent.Controls.Add($c); if($W -gt 100 -and $H -gt 50){ [AzpcStyle]::Round($c,8) }; return $c
 }
 function Label($Parent,[string]$Text,[int]$X,[int]$Y,[int]$W,[int]$H=28,[int]$Size=10,[bool]$Bold=$false) {
-    $c=New-Object Windows.Forms.Label; $c.Text=$Text; $c.SetBounds($X,$Y,$W,$H)
+    $c=New-Object Windows.Forms.Label; $c.Text=$Text; $c.SetBounds([int]($X*$script:layoutScale),[int]($Y*$script:layoutScale),[int]($W*$script:layoutScale),[int]($H*$script:layoutScale))
     $style=if($Bold){[Drawing.FontStyle]::Bold}else{[Drawing.FontStyle]::Regular}
-    $c.Font=New-Object Drawing.Font('Segoe UI',$Size,$style); $Parent.Controls.Add($c); return $c
+    $c.Font=New-Object Drawing.Font('Segoe UI',[single]($Size*$script:layoutScale),$style); $Parent.Controls.Add($c); return $c
 }
 function Button($Parent,[string]$Text,[int]$X,[int]$Y,[int]$W,[scriptblock]$Click,[bool]$Primary=$false) {
-    $c=New-Object Windows.Forms.Button; $c.Text=$Text; $c.SetBounds($X,$Y,$W,42)
+    $c=New-Object Windows.Forms.Button; $c.Text=$Text; $c.SetBounds([int]($X*$script:layoutScale),[int]($Y*$script:layoutScale),[int]($W*$script:layoutScale),[int](42*$script:layoutScale))
     $c.FlatStyle='Flat'; $c.FlatAppearance.BorderSize=0
     $c.BackColor=if($Primary){$blue}else{[Drawing.ColorTranslator]::FromHtml('#343940')}
     $c.ForeColor=[Drawing.Color]::WhiteSmoke; $c.Cursor=[Windows.Forms.Cursors]::Hand
     $c.Add_Click($Click); $Parent.Controls.Add($c); [AzpcStyle]::Round($c,6); return $c
 }
 function TextBox($Parent,[int]$X,[int]$Y,[int]$W) {
-    $c=New-Object Windows.Forms.TextBox; $c.SetBounds($X,$Y,$W,30)
+    $c=New-Object Windows.Forms.TextBox; $c.SetBounds([int]($X*$script:layoutScale),[int]($Y*$script:layoutScale),[int]($W*$script:layoutScale),[int](30*$script:layoutScale))
     $c.BackColor=[Drawing.ColorTranslator]::FromHtml('#343940'); $c.ForeColor=[Drawing.Color]::WhiteSmoke
     $c.BorderStyle='FixedSingle'; $Parent.Controls.Add($c); return $c
 }
 function Icon($Parent,[int]$Code,[int]$X,[int]$Y,[int]$Size=25) {
     $c=Label $Parent ([char]$Code) $X $Y 48 50 $Size
-    $c.Font=New-Object Drawing.Font('Segoe MDL2 Assets',$Size); $c.ForeColor=$muted; return $c
+    $c.Font=New-Object Drawing.Font('Segoe MDL2 Assets',[single]($Size*$script:layoutScale)); $c.ForeColor=$muted; return $c
 }
 $sidebar=Panel $form 0 0 215 730 ([Drawing.ColorTranslator]::FromHtml('#1c1e22'))
 $null=Panel $form 214 0 1 730 ([Drawing.ColorTranslator]::FromHtml('#353940'))
 # Neutral AZPC diamond/chart mark drawn as vector paths so it stays sharp at Windows DPI scales.
 $brand=Panel $sidebar 17 27 183 70 $sidebar.BackColor
 $brand.Add_Paint({param($sender,$e)
-    $g=$e.Graphics; $g.SmoothingMode='AntiAlias'
+    $g=$e.Graphics; $g.SmoothingMode='AntiAlias'; $g.ScaleTransform([single]$script:layoutScale,[single]$script:layoutScale)
     $pen=New-Object Drawing.Pen([Drawing.Color]::Silver,2)
     $pts=[Drawing.Point[]]@((New-Object Drawing.Point(29,4)),(New-Object Drawing.Point(55,31)),(New-Object Drawing.Point(29,58)),(New-Object Drawing.Point(3,31)))
     $g.DrawPolygon($pen,$pts)
@@ -91,7 +93,7 @@ $navSettings=Button $sidebar 'Settings' 12 221 191 { Show-Page 'Settings' }
 $null=Button $sidebar 'Open dashboard' 12 654 191 { Start-Process 'https://azpc.market' }
 $null=Label $sidebar 'Launcher 0.2.0' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
-$game=New-Object Windows.Forms.ComboBox; $game.SetBounds(859,40,184,30); $game.DropDownStyle='DropDownList'
+$game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
 $null=$game.Items.Add('Anniversary / TBC'); $game.SelectedIndex=0; $form.Controls.Add($game)
 $overview=Panel $form 250 111 793 461 $bg
@@ -268,14 +270,6 @@ $statusTimer.Add_Tick({ if (-not $script:job) { Refresh-Status } })
 $form.Add_FormClosing({ param($sender,$eventArgs)
     if ($script:job -and -not $script:job.HasExited) { $eventArgs.Cancel=$true; $message.Text='An operation is still running. Wait for it to finish before closing.' }
 })
-# Fit smaller screens without hiding the bottom controls; normal desktops retain the full layout.
-$area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$fit=[Math]::Min(1.0,[Math]::Min(($area.Width-20)/[double]$form.Width,($area.Height-20)/[double]$form.Height))
-if($fit -lt 1) {
-    $form.MinimumSize=[Drawing.Size]::Empty; $form.MaximumSize=[Drawing.Size]::Empty
-    $form.Scale((New-Object Drawing.SizeF([single]$fit,[single]$fit)))
-    $form.MinimumSize=$form.Size; $form.MaximumSize=$form.Size
-}
 $form.Add_Shown({ $dark=1; $null=[AzpcStyle]::DwmSetWindowAttribute($form.Handle,20,[ref]$dark,4) })
 Show-Page $PreviewPage
 $timer.Start(); $statusTimer.Start(); Refresh-Status
