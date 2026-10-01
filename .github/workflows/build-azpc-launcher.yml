@@ -1,0 +1,63 @@
+name: Build AZPC Launcher
+on:
+  workflow_dispatch:
+  push:
+    branches: [launcher/windows-v1]
+    paths:
+      - 'launcher/**'
+      - 'installer/payload/**'
+      - '.github/workflows/build-azpc-launcher.yml'
+  pull_request:
+    paths:
+      - 'launcher/**'
+      - 'installer/payload/**'
+      - '.github/workflows/build-azpc-launcher.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check syntax, updates, rollback, and history preservation
+        shell: powershell
+        run: ./launcher/tests/Run.Tests.ps1
+      - name: Build launcher and update bundle
+        shell: powershell
+        run: ./launcher/Build.ps1
+      - name: Smoke test launcher window
+        shell: powershell
+        run: |
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'azpc-ui-smoke'
+          New-Item -ItemType Directory $env:LOCALAPPDATA -Force | Out-Null
+          $script = (Resolve-Path './launcher/dist/launcher/AZPC-Launcher.ps1').Path
+          $stdout = Join-Path $env:RUNNER_TEMP 'launcher-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'launcher-stderr.txt'
+          $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"')) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { Get-Content $stdout,$stderr; throw 'Launcher exited during UI startup.' }
+          try {
+            Add-Type -AssemblyName System.Drawing,System.Windows.Forms
+            $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object Drawing.Bitmap($screen.Width,$screen.Height)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
+            $bitmap.Save((Join-Path (Resolve-Path './launcher/output') 'launcher-smoke.png'))
+            $graphics.Dispose(); $bitmap.Dispose()
+          } finally { Stop-Process -Id $p.Id -Force }
+          if ((Get-Item $stderr).Length -gt 0) { Get-Content $stderr; throw 'UI startup wrote errors.' }
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Build per-user installer
+        shell: powershell
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' './launcher/AZPC-Launcher-Setup.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+          Get-FileHash ./launcher/output/AZPC-Launcher-Setup.exe -Algorithm SHA256
+      - name: Upload test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: AZPC-Launcher-0.1.0-Windows-TEST
+          path: launcher/output/*
+          if-no-files-found: error
