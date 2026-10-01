@@ -5,5 +5,6 @@
   "channel": "alpha",
   "game": "tbc-anniversary",
   "notes": "Watcher-only update: collects AZPCForever Beta AH scans into a separate local queue. Forever website upload pending receiver support. Anniversary addon remains 0.4.29.",
-  "version": "0.4.76"
+  "version": "0.4.76",
+  "foreverAddonVersion": "0.1.0"
 }

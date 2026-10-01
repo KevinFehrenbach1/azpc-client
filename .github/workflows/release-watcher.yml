@@ -53,4 +53,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view watcher-v0.4.26 >/dev/null 2>&1; then exit 0; fi
           gh release create watcher-v0.4.26 release/* --target "$GITHUB_SHA" --latest --title "Watcher 0.4.26 + AZPC Forever 0.1.0" --notes-file addons/forever/README.md

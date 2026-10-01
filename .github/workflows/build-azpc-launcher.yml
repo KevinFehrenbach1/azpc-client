@@ -2,7 +2,7 @@ name: Build AZPC Launcher
 on:
   workflow_dispatch:
   push:
-    branches: [launcher/windows-v1]
+    branches: [main, launcher/forever-v0.2.3]
     paths:
       - 'launcher/**'
       - 'installer/payload/**'
@@ -43,10 +43,10 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'azpc-ui-smoke'
           New-Item -ItemType Directory $env:LOCALAPPDATA -Force | Out-Null
           $script = (Resolve-Path './launcher/dist/launcher/AZPC-Launcher.ps1').Path
-          foreach ($page in @('Overview','Updates','Settings')) {
+          foreach ($page in @('Overview','Updates','Settings','Forever')) {
             $stdout = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stdout.txt')
             $stderr = Join-Path $env:RUNNER_TEMP ('launcher-'+$page+'-stderr.txt')
-            $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-PreviewPage',$page) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'),'-PreviewPage',$(if($page -eq 'Forever'){'Updates'}else{$page}),'-PreviewGame',$(if($page -eq 'Forever'){'forever'}else{'tbc-anniversary'})) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             Start-Sleep -Seconds 8
             if ($p.HasExited) { Get-Content $stdout,$stderr; throw ('Launcher exited on '+$page) }
             try {
@@ -99,6 +99,24 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.2-Windows-TEST
+          name: AZPC-Launcher-0.2.3-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: AZPC-Launcher-0.2.3-Windows-TEST
+          path: release
+      - name: Publish launcher and both game packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create launcher-v0.2.3 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.3 - Forever addon management" --notes "Adds Forever Beta selection, addon installation and updates directly in the launcher. Installs AZPCForever 0.1.0 in _classic_beta_. Shared watcher 0.4.26 collects Forever scans locally; website upload is still pending receiver support. Existing TBC addon, credentials and SavedVariables are preserved. Install this launcher update once, then select Forever Beta and Install addon."

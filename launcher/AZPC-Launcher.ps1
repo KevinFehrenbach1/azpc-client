@@ -1,4 +1,4 @@
-param([ValidateSet('Overview','Updates','Settings')][string]$PreviewPage='Overview')
+param([ValidateSet('Overview','Updates','Settings')][string]$PreviewPage='Overview', [ValidateSet('tbc-anniversary','forever')][string]$PreviewGame='tbc-anniversary')
 # Windows PowerShell 5.1; installs run in a separate worker process.
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
@@ -24,7 +24,7 @@ public static class AzpcStyle {
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Launcher.Core.ps1')
 $script:remote=$null; $script:job=$null; $script:resultPath=''; $script:requestPath=''
-$script:launcherVersion='0.2.2'
+$script:launcherVersion='0.2.3'
 $script:uiRoot=Join-Path $script:ClientRoot 'Launcher'
 $jobs=Join-Path $script:uiRoot 'jobs'
 New-Item -ItemType Directory -Path $jobs -Force | Out-Null
@@ -87,11 +87,11 @@ $navOverview=Button $sidebar 'Overview' 12 115 191 { Show-Page 'Overview' }
 $navUpdates=Button $sidebar 'Updates' 12 168 191 { Show-Page 'Updates' }
 $navSettings=Button $sidebar 'Settings' 12 221 191 { Show-Page 'Settings' }
 $null=Button $sidebar 'Open dashboard' 12 654 191 { Start-Process 'https://azpc.market' }
-$null=Label $sidebar 'Launcher 0.2.2' 25 704 175 20 8
+$null=Label $sidebar 'Launcher 0.2.3' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
 $game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
-$null=$game.Items.Add('Anniversary / TBC'); $game.SelectedIndex=0; $form.Controls.Add($game)
+$null=$game.Items.Add('Anniversary / TBC'); $null=$game.Items.Add('Forever Beta'); $game.SelectedIndex=0; $form.Controls.Add($game)
 $overview=Panel $form 250 111 793 461 $bg
 $updates=Panel $form 250 111 793 461 $bg
 $settingsPage=Panel $form 250 111 793 461 $bg
@@ -123,7 +123,7 @@ $updateCard=Panel $updates 0 90 793 256 $card
 $null=Label $updateCard 'COMPONENT' 23 18 180 24 9
 $null=Label $updateCard 'INSTALLED' 236 18 150 24 9
 $null=Label $updateCard 'AVAILABLE' 418 18 160 24 9
-$null=Label $updateCard 'AZPC addon' 23 66 180 30 13 $true
+$addonNameLabel=Label $updateCard 'AZPC addon' 23 66 180 30 13 $true
 $addonInstalled=Label $updateCard '-' 236 68 150
 $addonAvailable=Label $updateCard '-' 418 68 180
 $addonButton=Button $updateCard 'Install / Update' 612 59 158 { Begin-Action 'addon' }
@@ -136,11 +136,11 @@ $startButton=Button $updateCard 'Start watcher' 418 200 165 { Begin-Action 'star
 $stopButton=Button $updateCard 'Stop watcher' 605 200 165 { Begin-Action 'stop' }
 $versionNote=Label $updates 'Available versions are bundled until you check online.' 0 368 785 55 11; $versionNote.ForeColor=$muted
 $null=Label $settingsPage 'Game folder' 0 0 790 35 18 $true
-$null=Label $settingsPage 'Select the main World of Warcraft folder containing _anniversary_.' 0 39 790 28 11
+$folderHint=Label $settingsPage 'Select the main World of Warcraft folder containing _anniversary_.' 0 39 790 28 11
 $rootBox=TextBox $settingsPage 0 77 599
 $browse=Button $settingsPage 'Browse' 621 72 172 {
     $picker=New-Object Windows.Forms.FolderBrowserDialog
-    $picker.Description='Select the main World of Warcraft folder containing _anniversary_.'
+    $picker.Description=$folderHint.Text
     if($picker.ShowDialog() -eq 'OK'){ $rootBox.Text=$picker.SelectedPath; Save-Settings; Refresh-Status }
     $picker.Dispose()
 }
@@ -172,18 +172,22 @@ function Show-Page([string]$Page) {
 }
 $script:mutating=@($browse,$game,$rootBox,$codeBox,$addonButton,$watcherButton,$startButton,$stopButton,$checkButton,$allButton,$quickInstall)
 function Save-Settings {
-    @{ wowRoot=$rootBox.Text } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:uiRoot 'settings.json') -Encoding UTF8
+    @{ wowRoot=$rootBox.Text; game=(Get-SelectedGame) } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:uiRoot 'settings.json') -Encoding UTF8
 }
 function Set-Busy([bool]$Busy) {
     foreach ($control in $script:mutating) { $control.Enabled=-not $Busy }
     $form.UseWaitCursor=$Busy
 }
+function Get-SelectedGame { if($game.SelectedIndex -eq 1){return 'forever'};return 'tbc-anniversary' }
 function Refresh-Status {
     try {
-        $state=Get-InstalledStatus $rootBox.Text
+        $selected=Get-SelectedGame
+        $state=Get-InstalledStatus $rootBox.Text $selected
+        $addonNameLabel.Text=if($selected -eq 'forever'){'AZPC Forever addon'}else{'AZPC addon'}
+        $folderHint.Text=if($selected -eq 'forever'){'Select the main WoW folder containing _classic_beta_.'}else{'Select the main WoW folder containing _anniversary_.'}
         $addonInstalled.Text=$state.Addon; $watcherInstalled.Text=$state.Watcher
         $connection.Text=if($state.Connected){'Account connected'}else{'Connect your account'}
-        $accountDetail.Text=if($state.Connected){'Your saved account connection is ready.'}else{'Link the watcher to upload your saved game activity.'}
+        $accountDetail.Text=if($selected -eq 'forever'){'Forever AH scans are saved locally. Website upload is not connected yet.'}elseif($state.Connected){'Your saved account connection is ready.'}else{'Link the watcher to upload your saved game activity.'}
         $account.Text=if($state.Connected){'Manage account'}else{'Connect account'}
         $watcherStatus.Text=if($state.Running){'Running'}else{'Stopped'}
         $watcherStatus.ForeColor=if($state.Running){$green}else{$muted}
@@ -191,16 +195,17 @@ function Refresh-Status {
         $bundled=Read-JsonFile (Join-Path $script:AppRoot 'installer\payload\VERSION.json')
         $available=if($script:remote){$script:remote}else{$bundled}
         $suffix=if($script:remote){' (online)'}else{' (bundled)'}
-        $addonAvailable.Text=[string]$available.addonVersion+$suffix
+        $addonVersion=if($selected -eq 'forever' -and -not $script:remote){$bundled.foreverAddonVersion}else{$available.addonVersion}
+        $addonAvailable.Text=[string]$addonVersion+$suffix
         $watcherAvailable.Text=[string]$available.watcherVersion+$suffix
-        $addonDetail.Text='Installed: '+$state.Addon+'  |  Available: '+$available.addonVersion
+        $addonDetail.Text='Installed: '+$state.Addon+'  |  Available: '+$addonVersion
         $watcherDetail.Text='Installed: '+$state.Watcher+'  |  Available: '+$available.watcherVersion
-        $addonBadge.Text=if($state.Addon -eq 'Not installed'){'Not installed'}elseif(-not $script:remote){'Installed'}elseif([version]$state.Addon -lt [version]$available.addonVersion){'Update available'}else{'Up to date'}
+        $addonBadge.Text=if($state.Addon -eq 'Not installed'){'Not installed'}elseif(-not $script:remote){'Installed'}elseif([version]$state.Addon -lt [version]$addonVersion){'Update available'}else{'Up to date'}
         $addonBadge.ForeColor=if($addonBadge.Text -in @('Installed','Up to date')){$green}else{$muted}
         $addonButton.Text=if($state.Addon -eq 'Not installed'){'Install addon'}elseif($script:remote -and $addonBadge.Text -eq 'Update available'){'Update addon'}else{'Reinstall addon'}
         $watcherButton.Text=if($state.Watcher -eq 'Not installed'){'Install watcher'}elseif($script:remote -and $state.Watcher -match '^\d+\.' -and [version]$state.Watcher -lt [version]$available.watcherVersion){'Update watcher'}else{'Reinstall watcher'}
         $found=$false
-        try { $null=Assert-WowRoot $rootBox.Text; $found=$true } catch {}
+        try { $null=Assert-WowRoot $rootBox.Text $selected; $found=$true } catch {}
         $folderLabel.Text=if($found){'Game folder detected'}else{'Choose your game folder'}
         $folderDetail.Text=if($found){$rootBox.Text}else{'Select the main World of Warcraft folder in Settings.'}
         $folderDetail.AutoEllipsis=$true
@@ -212,10 +217,9 @@ function Refresh-Status {
 }
 function Begin-Action([string]$Action) {
     if ($script:job) { return }
-    if ($game.SelectedIndex -ne 0) { $message.Text='Forever requires its own addon and watcher configuration. Choose Anniversary for this build.'; return }
     try {
         Save-Settings
-        $request=@{ action=$Action; wowRoot=$rootBox.Text; setupCode=$codeBox.Text; manifest=$script:remote }
+        $request=@{ game=(Get-SelectedGame); action=$Action; wowRoot=$rootBox.Text; setupCode=$codeBox.Text; manifest=$script:remote }
         $script:requestPath=Join-Path $jobs ([guid]::NewGuid().ToString('N')+'.json')
         $script:resultPath=$script:requestPath+'.result.json'
         $request | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $script:requestPath -Encoding UTF8
@@ -234,13 +238,15 @@ function Begin-Action([string]$Action) {
 }
 try {
     $settings=Read-JsonFile (Join-Path $script:uiRoot 'settings.json')
-    if ($settings) { $rootBox.Text=$settings.wowRoot }
+    if ($settings) { $rootBox.Text=$settings.wowRoot; if($settings.PSObject.Properties['game'] -and $settings.game -eq 'forever'){$game.SelectedIndex=1} }
     if (-not $rootBox.Text) {
         $old=Read-JsonFile (Join-Path $script:ClientRoot 'install-result.json')
         if ($old) { $rootBox.Text=$old.wowRoot }
         else { $found=Find-WowRoot ''; if ($found) { $rootBox.Text=$found } }
     }
 } catch { $message.Text='Choose your WoW folder to get started.' }
+if($PreviewGame -eq 'forever'){$game.SelectedIndex=1}
+$game.Add_SelectedIndexChanged({ $script:remote=$null; Save-Settings; Refresh-Status; $message.Text=if((Get-SelectedGame) -eq 'forever'){'Forever Beta selected. Install the addon here; AH scans are currently saved locally, not uploaded.'}else{'Anniversary / TBC selected.'} })
 $timer=New-Object Windows.Forms.Timer; $timer.Interval=1000
 $timer.Add_Tick({
     if ($script:job -and $script:job.HasExited) {

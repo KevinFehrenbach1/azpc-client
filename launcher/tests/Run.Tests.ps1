@@ -61,7 +61,7 @@ public static class AzpcRestrictedToken {
     Must-Throw { Assert-Version 'latest' } 'invalid version'
     $manifest=@{schema=1;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.26';launcherVersion='0.1.0';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-components.zip';bundleSha256=('a'*64)}
     Test-Manifest $manifest
-    $bad=$manifest.Clone(); $bad.game='forever'
+    $bad=$manifest.Clone(); $bad.game='retail'
     Must-Throw { Test-Manifest $bad } 'Unsupported'
     $bad=$manifest.Clone(); $bad.bundleSha256=''
     Must-Throw { Test-Manifest $bad } 'checksum'
@@ -120,7 +120,11 @@ public static class AzpcRestrictedToken {
     $manifest.bundleSha256=(Get-FileHash $script:testZip).Hash
     Must-Throw { Get-UpdatePayload $manifest $work } 'unsafe file'
     $script:testZip=Join-Path $testRoot 'valid.zip'
-    Compress-Archive -Path (Join-Path $payload 'addon'),(Join-Path $payload 'watcher'),(Join-Path $payload 'VERSION.json') -DestinationPath $script:testZip
+    $tbcPackage=Join-Path $testRoot 'tbc-package'
+    New-Item -ItemType Directory (Join-Path $tbcPackage 'addon') -Force | Out-Null
+    Copy-Item (Join-Path $payload 'addon/AZPC') (Join-Path $tbcPackage 'addon') -Recurse
+    Copy-Item (Join-Path $payload 'watcher'),(Join-Path $payload 'VERSION.json') $tbcPackage -Recurse
+    Compress-Archive -Path (Join-Path $tbcPackage '*') -DestinationPath $script:testZip
     $manifest.bundleSha256=(Get-FileHash $script:testZip).Hash
     $validWork=Join-Path $testRoot 'valid-download'; New-Item -ItemType Directory $validWork | Out-Null
     $extracted=Get-UpdatePayload $manifest $validWork
@@ -157,4 +161,30 @@ public static class AzpcRestrictedToken {
     $releaseManifest=Get-RemoteManifest
     Assert ($releaseManifest.schema -eq 2 -and $releaseManifest.addonVersion -eq '0.4.29' -and $releaseManifest.sourceCommit -eq ('b'*40)) 'Existing release resolved to pinned source versions'
     Write-Host 'All launcher checks passed.'
+    # Forever installs only into beta; both games' SavedVariables and addons survive.
+    $beta=Join-Path $wow '_classic_beta_'
+    New-Item -ItemType Directory -Path (Join-Path $beta 'WTF/Account/Test/SavedVariables') -Force | Out-Null
+    $foreverSaved=Join-Path $beta 'WTF/Account/Test/SavedVariables/AZPCForever.lua'
+    Set-Content $foreverSaved 'forever-history-sentinel'
+    $beforeTbc=(Get-FileHash (Join-Path $wow '_anniversary_/Interface/AddOns/AZPC/AZPC.lua')).Hash
+    $null=Assert-WowRoot $wow 'forever'
+    Install-Addon $payload $wow 'forever'
+    Assert (Test-Path (Join-Path $beta 'Interface/AddOns/AZPCForever/AZPCForever.toc')) 'Forever addon installs in beta'
+    Assert ((Get-Content $foreverSaved -Raw).Trim() -eq 'forever-history-sentinel') 'Forever SavedVariables preserved'
+    Assert ((Get-FileHash (Join-Path $wow '_anniversary_/Interface/AddOns/AZPC/AZPC.lua')).Hash -eq $beforeTbc) 'Forever install leaves TBC addon unchanged'
+    Assert ((Get-InstalledStatus $wow 'forever').Addon -eq '0.1.0') 'Forever version detection'
+    $foreverPackage=Join-Path $testRoot 'forever-package'
+    New-Item -ItemType Directory (Join-Path $foreverPackage 'addon') -Force | Out-Null
+    Copy-Item (Join-Path $payload 'addon/AZPCForever') (Join-Path $foreverPackage 'addon') -Recurse
+    Copy-Item (Join-Path $payload 'watcher') $foreverPackage -Recurse
+    @{game='forever';addonVersion='0.1.0';watcherVersion='0.4.26'} | ConvertTo-Json | Set-Content (Join-Path $foreverPackage 'VERSION.json')
+    $script:testZip=Join-Path $testRoot 'forever.zip'
+    Compress-Archive -Path (Join-Path $foreverPackage '*') -DestinationPath $script:testZip
+    $foreverManifest=@{schema=1;game='forever';addonVersion='0.1.0';watcherVersion='0.4.26';launcherVersion='0.2.3';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-forever-components.zip';bundleSha256=(Get-FileHash $script:testZip).Hash}
+    $foreverWork=Join-Path $testRoot 'forever-download';New-Item -ItemType Directory $foreverWork | Out-Null
+    function Invoke-WebRequest { param([switch]$UseBasicParsing,$Uri,$OutFile,$TimeoutSec,$Headers) Copy-Item $script:testZip $OutFile }
+    $foreverPayload=Get-UpdatePayload $foreverManifest $foreverWork
+    Assert (Test-Path (Join-Path $foreverPayload 'addon/AZPCForever/AZPCForever.lua')) 'Verified Forever release download'
+    $result=Invoke-LauncherAction @{game='forever';action='addon';wowRoot=$wow;setupCode='';manifest=$null}
+    Assert $result.ok 'Forever bundled installation through launcher action'
 } finally { $env:LOCALAPPDATA=$oldLocal; Remove-Item -LiteralPath $testRoot -Recurse -Force }
