@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$WowRoot = "",
     [string]$SetupCode = "",
     [string]$DataDir = "",
@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.27"
+        version = "0.4.28"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.27"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.28"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -914,6 +914,50 @@ function Convert-ForeverExport([string]$Export) {
     }
     return @{game='forever';schema=1;realm=$realm;faction=$header[3];region=$region;scope='loaded_browse_results';observations=$rows;timestamp=$timestamp}
 }
+function Convert-ForeverTrade([string]$Export) {
+    $f=$Export.Split('|')
+    if($f.Count -ne 13 -or $f[0] -ne 'AZPCFTRADE' -or $f[1] -ne '1' -or $f[3] -notin @('buy','sell') -or $f[10] -notin @('horde','alliance')){throw 'Invalid Forever trade header.'}
+    $id=0L;$qty=0L;$copper=0L;$stamp=0L;$region=0
+    if(-not [long]::TryParse($f[4],[ref]$id) -or $id -le 0 -or $id -gt 10000000 -or -not [long]::TryParse($f[6],[ref]$qty) -or $qty -le 0 -or $qty -gt 1000000 -or -not [long]::TryParse($f[7],[ref]$copper) -or $copper -lt 0 -or $copper -gt 1000000000000 -or -not [long]::TryParse($f[8],[ref]$stamp) -or $stamp -lt 946684800 -or $stamp -gt 4102444800 -or -not [int]::TryParse($f[11],[ref]$region) -or $region -notin @(1,2,3,4,5,90)){throw 'Invalid Forever trade values.'}
+    $name=[uri]::UnescapeDataString($f[5]);$realm=[uri]::UnescapeDataString($f[9]);$character=[uri]::UnescapeDataString($f[12])
+    if(-not $name -or $name.Length -gt 200 -or -not $realm -or $realm.Length -gt 100 -or -not $character -or $character.Length -gt 150 -or -not $f[2]){throw 'Invalid Forever trade identity.'}
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try{$key=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes([uri]::UnescapeDataString($f[2]))))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+    return @{eventId=('mail:'+ $key);kind=$f[3];itemId=$id;name=$name;quantity=$qty;copper=$copper;observedAt=($stamp*1000);realm=$realm;faction=$f[10];region=$region;character=$character}
+}
+function Collect-ForeverTrades([string]$Text) {
+    $directory=Join-Path $StateDir 'Forever\trades'
+    foreach($match in [regex]::Matches($Text,'\["tradeExport"\]\s*=\s*"(AZPCFTRADE\|[^"\r\n]+)"')){
+        try{
+            $event=Convert-ForeverTrade $match.Groups[1].Value
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            $target=Join-Path $directory ($event.eventId.Substring(5)+'.json')
+            if(-not (Test-Path -LiteralPath $target)){
+                $event | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath ($target+'.tmp') -Encoding UTF8
+                Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
+                Write-Log ('FOREVER TRADE QUEUED: '+$event.kind+' | '+$event.name+' x'+$event.quantity)
+            }
+        }catch{Write-Log ('FOREVER TRADE REJECTED: '+$_.Exception.Message)}
+    }
+}
+$script:ForeverUploadAttempt=[datetime]::MinValue
+function Send-ForeverTrades([string]$ClientId,[string]$Token) {
+    if(((Get-Date)-$script:ForeverUploadAttempt).TotalSeconds -lt 30){return}
+    $script:ForeverUploadAttempt=Get-Date
+    $directory=Join-Path $StateDir 'Forever\trades'
+    if(-not (Test-Path -LiteralPath $directory)){return}
+    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} | Select-Object -First 100)
+    if(-not $files.Count){return}
+    try{
+        $events=@($files | ForEach-Object {Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json})
+        $body=@{game='forever';schema=1;events=$events} | ConvertTo-Json -Depth 8 -Compress
+        $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 20
+        if(-not $result.ok -or $result.accepted -ne $events.Count){throw 'Receiver did not acknowledge this trade batch.'}
+        foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
+        Write-Log ('FOREVER TRADES UPLOADED: '+$events.Count+' confirmed mailbox records.')
+    }catch{Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
+}
+
 $script:ForeverReadVersions=@{}
 function Collect-ForeverScans([string]$Root) {
     foreach($path in @(Find-ForeverSavedVariables $Root)) {
@@ -923,6 +967,7 @@ function Collect-ForeverScans([string]$Root) {
             if($script:ForeverReadVersions[$path] -eq $writeVersion){continue}
             if($info.Length -gt 10485760){ throw 'Forever SavedVariables exceeds 10 MB.' }
             $text=Get-Content -LiteralPath $path -Raw -Encoding UTF8
+            Collect-ForeverTrades $text
             foreach($match in [regex]::Matches($text,'\["export"\]\s*=\s*"(AZPCFOREVER\|[^"\r\n]+)"')) {
                 $export=$match.Groups[1].Value
                 try { $scan=Convert-ForeverExport $export } catch { Write-Log ('FOREVER SCAN REJECTED: '+$_.Exception.Message+' Waiting for new saved data.'); continue }
@@ -945,7 +990,7 @@ function Collect-ForeverScans([string]$Root) {
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.27 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.28 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -975,6 +1020,7 @@ while ($true) {
             if (Send-AzpcHeartbeat $privateClientId $watcherToken) { $lastServerHeartbeat = Get-Date }
         }
         Collect-ForeverScans $WowRoot
+        Send-ForeverTrades $privateClientId $watcherToken
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."
             try { $azpcFile = Find-AzpcSavedVariables $WowRoot } catch { $azpcFile=$null }

@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.1.0"
+local addon, VERSION = ..., "0.1.1"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -16,6 +16,7 @@ local function setup()
     AZPCForeverDB.version = VERSION
     AZPCForeverDB.game = "forever"
     AZPCForeverDB.snapshots = AZPCForeverDB.snapshots or {}
+    AZPCForeverDB.itemIds = AZPCForeverDB.itemIds or {}
 end
 local function capture()
     setup()
@@ -24,6 +25,7 @@ local function capture()
     local function add(id, name, price, qty, count)
         id, price, qty, count = number(id), number(price), number(qty), number(count)
         if not id or id == 0 or not price or price == 0 then return end
+        if name then AZPCForeverDB.itemIds[name] = id end
         local old = rows[id]
         if old then
             old.price = math.min(old.price, price)
@@ -95,3 +97,64 @@ SlashCmdList.AZPCFOREVER=function(command)
     if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
     else setup(); message("v"..VERSION.." | "..#AZPCForeverDB.snapshots.." saved captures. /azpcf capture captures loaded results; /reload writes them to disk.") end
 end
+
+-- Confirmed mailbox invoice ledger. No purchase intent or price scan is a trade.
+local tradeFrame = CreateFrame("Frame")
+local function captureTrades()
+    setup()
+    AZPCForeverDB.trades = AZPCForeverDB.trades or {}
+    AZPCForeverDB.tradeSeen = AZPCForeverDB.tradeSeen or {}
+    if type(GetInboxNumItems) ~= "function" or type(GetInboxInvoiceInfo) ~= "function" or type(GetInboxHeaderInfo) ~= "function" then return end
+    local timestamp = GetServerTime and GetServerTime() or time()
+    local realm = GetRealmName() or ""
+    local faction = (UnitFactionGroup("player") or ""):lower()
+    local region = GetCurrentRegion and GetCurrentRegion() or 0
+    local character = (UnitName and UnitName("player")) or ""
+    local guid = (UnitGUID and UnitGUID("player")) or character
+    if realm == "" or character == "" or (faction ~= "horde" and faction ~= "alliance") then return end
+    local occurrences = {}
+    local count = GetInboxNumItems() or 0
+    for index=1,count do
+        local invoice, itemName, otherPlayer, bid, buyout, deposit, fee, delay, hour, minute, invoiceCount = GetInboxInvoiceInfo(index)
+        if invoice == "buyer" or invoice == "seller" then
+            local _, _, sender, subject, money, cod, daysLeft = GetInboxHeaderInfo(index)
+            local id, quantity, name
+            if invoice == "buyer" and type(GetInboxItem) == "function" then name,id,_,quantity = GetInboxItem(index,1) end
+            name = name or itemName
+            if not id and C_Item and C_Item.GetItemInfo then
+                local _, link = C_Item.GetItemInfo(name)
+                if type(link) == "string" then id=tonumber(link:match("item:(%d+)")) end
+            elseif not id and type(GetItemInfo) == "function" then
+                local _, link = GetItemInfo(name)
+                if type(link) == "string" then id=tonumber(link:match("item:(%d+)")) end
+            end
+            id=id or (AZPCForeverDB.itemIds and AZPCForeverDB.itemIds[name])
+            quantity = number(quantity) or number(invoiceCount)
+            local copper = invoice == "buyer" and (number(buyout) or number(bid)) or number(money)
+            if invoice == "buyer" and copper == 0 then copper = number(bid) end
+            -- Missing item ID/count or delayed seller proceeds stay unresolved; never assume one item.
+            if number(id) and id>0 and quantity and quantity>0 and copper and copper>0 and name and not (number(delay) and delay>0) then
+                local expiry=0
+                if type(daysLeft)=="number" and daysLeft>0 then expiry=math.floor((timestamp+daysLeft*86400+30)/60) end
+                if expiry>0 then
+                    local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject)},":")
+                    occurrences[fingerprint]=(occurrences[fingerprint] or 0)+1
+                    fingerprint=fingerprint..":"..occurrences[fingerprint]
+                    if not AZPCForeverDB.tradeSeen[fingerprint] then
+                        if #AZPCForeverDB.trades < 10000 then
+                            local kind=invoice=="buyer" and "buy" or "sell"
+                            local fields={"AZPCFTRADE","1",encode(fingerprint),kind,id,encode(name),quantity,copper,timestamp,encode(realm),faction,region,encode(character)}
+                            AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")}
+                            AZPCForeverDB.tradeSeen[fingerprint]=true
+                            message("Recorded mailbox "..kind..": "..name.." x"..quantity..". /reload saves it for My Trades.")
+                        else message("Trade ledger is full. Existing records are preserved; contact AZPC before clearing it.") end
+                    end
+                end
+            end
+        end
+    end
+end
+for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
+tradeFrame:SetScript("OnEvent",function()
+    C_Timer.After(0.5,function() local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err)) end end)
+end)

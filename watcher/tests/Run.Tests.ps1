@@ -39,4 +39,19 @@ try {
     Collect-ForeverScans $wow
     Assert ((Get-Item $LogFile).Length -eq $logBefore) 'Unchanged rejected data does not spam the log'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.json').Count -eq 2) 'Invalid snapshot does not block valid beta snapshot'
+    $trade='AZPCFTRADE|1|unique-mail-id|buy|2447|Peacebloom|3|100|1790830800|Classic%20Beta%20PvP%202|horde|90|Tester'
+    $event=Convert-ForeverTrade $trade
+    Assert ($event.quantity -eq 3 -and $event.copper -eq 100 -and $event.region -eq 90) 'Trade preserves total copper, stack quantity and beta region'
+    Collect-ForeverTrades ('{ ["tradeExport"]="'+$trade+'" }')
+    Collect-ForeverTrades ('{ ["tradeExport"]="'+$trade+'" }')
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.json').Count -eq 1) 'Mailbox trade is queued exactly once'
+    function Invoke-RestMethod {param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
+        Assert ($Uri -eq 'https://forever.azpc.market/api/trades/upload') 'Private Forever records go only to Forever receiver'
+        Assert ($Headers['x-azpc-watcher-token'] -eq 'test-token') 'Upload uses existing authenticated watcher credential'
+        $sent=[Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
+        Assert ($sent.game -eq 'forever' -and $sent.events[0].quantity -eq 3) 'Receiver gets versioned private event batch'
+        return @{ok=$true;accepted=1}
+    }
+    Send-ForeverTrades 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.sent').Count -eq 1) 'Only acknowledged upload is marked sent'
 } finally { Remove-Item $root -Recurse -Force }

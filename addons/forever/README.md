@@ -1,11 +1,13 @@
-# AZPC Forever 0.1.0 / Watcher 0.4.27
+# AZPC Forever 0.1.1 / Watcher 0.4.28
 
-Install the `AZPCForever` folder in `_classic_beta_/Interface/AddOns`, then restart WoW and enable AZPC Forever. Browse/search the Auction House. `/azpcf capture` captures currently loaded results; `/reload` or logout writes SavedVariables for the watcher. This is browse coverage, not a complete AH scan. No automated bidding, buying, selling, or auction queries.
+Use Launcher 0.2.3, choose Forever Beta, Check for updates, then Install / Update All with WoW closed. This updates both the Forever addon and shared watcher. TBC addon and existing credentials/history are preserved.
 
-In Launcher 0.2.2: Check for updates, then Update watcher. The Anniversary addon stays 0.4.29. Existing account credentials and private transaction history are preserved.
+Open the Auction House to collect loaded market prices. `/azpcf capture` captures loaded browse results. These market observations remain local; they are not purchases or sales.
 
-Watcher searches `_classic_beta_/WTF/Account/*/SavedVariables/AZPCForever.lua` under its configured WoW root and standard C/D/E WoW paths, across accounts. If beta is installed in another location, supply that parent WoW directory as `-WowRoot`. Forever observations are deduplicated and queued under `<watcher DataDir>/Forever/scans`. Logs say `FOREVER COLLECTED`.
+Open your mailbox before collecting Auction House mail, then `/reload` or log out. The addon records confirmed buyer/seller invoices with known item IDs, stack quantities and total purchase cost or net seller proceeds. Missing invoice quantities, delayed proceeds or unresolved item IDs are not guessed. It captures observed mailbox records, not click intents, and does not retrospectively reconstruct removed mail. Existing old mail is recorded when first observed; the website labels the time as Recorded.
 
-**Forever upload is not implemented:** the current Anniversary receiver cannot accept Forever realms. This build keeps Forever observations local, identified by game, realm, faction, region and capture timestamp. It does not send them to the Anniversary API. Unknown auction counts are zero. Different item variants collapse to the lowest item-ID price. Real beta API behavior still needs in-game validation.
+Watcher uploads confirmed trade records to `https://forever.azpc.market/api/trades/upload` using its existing AZPC account credential. A durable local queue under `Forever/trades` retries unacknowledged uploads. Receiver deduplicates records per account. Market observations still stay under `Forever/scans` and are not uploaded to TBC.
 
-Watcher 0.4.27 accepts region 90 reported by the Forever Beta and preserves that identifier. It reads changed SavedVariables once, logs each invalid snapshot once per file change, and continues collecting valid snapshots after an invalid one.
+Open `https://forever.azpc.market/my-trades`, connect your existing AZPC account, and continue to Forever. Trading data is account private and stored separately from TBC. The page includes copper-exact FIFO realized profit/loss, net sale proceeds, open basis/positions, graph ranges, and a filtered/paginated timeline. Unknown purchase basis is shown explicitly and excluded from realized profit. Manual entries allow older purchases/sales and zero-cost farmed/other acquisitions; do not manually add events already captured automatically.
+
+Real beta mailbox API support must be validated in-game after rollout. Region 90 remains separate from live regions. Characters/realms/factions stay separate. Untracked cross-character transfers are not inferred as purchases or sales. The existing launcher background start issue remains separate; use the working visible PowerShell start until repaired.
