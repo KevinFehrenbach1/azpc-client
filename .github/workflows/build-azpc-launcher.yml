@@ -22,6 +22,9 @@ jobs:
       - name: Check syntax, updates, rollback, and history preservation
         shell: powershell
         run: ./launcher/tests/Run.Tests.ps1
+      - name: Check Forever scan queue and upload retries
+        shell: powershell
+        run: ./watcher/tests/Run.Tests.ps1
       - name: Build launcher and update bundle
         shell: powershell
         run: ./launcher/Build.ps1
@@ -99,7 +102,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.4-Windows-TEST
+          name: AZPC-Launcher-0.2.5-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -113,11 +116,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.4-Windows-TEST
+          name: AZPC-Launcher-0.2.5-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.4 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.4 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.4 - Reliable watcher controls" --notes "Fixes watcher Start/Stop controls. Task Scheduler now owns the PowerShell watcher directly. Startup requires a matching live process and fresh heartbeat; Stop verifies exit. Handles concurrent heartbeat reads and publishes complete operation results. Includes Forever addon 0.1.1 and shared watcher 0.4.28. Existing credentials and SavedVariables are preserved. Forever market scans remain local pending receiver support."
+          if gh release view launcher-v0.2.5 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.5 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.5 - Forever scan uploads" --notes "Shared watcher 0.4.29 uploads queued Forever addon market scans to the authenticated receiver. Captures keep exact beta realm, faction, region and loaded-result scope. Failed uploads remain local for retry; acknowledged scans deduplicate. Includes reliable watcher Start/Stop controls and Forever addon 0.1.1. Install this launcher update, then update the watcher. Existing credentials and SavedVariables are preserved."

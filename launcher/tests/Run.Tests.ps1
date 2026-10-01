@@ -59,7 +59,7 @@ public static class AzpcRestrictedToken {
     Must-Throw { Assert-ReleaseUrl 'https://evil.example/update.zip' } 'AZPC GitHub release'
     Must-Throw { Assert-ReleaseUrl 'https://github.com/other/repo/releases/download/v1/bundle.zip' } 'AZPC GitHub release'
     Must-Throw { Assert-Version 'latest' } 'invalid version'
-    $manifest=@{schema=1;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.28';launcherVersion='0.1.1';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-components.zip';bundleSha256=('a'*64)}
+    $manifest=@{schema=1;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.29';launcherVersion='0.1.1';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-components.zip';bundleSha256=('a'*64)}
     Test-Manifest $manifest
     $bad=$manifest.Clone(); $bad.game='retail'
     Must-Throw { Test-Manifest $bad } 'Unsupported'
@@ -169,7 +169,7 @@ public static class AzpcRestrictedToken {
     Must-Throw { Get-UpdatePayload $manifest $work } 'checksum mismatch'
     Assert (-not (Test-Path (Join-Path $testRoot 'escaped.ps1'))) 'Archive path traversal did not write files'
     # Tagged-source compatibility uses an immutable commit and verifies every downloaded component.
-    $sourceManifest=@{schema=2;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.28';launcherVersion='0.2.0';sourceCommit=('a'*40);files=@()}
+    $sourceManifest=@{schema=2;game='tbc-anniversary';addonVersion='0.4.29';watcherVersion='0.4.29';launcherVersion='0.2.0';sourceCommit=('a'*40);files=@()}
     foreach($path in @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')) {
         $sourceManifest.files+=@{path=$path;sha256=(Get-FileHash (Join-Path $payload $path) -Algorithm SHA256).Hash}
     }
@@ -213,10 +213,10 @@ public static class AzpcRestrictedToken {
     New-Item -ItemType Directory (Join-Path $foreverPackage 'addon') -Force | Out-Null
     Copy-Item (Join-Path $payload 'addon/AZPCForever') (Join-Path $foreverPackage 'addon') -Recurse
     Copy-Item (Join-Path $payload 'watcher') $foreverPackage -Recurse
-    @{game='forever';addonVersion='0.1.1';watcherVersion='0.4.28'} | ConvertTo-Json | Set-Content (Join-Path $foreverPackage 'VERSION.json')
+    @{game='forever';addonVersion='0.1.1';watcherVersion='0.4.29'} | ConvertTo-Json | Set-Content (Join-Path $foreverPackage 'VERSION.json')
     $script:testZip=Join-Path $testRoot 'forever.zip'
     Compress-Archive -Path (Join-Path $foreverPackage '*') -DestinationPath $script:testZip
-    $foreverManifest=@{schema=1;game='forever';addonVersion='0.1.1';watcherVersion='0.4.28';launcherVersion='0.2.3';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-forever-components.zip';bundleSha256=(Get-FileHash $script:testZip).Hash}
+    $foreverManifest=@{schema=1;game='forever';addonVersion='0.1.1';watcherVersion='0.4.29';launcherVersion='0.2.3';bundleUrl='https://github.com/KevinFehrenbach1/azpc-client/releases/download/test/azpc-forever-components.zip';bundleSha256=(Get-FileHash $script:testZip).Hash}
     $foreverWork=Join-Path $testRoot 'forever-download';New-Item -ItemType Directory $foreverWork | Out-Null
     function Invoke-WebRequest { param([switch]$UseBasicParsing,$Uri,$OutFile,$TimeoutSec,$Headers) Copy-Item $script:testZip $OutFile }
     $foreverPayload=Get-UpdatePayload $foreverManifest $foreverWork
@@ -224,4 +224,5 @@ public static class AzpcRestrictedToken {
     $result=Invoke-LauncherAction @{game='forever';action='addon';wowRoot=$wow;setupCode='';manifest=$null}
     Assert $result.ok 'Forever bundled installation through launcher action'
 } finally { $env:LOCALAPPDATA=$oldLocal; Remove-Item -LiteralPath $testRoot -Recurse -Force }
+
 

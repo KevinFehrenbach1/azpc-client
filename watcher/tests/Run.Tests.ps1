@@ -54,4 +54,22 @@ try {
     }
     Send-ForeverTrades 'test-client' 'test-token'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/trades') -Filter '*.sent').Count -eq 1) 'Only acknowledged upload is marked sent'
+    function Invoke-RestMethod {param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
+        Assert ($Uri -eq 'https://forever.azpc.market/api/scans/upload') 'Market scans go only to Forever scan receiver'
+        Assert ($Headers['x-azpc-watcher-token'] -eq 'test-token') 'Scan upload uses existing watcher credential'
+        $sent=[Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
+        Assert ($sent.scope -eq 'loaded_browse_results' -and $sent.uploadId -match '^[a-f0-9]{64}$') 'Scan upload retains partial scope and stable ID'
+        return @{ok=$true;accepted=$sent.observations.Count;uploadId=$sent.uploadId;market='test-market'}
+    }
+    Send-ForeverScans 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.sent').Count -eq 1) 'Acknowledged market scan is marked sent'
+    $script:ForeverScanUploadAttempt=[datetime]::MinValue
+    function Invoke-RestMethod { throw 'simulated offline receiver' }
+    Send-ForeverScans 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.sent').Count -eq 1) 'Offline scan is retained without a false acknowledgement'
+    $script:ForeverScanUploadAttempt=[datetime]::MinValue
+    function Invoke-RestMethod { return @{ok=$true;accepted=1;uploadId='wrong-id';market='test-market'} }
+    Send-ForeverScans 'test-client' 'test-token'
+    Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.sent').Count -eq 1) 'Mismatched acknowledgement does not mark a scan sent'
 } finally { Remove-Item $root -Recurse -Force }
+

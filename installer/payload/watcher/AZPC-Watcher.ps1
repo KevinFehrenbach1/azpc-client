@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.28"
+        version = "0.4.29"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.28"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.29"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -958,6 +958,31 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
     }catch{Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
 }
 
+$script:ForeverScanUploadAttempt=[datetime]::MinValue
+function Send-ForeverScans([string]$ClientId,[string]$Token) {
+    if(((Get-Date)-$script:ForeverScanUploadAttempt).TotalSeconds -lt 30){return}
+    $script:ForeverScanUploadAttempt=Get-Date
+    $directory=Join-Path $StateDir 'Forever\scans'
+    if(-not (Test-Path -LiteralPath $directory)){return}
+    # Rotate failures so one old or invalid record cannot block newer captures.
+    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} | Sort-Object @{Expression={if(Test-Path -LiteralPath ($_.FullName+'.attempt')){(Get-Item -LiteralPath ($_.FullName+'.attempt')).LastWriteTimeUtc}else{[datetime]::MinValue}}},Name | Select-Object -First 1)
+    if(-not $files.Count){return}
+    $file=$files[0]
+    try {
+        Set-Content -LiteralPath ($file.FullName+'.attempt') -Value 'pending' -Encoding ASCII
+        $scan=Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($file.BaseName -notmatch '^[a-f0-9]{64}$'){throw 'Invalid local scan ID.'}
+        $scan | Add-Member -NotePropertyName uploadId -NotePropertyValue $file.BaseName -Force
+        $body=$scan | ConvertTo-Json -Depth 8 -Compress
+        $bytes=[Text.Encoding]::UTF8.GetBytes($body)
+        if($bytes.Length -gt 1048576){throw 'Scan exceeds receiver limit of 1 MB.'}
+        $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/scans/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body $bytes -TimeoutSec 20
+        if(-not $result.ok -or $result.accepted -ne $scan.observations.Count -or $result.uploadId -ne $file.BaseName){throw 'Receiver did not acknowledge this exact scan.'}
+        Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII
+        Write-Log ('FOREVER SCAN UPLOADED: '+$result.accepted+' items | '+$scan.realm+'/'+$scan.faction+' | '+$result.market)
+    } catch { Write-Log ('FOREVER SCAN UPLOAD PENDING: '+$_.Exception.Message+' Scan kept locally; retrying later.') }
+}
+
 $script:ForeverReadVersions=@{}
 function Collect-ForeverScans([string]$Root) {
     foreach($path in @(Find-ForeverSavedVariables $Root)) {
@@ -980,7 +1005,7 @@ function Collect-ForeverScans([string]$Root) {
                     $temp=$target+'.tmp'
                     $scan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temp -Encoding UTF8
                     Move-Item -LiteralPath $temp -Destination $target -Force
-                    Write-Log ('FOREVER COLLECTED: '+$scan.observations.Count+' items | '+$scan.realm+'/'+$scan.faction+' | saved locally; website upload pending receiver support.')
+                    Write-Log ('FOREVER COLLECTED: '+$scan.observations.Count+' items | '+$scan.realm+'/'+$scan.faction+' | saved locally; queued for website upload.')
                 }
             }
             $script:ForeverReadVersions[$path]=$writeVersion
@@ -990,7 +1015,7 @@ function Collect-ForeverScans([string]$Root) {
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.28 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.29 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -1021,6 +1046,7 @@ while ($true) {
         }
         Collect-ForeverScans $WowRoot
         Send-ForeverTrades $privateClientId $watcherToken
+        Send-ForeverScans $privateClientId $watcherToken
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."
             try { $azpcFile = Find-AzpcSavedVariables $WowRoot } catch { $azpcFile=$null }
@@ -1088,4 +1114,5 @@ while ($true) {
         Start-Sleep -Seconds 5
     }
 }
+
 
