@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: AZPC Forever
+## Notes: Captures loaded Forever Beta AH results for the AZPC watcher. Browse/search coverage only.
+## Author: Kevin Fehrenbach
+## Version: 0.1.0
+## SavedVariables: AZPCForeverDB
+AZPCForever.lua

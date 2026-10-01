@@ -28,12 +28,13 @@ function Get-Profile {
     if ($identities.Count -eq 1) { $state = $identities[0].DirectoryName }
     return @{ State = $state; Watcher = (Resolve-WatcherTargetForStateDir $state) }
 }
-function Assert-WowRoot([string]$Root) {
+function Assert-WowRoot([string]$Root, [string]$Game='tbc-anniversary') {
     if ([string]::IsNullOrWhiteSpace($Root)) { throw 'Choose your main World of Warcraft folder first.' }
     $full = [IO.Path]::GetFullPath($Root.Trim())
     if ($full.Contains('"')) { throw 'The folder path contains an unsupported character.' }
-    if (-not (Test-Path -LiteralPath (Join-Path $full '_anniversary_') -PathType Container)) {
-        throw 'Choose the main WoW folder that contains _anniversary_. Forever is not supported by this addon yet.'
+    $folder=if($Game -eq 'forever'){'_classic_beta_'}else{'_anniversary_'}
+    if (-not (Test-Path -LiteralPath (Join-Path $full $folder) -PathType Container)) {
+        throw ('Choose the main WoW folder that contains '+$folder+'.')
     }
     return $full
 }
@@ -42,11 +43,12 @@ function Assert-GameClosed {
         throw 'Close World of Warcraft before installing or updating. This keeps the addon and saved trading history safe.'
     }
 }
-function Get-InstalledStatus([string]$Root) {
+function Get-InstalledStatus([string]$Root, [string]$Game='tbc-anniversary') {
     $profile = Get-Profile
     $addonVersion = 'Not installed'; $watcherVersion = 'Not installed'
     if ($Root) {
-        $toc = Join-Path $Root '_anniversary_\Interface\AddOns\AZPC\AZPC.toc'
+        $tocPath=if($Game -eq 'forever'){'_classic_beta_\Interface\AddOns\AZPCForever\AZPCForever.toc'}else{'_anniversary_\Interface\AddOns\AZPC\AZPC.toc'}
+        $toc = Join-Path $Root $tocPath
         if (Test-Path -LiteralPath $toc) {
             $match = [regex]::Match((Get-Content -LiteralPath $toc -Raw), '(?m)^## Version:\s*(\S+)')
             $addonVersion = if ($match.Success) { $match.Groups[1].Value } else { 'Unknown' }
@@ -81,10 +83,11 @@ function Assert-ReleaseUrl([string]$Url) {
     }
 }
 function Test-Manifest($Manifest) {
-    if ($Manifest.schema -notin @(1,2) -or $Manifest.game -ne 'tbc-anniversary') { throw 'Unsupported update manifest or game version.' }
+    if ($Manifest.schema -notin @(1,2) -or $Manifest.game -notin @('tbc-anniversary','forever')) { throw 'Unsupported update manifest or game version.' }
     $null = Assert-Version ([string]$Manifest.addonVersion)
     $null = Assert-Version ([string]$Manifest.watcherVersion)
     $null = Assert-Version ([string]$Manifest.launcherVersion)
+    if ($Manifest.game -eq 'forever' -and $Manifest.schema -ne 1) { throw 'Unsupported Forever source manifest.' }
     if ($Manifest.schema -eq 2) {
         if ([string]$Manifest.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid release source commit.' }
         $allowed=@('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')
@@ -100,12 +103,14 @@ function Test-Manifest($Manifest) {
     if ([string]$Manifest.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'The update checksum is missing or invalid.' }
 }
 function Get-RemoteManifest {
-    param([string]$ApiToken='')
+    param([string]$ApiToken='', [string]$Game='tbc-anniversary')
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.2'; Accept = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.3'; Accept = 'application/vnd.github+json' }
     if($ApiToken){ $headers['Authorization']='Bearer '+$ApiToken }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
-    $asset = @($release.assets | Where-Object { $_.name -eq 'azpc-update.json' })
+    $manifestName=if($Game -eq 'forever'){'azpc-forever-update.json'}else{'azpc-update.json'}
+    $asset = @($release.assets | Where-Object { $_.name -eq $manifestName })
+    if($Game -eq 'forever' -and $asset.Count -eq 0){ throw 'The latest release has no Forever addon package. Try again after its release is published.' }
     if ($asset.Count -eq 0) {
         # Compatibility with existing releases: resolve the released tag once, then pin all files to its immutable commit.
         $tag=[uri]::EscapeDataString([string]$release.tag_name)
@@ -121,15 +126,17 @@ function Get-RemoteManifest {
             $files+=@{path=$path;sha256=$digest}
             if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
         }
-        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.2';sourceCommit=[string]$commit.sha;files=$files}
+        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.3';sourceCommit=[string]$commit.sha;files=$files}
         Test-Manifest $manifest
         return $manifest
     }
     if($asset.Count -ne 1){ throw 'The release includes multiple update manifests.' }
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
-    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.2' } -TimeoutSec 30
+    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.3' } -TimeoutSec 30
+    if($manifest -is [string]){ $manifest=$manifest.TrimStart([char[]]@(0xFEFF,0xEF,0xBB,0xBF)) | ConvertFrom-Json }
     Test-Manifest $manifest
+    if($manifest.game -ne $Game){ throw 'Release game does not match your selection.' }
     return $manifest
 }
 function Get-UpdatePayload($Manifest, [string]$Workspace) {
@@ -140,7 +147,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
             $destination=Join-Path $target ([string]$file.path)
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
             $url='https://raw.githubusercontent.com/'+$script:Repo+'/'+$Manifest.sourceCommit+'/installer/payload/'+$file.path
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.2'}
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.3'}
             if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
         }
         $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
@@ -148,20 +155,21 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
         return $target
     }
     $archive = Join-Path $Workspace 'bundle.zip' 
-    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.2' }
+    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.3' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     $target = Join-Path $Workspace 'payload'
     New-Item -ItemType Directory -Path $target -Force | Out-Null
-    $allowed = @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')
+    $addonName=if($Manifest.game -eq 'forever'){'AZPCForever'}else{'AZPC'}
+    $allowed = @(('addon/'+$addonName+'/'+$addonName+'.lua'),('addon/'+$addonName+'/'+$addonName+'.toc'),'watcher/AZPC-Watcher.ps1','VERSION.json')
     $seen = @{}
     try {
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\','/')
             if ($name.EndsWith('/')) {
-                if ($name -notin @('addon/','addon/AZPC/','watcher/')) { throw 'Unexpected directory in update archive.' }
+                if ($name -notin @('addon/',('addon/'+$addonName+'/'),'watcher/')) { throw 'Unexpected directory in update archive.' }
                 continue
             }
             if ($name -notin $allowed -or $seen.ContainsKey($name) -or $entry.Length -gt 5242880) { throw 'Unexpected or unsafe file in update archive.' }
@@ -178,20 +186,22 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
     }
     return $target
 }
-function Install-Addon([string]$Payload, [string]$Root) {
-    $parent = Join-Path $Root '_anniversary_\Interface\AddOns'
+function Install-Addon([string]$Payload, [string]$Root, [string]$Game='tbc-anniversary') {
+    $folder=if($Game -eq 'forever'){'_classic_beta_'}else{'_anniversary_'}
+    $name=if($Game -eq 'forever'){'AZPCForever'}else{'AZPC'}
+    $parent = Join-Path $Root ($folder+'\Interface\AddOns')
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    $target = Join-Path $parent 'AZPC'
+    $target = Join-Path $parent $name
     $id = [guid]::NewGuid().ToString('N')
     $staged = Join-Path $parent ('AZPC-staging-' + $id)
     # Keep directory swaps on the WoW volume, even when WoW is on D: and the user profile is on C:.
-    $backup = Join-Path $Root ('_anniversary_\Interface\AZPC-Backups\addon-' + $id)
+    $backup = Join-Path $Root ($folder+'\Interface\AZPC-Backups\addon-' + $id)
     New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force | Out-Null
     $moved = $false
     try {
-        Copy-Item -LiteralPath (Join-Path $Payload 'addon\AZPC') -Destination $staged -Recurse
-        foreach ($name in @('AZPC.lua','AZPC.toc')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $staged $name))) { throw 'Addon package is incomplete.' }
+        Copy-Item -LiteralPath (Join-Path $Payload ('addon\'+$name)) -Destination $staged -Recurse
+        foreach ($fileName in @(($name+'.lua'),($name+'.toc'))) {
+            if (-not (Test-Path -LiteralPath (Join-Path $staged $fileName))) { throw 'Addon package is incomplete.' }
         }
         if (Test-Path -LiteralPath $target) { Move-Item -LiteralPath $target -Destination $backup; $moved = $true }
         Move-Item -LiteralPath $staged -Destination $target
@@ -248,9 +258,12 @@ function Stop-Watcher {
     Stop-AzpcWatcherInstances $profile.Watcher $profile.State
 }
 function Invoke-LauncherAction($Request) {
-    if ($Request.action -eq 'check') { return @{ ok = $true; manifest = (Get-RemoteManifest) } }
+    $game='tbc-anniversary'
+    if($Request -is [Collections.IDictionary]){ if($Request.Contains('game')){$game=[string]$Request.game} } elseif($Request.PSObject.Properties['game']){$game=[string]$Request.game}
+    if($game -notin @('tbc-anniversary','forever')){ throw 'Unsupported game selection.' }
+    if ($Request.action -eq 'check') { return @{ ok = $true; manifest = (Get-RemoteManifest -Game $game) } }
     if ($Request.action -eq 'stop') { Stop-Watcher; return @{ ok = $true; message = 'Watcher stopped. It remains configured to start at Windows sign-in.' } }
-    $root = Assert-WowRoot ([string]$Request.wowRoot)
+    $root = Assert-WowRoot ([string]$Request.wowRoot) $game
     if ($Request.action -eq 'start') { Start-Watcher $root; return @{ ok = $true; message = 'Watcher started. It may need a WoW logout or reload before new data is available.' } }
     if ($Request.action -notin @('addon','watcher','all')) { throw 'Unknown launcher action.' }
     Assert-GameClosed
@@ -260,8 +273,9 @@ function Invoke-LauncherAction($Request) {
         $payload = Join-Path $script:AppRoot 'installer\payload'
         if ($Request.manifest) { $payload = Get-UpdatePayload $Request.manifest $workspace }
         $versions = Read-JsonFile (Join-Path $payload 'VERSION.json')
-        if ($versions.game -ne 'tbc-anniversary') { throw 'This package is not for Anniversary.' }
-        $status = Get-InstalledStatus $root
+        if($Request.manifest -and $versions.game -ne $game){ throw 'Package does not match selected game.' }
+        if($game -eq 'forever' -and -not $Request.manifest){ $versions.addonVersion=$versions.foreverAddonVersion }
+        $status = Get-InstalledStatus $root $game
         foreach ($component in @('addon','watcher')) {
             if ($Request.action -ne 'all' -and $Request.action -ne $component) { continue }
             $installed = [string]$status[$component]
@@ -277,7 +291,7 @@ function Invoke-LauncherAction($Request) {
         # Each component is committed separately; a failed second component is reported honestly.
         $completed = @()
         try {
-            if ($Request.action -in @('all','addon')) { Install-Addon $payload $root; $completed += 'Addon' }
+            if ($Request.action -in @('all','addon')) { Install-Addon $payload $root $game; $completed += 'Addon' }
             if ($Request.action -in @('all','watcher')) { Install-Watcher $payload $root ([string]$Request.setupCode); $completed += 'Watcher' }
         } catch {
             $prefix = if ($completed.Count) { ($completed -join ' and ') + ' installed successfully. ' } else { '' }
