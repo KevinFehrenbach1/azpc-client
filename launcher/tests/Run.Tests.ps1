@@ -100,6 +100,9 @@ public static class AzpcRestrictedToken {
     $hashes=@{}; foreach($p in @($credentials,$cache,$identity)) { $hashes[$p]=(Get-FileHash $p).Hash }
     function Stop-AzpcWatcherInstances { }
     function Install-AzpcStartupTask { return $true }
+    $realWaitWatcherStarted = ${function:Wait-LauncherWatcherStarted}
+    # Account/cache preservation is isolated from live process startup.
+    function Wait-LauncherWatcherStarted { }
     Install-Watcher $payload $wow ''
     foreach($p in $hashes.Keys) { Assert ((Get-FileHash $p).Hash -eq $hashes[$p]) ('Watcher update preserves '+(Split-Path -Leaf $p)) }
     $watcher=Join-Path $profile.Watcher 'AZPC-Watcher.ps1'
@@ -108,6 +111,39 @@ public static class AzpcRestrictedToken {
     Must-Throw { Install-Watcher $payload $wow '' } 'startup'
     Assert ((Get-FileHash $watcher).Hash -eq $before) 'Watcher restored after startup failure'
     foreach($p in $hashes.Keys) { Assert ((Get-FileHash $p).Hash -eq $hashes[$p]) ('Failed update preserves '+(Split-Path -Leaf $p)) }
+    # Watcher control regressions use fake processes, never start the network watcher.
+    Set-Item Function:\Wait-LauncherWatcherStarted $realWaitWatcherStarted
+    $script:watcherProcesses = @([pscustomobject]@{
+        ProcessId=424242; Name='powershell.exe'; CommandLine=('powershell.exe -File "'+$watcher+'"')
+    })
+    function Get-CimInstance { param($ClassName,$Filter,$ErrorAction) return $script:watcherProcesses }
+    $heartbeatPath=Join-Path $profile.State 'watcher-heartbeat.json'
+    @{pid=424242;status='running';updatedAt=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content $heartbeatPath
+    Wait-LauncherWatcherStarted $profile
+    Assert (Get-InstalledStatus $wow).Running 'Live watcher with current matching heartbeat is detected'
+    Set-Content $heartbeatPath '{"pid":'
+    Assert (Get-InstalledStatus $wow).Running 'Partial heartbeat JSON does not hide a live watcher'
+    $script:watcherProcesses=@()
+    Assert (-not (Get-InstalledStatus $wow).Running) 'No process means stopped despite existing heartbeat file'
+    $script:watcherProcesses=@([pscustomobject]@{ProcessId=424242;Name='pwsh.exe';CommandLine=('pwsh.exe -File "'+$watcher+'"')})
+    Assert (Get-InstalledStatus $wow).Running 'PowerShell Core watcher is detected'
+    $script:watcherProcesses+= [pscustomobject]@{ProcessId=424243;Name='powershell.exe';CommandLine=('powershell.exe -File "'+$watcher+'"')}
+    Must-Throw { Wait-LauncherWatcherStarted $profile } 'Multiple watcher processes'
+    function Stop-Process { param($Id,[switch]$Force,$ErrorAction) $script:watcherProcesses=@($script:watcherProcesses | Where-Object { $_.ProcessId -ne $Id }) }
+    Stop-Watcher
+    Assert ($script:watcherProcesses.Count -eq 0) 'Stop ends every matching watcher process'
+    # Advance only the polling clock so startup failure tests do not wait 20 seconds.
+    $script:pollClock=[DateTime]::UtcNow
+    function Get-Date { $script:pollClock=$script:pollClock.AddSeconds(30); return $script:pollClock }
+    function Start-Sleep { param($Milliseconds) }
+    function Install-AzpcStartupTask { return $true }
+    Must-Throw { Start-Watcher $wow } 'startup was not confirmed'
+    $script:watcherProcesses=@([pscustomobject]@{ProcessId=424242;Name='powershell.exe';CommandLine=('powershell.exe -File "'+$watcher+'"')})
+    @{pid=424242;status='running';updatedAt=[DateTimeOffset]::UtcNow.AddMinutes(-5).ToString('o')} | ConvertTo-Json | Set-Content $heartbeatPath
+    Must-Throw { Wait-LauncherWatcherStarted $profile } 'startup was not confirmed'
+    @{pid=111111;status='running';updatedAt=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content $heartbeatPath
+    Must-Throw { Wait-LauncherWatcherStarted $profile } 'startup was not confirmed'
+    Remove-Item Function:\Get-CimInstance,Function:\Stop-Process,Function:\Get-Date,Function:\Start-Sleep
     Remove-Item $credentials,$identity
     Must-Throw { Install-Watcher $payload $wow '' } 'setup code'
     # Safe extraction tests use a fake network download and real ZIP/checksum logic.
@@ -188,3 +224,4 @@ public static class AzpcRestrictedToken {
     $result=Invoke-LauncherAction @{game='forever';action='addon';wowRoot=$wow;setupCode='';manifest=$null}
     Assert $result.ok 'Forever bundled installation through launcher action'
 } finally { $env:LOCALAPPDATA=$oldLocal; Remove-Item -LiteralPath $testRoot -Recurse -Force }
+

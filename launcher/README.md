@@ -33,3 +33,7 @@ Before public release, use a real Windows/WoW installation to test clean install
 ## Signing reminder
 
 Windows signing is deferred at the user’s request. Revisit free Store MSIX distribution or qualifying SignPath signing before the next public launcher update.
+
+
+
+Launcher 0.2.4 runs the scheduled watcher directly in PowerShell so Windows tracks its lifetime. Start confirms one live process with a matching recent heartbeat; Stop checks that matching processes have exited. Concurrent partial heartbeat reads do not break status refresh, and worker result JSON is published via a temporary file and rename. Windows CI covers live/missing processes, partial heartbeats, duplicate processes, stale or mismatched heartbeats, and false startup success. Start/Stop was also checked on the user's Windows installation.

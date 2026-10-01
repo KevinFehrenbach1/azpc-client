@@ -114,7 +114,7 @@ function Stop-AzpcWatcherInstances([string]$WatcherTarget, [string]$StateDir) {
         $candidates = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
             $cmd = [string]$_.CommandLine
             $name = [string]$_.Name
-            ($name -match '(?i)^powershell(?:\.exe)?$') -and
+            ($name -match '(?i)^(powershell|pwsh)(?:\.exe)?$') -and
             (-not [string]::IsNullOrWhiteSpace($cmd)) -and
             (($cmd.IndexOf($script, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -or
              (($cmd.IndexOf('AZPC-Watcher.ps1', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -and
@@ -134,8 +134,9 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir, [str
     $taskName = "AZPC Watcher"
     $script = Join-Path $WatcherTarget "AZPC-Watcher.ps1"
     $hiddenLauncher = Write-HiddenWatcherLauncher $WatcherTarget $StateDir $WowRoot
-    $wscript = Join-Path $env:SystemRoot "System32\wscript.exe"
-    $arguments = ('"{0}"' -f $hiddenLauncher)
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script + '" -DataDir "' + $StateDir + '"'
+    if ($WowRoot) { $arguments += ' -WowRoot "' + $WowRoot + '"' }
 
     # Remove the older Startup-folder shortcut so only one watcher starts at logon.
     try {
@@ -182,7 +183,7 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir, [str
         $trigger.UserId = $principal.UserId
 
         $action = $task.Actions.Create(0) # TASK_ACTION_EXEC
-        $action.Path = $wscript
+        $action.Path = $psExe
         $action.Arguments = $arguments
         $action.WorkingDirectory = $WatcherTarget
 
@@ -197,8 +198,8 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir, [str
             $null = $registered.Run($null)
             Say "Windows auto-start configured and refreshed: Task Scheduler -> AZPC Watcher (15-second logon delay)." Green
         } catch {
-            Say "Windows auto-start configured: Task Scheduler -> AZPC Watcher (15-second logon delay)." Green
-            Say ("The task was installed but could not be started immediately: " + $_.Exception.Message) Yellow
+            Say ("Scheduled start failed; starting PowerShell directly: " + $_.Exception.Message) Yellow
+            $null = Start-Process -FilePath $psExe -ArgumentList $arguments -WorkingDirectory $WatcherTarget -WindowStyle Hidden -PassThru
         }
         return $true
     } catch {
@@ -214,6 +215,9 @@ function Install-AzpcStartupTask([string]$WatcherTarget, [string]$StateDir, [str
             $startupLink.WorkingDirectory = $WatcherTarget
             $startupLink.Description = "Azerothian Price Checker Watcher"
             $startupLink.Save()
+            # Remove a partially registered task before enabling the other sign-in path.
+            try { $root.DeleteTask($taskName, 0) } catch { }
+            $null = Start-Process -FilePath $psExe -ArgumentList $arguments -WorkingDirectory $WatcherTarget -WindowStyle Hidden -PassThru
             Say "Fallback auto-start configured in the Windows Startup folder." Green
             return $true
         } catch {

@@ -43,6 +43,33 @@ function Assert-GameClosed {
         throw 'Close World of Warcraft before installing or updating. This keeps the addon and saved trading history safe.'
     }
 }
+function Get-LauncherWatcherProcesses($Profile) {
+    $watcherFile = Join-Path $Profile.Watcher 'AZPC-Watcher.ps1'
+    return @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+        $_.ProcessId -ne $PID -and [string]$_.Name -match '^(powershell|pwsh)(\.exe)?$' -and
+        ([string]$_.CommandLine).IndexOf($watcherFile, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+}
+function Read-WatcherHeartbeat($Profile) {
+    # The watcher currently writes this file in place. A concurrent read can see partial JSON.
+    try { return Read-JsonFile (Join-Path $Profile.State 'watcher-heartbeat.json') } catch { return $null }
+}
+function Wait-LauncherWatcherStarted($Profile) {
+    $deadline = (Get-Date).AddSeconds(20)
+    do {
+        $processes = @(Get-LauncherWatcherProcesses $Profile)
+        $heartbeat = Read-WatcherHeartbeat $Profile
+        if ($processes.Count -gt 1) { throw 'Multiple watcher processes are running. Click Stop, then Start again.' }
+        if ($processes.Count -eq 1 -and $heartbeat -and $heartbeat.PSObject.Properties['pid'] -and
+            [int]$heartbeat.pid -eq [int]$processes[0].ProcessId -and $heartbeat.PSObject.Properties['updatedAt']) {
+            $age = [DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse([string]$heartbeat.updatedAt)
+            if ($age.TotalSeconds -ge -5 -and $age.TotalSeconds -le 15) { return }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw ('Watcher startup was not confirmed. Open ' + (Join-Path $Profile.State 'watcher.log') + ' and check the latest lines. No new scan is needed.')
+}
+
 function Get-InstalledStatus([string]$Root, [string]$Game='tbc-anniversary') {
     $profile = Get-Profile
     $addonVersion = 'Not installed'; $watcherVersion = 'Not installed'
@@ -59,14 +86,15 @@ function Get-InstalledStatus([string]$Root, [string]$Game='tbc-anniversary') {
         $match = [regex]::Match((Get-Content -LiteralPath $watcherFile -Raw), 'version\s*=\s*"([0-9.]+)"')
         $watcherVersion = if ($match.Success) { $match.Groups[1].Value } else { 'Unknown' }
     }
-    $running = $false; $activity = 'No watcher heartbeat yet'
-    $heartbeat = Read-JsonFile (Join-Path $profile.State 'watcher-heartbeat.json')
-    if ($heartbeat) {
-        $process = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [int]$heartbeat.pid) -ErrorAction SilentlyContinue
-        $running = ($null -ne $process -and [string]$process.Name -match '^powershell.exe$' -and
-            ([string]$process.CommandLine).IndexOf($watcherFile, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+    $processes = @(Get-LauncherWatcherProcesses $profile)
+    $running = $processes.Count -gt 0
+    $activity = if ($running) { 'Watcher process running; waiting for heartbeat' } else { 'Watcher stopped' }
+    $heartbeat = Read-WatcherHeartbeat $profile
+    if ($heartbeat -and $heartbeat.PSObject.Properties['status'] -and $heartbeat.PSObject.Properties['updatedAt']) {
         $activity = [string]$heartbeat.status + ' | ' + [string]$heartbeat.updatedAt
+        if (-not $running) { $activity = 'Watcher stopped | Last heartbeat: ' + [string]$heartbeat.updatedAt }
     }
+    if ($processes.Count -gt 1) { $activity = 'Multiple watcher processes running. Click Stop, then Start.' }
     return @{ Addon = $addonVersion; Watcher = $watcherVersion; Running = $running;
         Connected = (Test-Path -LiteralPath (Join-Path $profile.State 'watcher-credentials.json'));
         Activity = $activity; Profile = $profile }
@@ -105,7 +133,7 @@ function Test-Manifest($Manifest) {
 function Get-RemoteManifest {
     param([string]$ApiToken='', [string]$Game='tbc-anniversary')
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.3'; Accept = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.4'; Accept = 'application/vnd.github+json' }
     if($ApiToken){ $headers['Authorization']='Bearer '+$ApiToken }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $manifestName=if($Game -eq 'forever'){'azpc-forever-update.json'}else{'azpc-update.json'}
@@ -126,14 +154,14 @@ function Get-RemoteManifest {
             $files+=@{path=$path;sha256=$digest}
             if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
         }
-        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.3';sourceCommit=[string]$commit.sha;files=$files}
+        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.4';sourceCommit=[string]$commit.sha;files=$files}
         Test-Manifest $manifest
         return $manifest
     }
     if($asset.Count -ne 1){ throw 'The release includes multiple update manifests.' }
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
-    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.3' } -TimeoutSec 30
+    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.4' } -TimeoutSec 30
     if($manifest -is [string]){ $manifest=$manifest.TrimStart([char[]]@(0xFEFF,0xEF,0xBB,0xBF)) | ConvertFrom-Json }
     Test-Manifest $manifest
     if($manifest.game -ne $Game){ throw 'Release game does not match your selection.' }
@@ -147,7 +175,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
             $destination=Join-Path $target ([string]$file.path)
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
             $url='https://raw.githubusercontent.com/'+$script:Repo+'/'+$Manifest.sourceCommit+'/installer/payload/'+$file.path
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.3'}
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.4'}
             if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
         }
         $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
@@ -155,7 +183,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
         return $target
     }
     $archive = Join-Path $Workspace 'bundle.zip' 
-    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.3' }
+    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.4' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
@@ -235,6 +263,7 @@ function Install-Watcher([string]$Payload, [string]$Root, [string]$Code) {
             }
         }
         if (-not (Install-AzpcStartupTask $profile.Watcher $profile.State $Root)) { throw 'Windows could not configure watcher startup.' }
+        Wait-LauncherWatcherStarted $profile
     } catch {
         Stop-AzpcWatcherInstances $profile.Watcher $profile.State
         if ($hadPrevious) {
@@ -248,14 +277,24 @@ function Start-Watcher([string]$Root) {
     $profile = Get-Profile
     if (-not (Test-Path -LiteralPath (Join-Path $profile.State 'watcher-credentials.json'))) { throw 'Install and connect the watcher first.' }
     if (-not (Test-Path -LiteralPath (Join-Path $profile.Watcher 'AZPC-Watcher.ps1'))) { throw 'Install the watcher first.' }
-    Stop-AzpcWatcherInstances $profile.Watcher $profile.State
+    Stop-Watcher
     if (-not (Install-AzpcStartupTask $profile.Watcher $profile.State $Root)) { throw 'Watcher startup could not be configured.' }
+    Wait-LauncherWatcherStarted $profile
 }
 function Stop-Watcher {
     $profile = Get-Profile
     # End the scheduler instance as well as fallback/manual watcher instances.
     try { $service = New-Object -ComObject 'Schedule.Service'; $service.Connect(); $service.GetFolder('\').GetTask('AZPC Watcher').Stop(0) } catch { }
     Stop-AzpcWatcherInstances $profile.Watcher $profile.State
+    # Verify stop instead of accepting the installer's best-effort result.
+    foreach ($process in @(Get-LauncherWatcherProcesses $profile)) {
+        Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop
+    }
+    $deadline = (Get-Date).AddSeconds(5)
+    while (@(Get-LauncherWatcherProcesses $profile).Count -gt 0) {
+        if ((Get-Date) -ge $deadline) { throw 'The watcher did not stop. Check Task Scheduler -> AZPC Watcher.' }
+        Start-Sleep -Milliseconds 250
+    }
 }
 function Invoke-LauncherAction($Request) {
     $game='tbc-anniversary'
