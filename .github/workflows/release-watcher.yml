@@ -1,0 +1,56 @@
+name: Test and release Forever watcher
+on:
+  pull_request:
+    paths: ['watcher/**', 'addons/forever/**', 'installer/payload/watcher/**', 'installer/payload/VERSION.json', '.github/workflows/release-watcher.yml']
+  push:
+    branches: [main]
+    paths: ['watcher/**', 'addons/forever/**', 'installer/payload/watcher/**', 'installer/payload/VERSION.json', '.github/workflows/release-watcher.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  addon-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: lua5.1 watcher/tests/forever-addon.lua
+  test-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Watcher collection and isolation tests
+        shell: powershell
+        run: ./watcher/tests/Run.Tests.ps1
+      - name: Launcher install and rollback tests
+        shell: powershell
+        run: ./launcher/tests/Run.Tests.ps1
+      - name: Build component update and Forever addon
+        shell: powershell
+        run: |
+          ./launcher/Build.ps1 -ReleaseTag watcher-v0.4.26
+          Compress-Archive -Path ./addons/forever/AZPCForever -DestinationPath ./launcher/output/AZPC-Forever-0.1.0.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forever-watcher-release
+          path: |
+            launcher/output/azpc-components.zip
+            launcher/output/azpc-update.json
+            launcher/output/AZPC-Forever-0.1.0.zip
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test-build, addon-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: forever-watcher-release
+          path: release
+      - name: Publish watcher update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create watcher-v0.4.26 release/* --target "$GITHUB_SHA" --latest --title "Watcher 0.4.26 + AZPC Forever 0.1.0" --notes-file addons/forever/README.md

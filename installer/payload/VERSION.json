@@ -1,9 +1,9 @@
 {
   "packageVersion": "0.4.76",
-  "watcherVersion": "0.4.25",
+  "watcherVersion": "0.4.26",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Adds the alpha one-account watcher lock and preserves existing upload caches during upgrades to prevent historical ledger replay.",
+  "notes": "Watcher-only update: collects AZPCForever Beta AH scans into a separate local queue. Forever website upload pending receiver support. Anniversary addon remains 0.4.29.",
   "version": "0.4.76"
 }
