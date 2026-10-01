@@ -2,6 +2,25 @@ param([ValidateSet('Overview','Updates','Settings')][string]$PreviewPage='Overvi
 # Windows PowerShell 5.1; installs run in a separate worker process.
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+Add-Type -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+public static class AzpcStyle {
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    public static void Round(Control c, int radius) {
+        if (c.Width < radius*2 || c.Height < radius*2) return;
+        using (var path = new GraphicsPath()) {
+            int d=radius*2, w=c.Width-1, h=c.Height-1;
+            path.AddArc(0,0,d,d,180,90); path.AddArc(w-d,0,d,d,270,90);
+            path.AddArc(w-d,h-d,d,d,0,90); path.AddArc(0,h-d,d,d,90,90); path.CloseFigure();
+            var previous=c.Region; c.Region=new Region(path); if(previous!=null) previous.Dispose();
+        }
+    }
+}
+'@ -ReferencedAssemblies System.Windows.Forms,System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Launcher.Core.ps1')
 $script:remote=$null; $script:job=$null; $script:resultPath=''; $script:requestPath=''
@@ -25,7 +44,7 @@ $form.MinimumSize=New-Object Drawing.Size(1096,769); $form.MaximumSize=$form.Min
 $form.StartPosition='CenterScreen'; $form.BackColor=$bg; $form.ForeColor=[Drawing.Color]::WhiteSmoke
 $form.Font=New-Object Drawing.Font('Segoe UI',10)
 function Panel($Parent,[int]$X,[int]$Y,[int]$W,[int]$H,$Color) {
-    $c=New-Object Windows.Forms.Panel; $c.SetBounds($X,$Y,$W,$H); $c.BackColor=$Color; $Parent.Controls.Add($c); return $c
+    $c=New-Object Windows.Forms.Panel; $c.SetBounds($X,$Y,$W,$H); $c.BackColor=$Color; $Parent.Controls.Add($c); if($W -gt 100 -and $H -gt 50){ [AzpcStyle]::Round($c,8) }; return $c
 }
 function Label($Parent,[string]$Text,[int]$X,[int]$Y,[int]$W,[int]$H=28,[int]$Size=10,[bool]$Bold=$false) {
     $c=New-Object Windows.Forms.Label; $c.Text=$Text; $c.SetBounds($X,$Y,$W,$H)
@@ -37,7 +56,7 @@ function Button($Parent,[string]$Text,[int]$X,[int]$Y,[int]$W,[scriptblock]$Clic
     $c.FlatStyle='Flat'; $c.FlatAppearance.BorderSize=0
     $c.BackColor=if($Primary){$blue}else{[Drawing.ColorTranslator]::FromHtml('#343940')}
     $c.ForeColor=[Drawing.Color]::WhiteSmoke; $c.Cursor=[Windows.Forms.Cursors]::Hand
-    $c.Add_Click($Click); $Parent.Controls.Add($c); return $c
+    $c.Add_Click($Click); $Parent.Controls.Add($c); [AzpcStyle]::Round($c,6); return $c
 }
 function TextBox($Parent,[int]$X,[int]$Y,[int]$W) {
     $c=New-Object Windows.Forms.TextBox; $c.SetBounds($X,$Y,$W,30)
@@ -248,6 +267,15 @@ $statusTimer.Add_Tick({ if (-not $script:job) { Refresh-Status } })
 $form.Add_FormClosing({ param($sender,$eventArgs)
     if ($script:job -and -not $script:job.HasExited) { $eventArgs.Cancel=$true; $message.Text='An operation is still running. Wait for it to finish before closing.' }
 })
+# Fit smaller screens without hiding the bottom controls; normal desktops retain the full layout.
+$area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$fit=[Math]::Min(1.0,[Math]::Min(($area.Width-20)/[double]$form.Width,($area.Height-20)/[double]$form.Height))
+if($fit -lt 1) {
+    $form.MinimumSize=[Drawing.Size]::Empty; $form.MaximumSize=[Drawing.Size]::Empty
+    $form.Scale((New-Object Drawing.SizeF([single]$fit,[single]$fit)))
+    $form.MinimumSize=$form.Size; $form.MaximumSize=$form.Size
+}
+$form.Add_Shown({ $dark=1; $null=[AzpcStyle]::DwmSetWindowAttribute($form.Handle,20,[ref]$dark,4) })
 Show-Page $PreviewPage
 $timer.Start(); $statusTimer.Start(); Refresh-Status
 try { [Windows.Forms.Application]::Run($form) } finally { $timer.Dispose(); $statusTimer.Dispose(); $form.Dispose() }
