@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.1.3"
+local addon, VERSION = ..., "0.2.0"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -17,6 +17,12 @@ local function setup()
     AZPCForeverDB.game = "forever"
     AZPCForeverDB.snapshots = AZPCForeverDB.snapshots or {}
     AZPCForeverDB.itemIds = AZPCForeverDB.itemIds or {}
+    AZPCForeverDB.trades = AZPCForeverDB.trades or {}
+end
+local function observedMillis()
+    local at=(GetServerTime and GetServerTime() or time())*1000
+    AZPCForeverDB.lastTradeMillis=math.max(at,(AZPCForeverDB.lastTradeMillis or 0)+1)
+    return AZPCForeverDB.lastTradeMillis
 end
 local function capture()
     setup()
@@ -177,13 +183,43 @@ captureTrades=function()
                     local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject),subjectEscapes},":")
                     occurrences[fingerprint]=(occurrences[fingerprint] or 0)+1
                     fingerprint=fingerprint..":"..occurrences[fingerprint]
-                    if not AZPCForeverDB.tradeSeen[fingerprint] then
-                        if #AZPCForeverDB.trades < 10000 then
+                    local oldExport=encode(fingerprint)
+                    local existing
+                    if AZPCForeverDB.tradeSeen[fingerprint] then
+                        for _,saved in ipairs(AZPCForeverDB.trades) do
+                            if saved.tradeExport:find("|"..oldExport.."|",1,true) then existing=saved;break end
+                        end
+                    end
+                    if not AZPCForeverDB.tradeSeen[fingerprint] or existing then
+                        if existing or #AZPCForeverDB.trades < 10000 then
                             local kind=invoice=="expired" and "expired" or (invoice=="buyer" and "buy" or "sell")
+                            local refundable=invoice=="seller" and number(deposit) or nil
+                            -- If the invoice does not expose a refund, preserve v1 rather than guessing net proceeds.
                             local fields={"AZPCFTRADE","1",encode(fingerprint),kind,id,encode(name),quantity,copper,timestamp,encode(realm),faction,region,encode(character)}
-                            AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")}
+                            if invoice~="seller" or (refundable and refundable<=copper) then
+                                fields[2]="2";fields[8]=invoice=="seller" and copper-refundable or copper
+                                fields[9]=observedMillis()
+                                if existing then local savedFields={};for field in (existing.tradeExport.."|"):gmatch("(.-)|") do savedFields[#savedFields+1]=field end;fields[9]=savedFields[2]=="2" and tonumber(savedFields[9]) or tonumber(savedFields[9])*1000 end
+                                fields[14]=refundable or "";fields[15]=invoice=="seller" and (number(fee) or "") or ""
+                                fields[16]=invoice=="seller" and copper or ""
+                                for field=17,21 do fields[field]="" end
+                            end
+                            local export=table.concat(fields,"|")
+                            if existing then existing.tradeExport=export else AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=export} end
+                            local fresh=not AZPCForeverDB.tradeSeen[fingerprint]
                             AZPCForeverDB.tradeSeen[fingerprint]=true
-                            message("Recorded mailbox "..kind..": "..name.." x"..quantity..". /reload saves it for My Trades.")
+                            if fresh then
+                                -- A terminal mail record closes one pending, unresolved or active owner quantity.
+                                local k=table.concat({region,realm,faction,character},"|")
+                                AZPCForeverDB.settledOwners=AZPCForeverDB.settledOwners or {}
+                                if invoice=="seller" then
+                                    local receipts=AZPCForeverDB.settledOwners[k] or {};AZPCForeverDB.settledOwners[k]=receipts
+                                    local old=receipts[id];receipts[id]={quantity=(old and old.quantity or 0)+quantity,at=timestamp}
+                                end
+                                local state=AZPCForeverDB.owners and AZPCForeverDB.owners[k] and AZPCForeverDB.owners[k][id]
+                                if state and invoice~="buyer" then local remaining=quantity;for _,field in ipairs({"pending","unresolved","listed"}) do local used=math.min(remaining,state[field] or 0);state[field]=(state[field] or 0)-used;remaining=remaining-used;if remaining==0 then break end end end
+                            end
+                            if fresh then message("Recorded mailbox "..kind..": "..name.." x"..quantity..". /reload saves it for My Trading.") end
                         else message("Trade ledger is full. Existing records are preserved; contact AZPC before clearing it.") end
                     end
                 end
@@ -194,4 +230,117 @@ end
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
 tradeFrame:SetScript("OnEvent",function()
     C_Timer.After(0.5,function() local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err)) end end)
+end)
+
+
+-- Capture only complete owner lists; partial beta responses cannot close auctions.
+local function identity()
+    local realm=GetRealmName() or ""
+    local faction=(UnitFactionGroup("player") or ""):lower()
+    local character=UnitName and UnitName("player") or ""
+    local region=GetCurrentRegion and GetCurrentRegion() or 0
+    if realm=="" or character=="" or (faction~="horde" and faction~="alliance") then return end
+    return realm,faction,region,character
+end
+local function statusRecord(kind,id,name,q,listed,pending,unresolved,bag)
+    local realm,faction,region,character=identity();if not realm then return end
+    local at=observedMillis()
+    local event=table.concat({UnitGUID and UnitGUID("player") or character,realm,region,kind,id,at},":")
+    local fields={"AZPCFTRADE","2",encode(event),kind,id,encode(name),q,0,at,encode(realm),faction,region,encode(character),"","","",listed or "",pending or "",unresolved or "",bag or "",""}
+    if #AZPCForeverDB.trades<10000 then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")} end
+end
+local function ownerKey()
+    local realm,faction,region,character=identity();if not realm then return end
+    return table.concat({region,realm,faction,character},"|")
+end
+local function ownerState()
+    setup();AZPCForeverDB.owners=AZPCForeverDB.owners or {}
+    local k=ownerKey();if not k then return end
+    AZPCForeverDB.owners[k]=AZPCForeverDB.owners[k] or {}
+    return AZPCForeverDB.owners[k]
+end
+local function captureOwned()
+    if not open then return end
+    local state=ownerState();if not state then return end
+    local rows={}
+    local function add(id,name,q,sold)
+        id,q=number(id),number(q);if not id or id<1 or not q or q<1 or type(name)~="string" then return false end
+        AZPCForeverDB.itemIds[name]=id
+        local r=rows[id] or {name=name,listed=0,pending=0};rows[id]=r
+        if sold then r.pending=r.pending+q else r.listed=r.listed+q end
+        return true
+    end
+    if C_AuctionHouse and type(C_AuctionHouse.GetOwnedAuctions)=="function" then
+        if type(C_AuctionHouse.HasFullOwnedAuctionResults)~="function" or not C_AuctionHouse.HasFullOwnedAuctionResults() then return end
+        for _,a in ipairs(C_AuctionHouse.GetOwnedAuctions() or {}) do
+            local id=a.itemKey and a.itemKey.itemID
+            local info=id and C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(a.itemKey)
+            if not add(id,info and info.itemName,a.quantity,a.status==1) then return end
+        end
+    elseif type(GetNumAuctionItems)=="function" and type(GetAuctionItemInfo)=="function" then
+        local count,total=GetNumAuctionItems("owner")
+        if type(count)~="number" or type(total)~="number" or count~=total then return end
+        for i=1,count do
+            local name,_,q,_,_,_,_,_,_,_,_,_,_,_,_,saleStatus,id,hasAllInfo=GetAuctionItemInfo("owner",i)
+            if hasAllInfo==false or not add(id,name,q,saleStatus==1) then return end
+        end
+    else return end
+    local receipts=AZPCForeverDB.settledOwners and AZPCForeverDB.settledOwners[ownerKey()] or {}
+    local at=GetServerTime and GetServerTime() or time()
+    for id,r in pairs(rows) do
+        local receipt=receipts[id]
+        if receipt then
+            if r.pending==0 or at-receipt.at>120 then receipts[id]=nil else r.pending=math.max(0,r.pending-receipt.quantity) end
+        end
+    end
+    local all={};for id in pairs(state) do all[id]=true end;for id in pairs(rows) do all[id]=true end
+    for id in pairs(all) do
+        local old=state[id] or {listed=0,pending=0,unresolved=0}
+        local r=rows[id] or {name=old.name,listed=0,pending=0}
+        local missing=math.max(0,old.listed+old.pending-r.listed-r.pending)
+        local waiting=math.min(missing,math.max(0,old.pending-r.pending))
+        r.pending=r.pending+waiting;r.unresolved=(old.unresolved or 0)+missing-waiting
+        if r.listed~=old.listed or r.pending~=old.pending or r.unresolved~=old.unresolved or not old.recordedAt or (GetServerTime and GetServerTime() or time())-old.recordedAt>1800 then
+            statusRecord("listing_snapshot",id,r.name,r.listed+r.pending+r.unresolved,r.listed,r.pending,r.unresolved)
+            r.recordedAt=GetServerTime and GetServerTime() or time()
+        else r.recordedAt=old.recordedAt end
+        state[id]=r
+    end
+end
+local function captureBags()
+    setup();local k=ownerKey();if not k then return end
+    local info=C_Container and C_Container.GetContainerItemInfo
+    local slots=C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots
+    if type(slots)~="function" or (type(info)~="function" and type(GetContainerItemInfo)~="function") then return end
+    local rows={}
+    for bag=0,(NUM_BAG_SLOTS or 4) do
+        local count=slots(bag);if type(count)~="number" then return end
+        for slot=1,count do
+            local id,q,link
+            if info then local v=info(bag,slot);if v then id,q,link=v.itemID,number(v.stackCount),v.hyperlink end
+            else local _,count,_,_,_,_,l=GetContainerItemInfo(bag,slot);q=number(count);link=l;id=type(link)=="string" and tonumber(link:match("item:(%d+)")) end
+            if id and q then
+                local name=GetItemInfo and GetItemInfo(id) or C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(id)
+                if not name then return end
+                local r=rows[id] or {name=name,quantity=0};r.quantity=r.quantity+q;rows[id]=r
+            elseif link then return end
+        end
+    end
+    AZPCForeverDB.bagStates=AZPCForeverDB.bagStates or {};local previous=AZPCForeverDB.bagStates[k] or {}
+    for id,r in pairs(previous) do if not rows[id] then rows[id]={name=r.name,quantity=0} end end
+    local at=GetServerTime and GetServerTime() or time()
+    for id,r in pairs(rows) do
+        local old=previous[id]
+        if not old or old.quantity~=r.quantity or not old.recordedAt or at-old.recordedAt>1800 then statusRecord("inventory_snapshot",id,r.name,r.quantity,nil,nil,nil,r.quantity);r.recordedAt=at else r.recordedAt=old.recordedAt end
+    end
+    AZPCForeverDB.bagStates[k]=rows
+end
+local lifecycle=CreateFrame("Frame")
+for _,event in ipairs({"AUCTION_OWNED_LIST_UPDATE","OWNED_AUCTIONS_UPDATED","BAG_UPDATE_DELAYED","PLAYER_ENTERING_WORLD","PLAYER_LOGOUT"}) do pcall(lifecycle.RegisterEvent,lifecycle,event) end
+lifecycle:SetScript("OnEvent",function(_,event)
+    if event=="PLAYER_LOGOUT" then pcall(captureBags);return end
+    C_Timer.After(0.5,function()
+        if event=="AUCTION_OWNED_LIST_UPDATE" or event=="OWNED_AUCTIONS_UPDATED" then local ok,err=pcall(captureOwned);if not ok then message("Owner capture deferred: "..tostring(err)) end
+        else local ok,err=pcall(captureBags);if not ok then message("Bag capture deferred: "..tostring(err)) end end
+    end)
 end)

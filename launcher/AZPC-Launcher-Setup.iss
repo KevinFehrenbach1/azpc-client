@@ -1,4 +1,4 @@
-#define AppVersion "0.2.7"
+#define AppVersion "0.2.8"
 [Setup]
 AppId={{8AB6090C-0362-450E-A233-2ED2AEC851C8}
 AppName=AZPC Launcher
@@ -23,5 +23,6 @@ Name: "{userdesktop}\AZPC Launcher"; Filename: "{app}\AZPC-Launcher.exe"
 [Run]
 Filename: "{app}\AZPC-Launcher.exe"; Description: "Open AZPC Launcher"; Flags: nowait postinstall skipifsilent
 ; Uninstall removes only this launcher. Account state, watcher, addon, and trading caches remain intact.
+
 
 

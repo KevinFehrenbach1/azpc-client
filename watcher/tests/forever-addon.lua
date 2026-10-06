@@ -73,7 +73,7 @@ print('PASS: expired stack quantity, no trade value, reopen/reload dedupe, ident
 for _,row in ipairs(AZPCForeverDB.trades) do
     local fields=0
     for _ in (row.tradeExport..'|'):gmatch('(.-)|') do fields=fields+1 end
-    assert(fields==13,'mailbox export must contain exactly 13 fields: '..row.tradeExport)
+    assert(fields==21 or fields==13,'mailbox export must contain 21 v2 fields or 13 legacy fields: '..row.tradeExport)
 end
 print('PASS: actual addon purchase, sale and expired exports contain exactly 13 fields')
 -- Reproduce a record already saved by 0.1.2, including both gsub return values.
@@ -93,3 +93,34 @@ local beforeUpgrade=#AZPCForeverDB.trades
 callback(nil,'MAIL_SHOW');SlashCmdList.AZPCFOREVER('mail')
 assert(#AZPCForeverDB.trades==beforeUpgrade,'upgrade must preserve legacy dedupe identity')
 print('PASS: old expired export and saved dedupe anchors survive upgrade without duplicate records')
+
+-- New lifecycle capture refuses partial owner pages and preserves pending sales.
+AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={};AZPCForeverDB.owners={};AZPCForeverDB.bagStates={};AZPCForeverDB.settledOwners={}
+callback(nil,'AUCTION_HOUSE_SHOW')
+local full=true
+local ownerRows={{id=2447,q=4,sold=0},{id=2447,q=2,sold=1}}
+function GetNumAuctionItems(mode) if mode=='owner' then return #ownerRows,full and #ownerRows or #ownerRows+1 else return 0,0 end end
+function GetAuctionItemInfo(mode,i) local r=ownerRows[i];return 'Peacebloom',nil,r.q,nil,nil,nil,nil,nil,nil,500,nil,nil,nil,nil,nil,r.sold,r.id,true end
+callback(nil,'AUCTION_OWNED_LIST_UPDATE');assert(#AZPCForeverDB.trades==1)
+assert(AZPCForeverDB.trades[1].tradeExport:find('|listing_snapshot|2447|Peacebloom|6|0|',1,true))
+local function fields(export) local f={};for x in (export..'|'):gmatch('(.-)|') do f[#f+1]=x end;return f end
+local f=fields(AZPCForeverDB.trades[1].tradeExport);assert(#f==21);assert(f[17]=='4' and f[18]=='2' and f[19]=='0')
+full=false;ownerRows={};callback(nil,'AUCTION_OWNED_LIST_UPDATE');assert(#AZPCForeverDB.trades==1,'partial pages cannot close listings')
+full=true;ownerRows={{id=2447,q=4,sold=0}};callback(nil,'AUCTION_OWNED_LIST_UPDATE');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[17]=='4' and f[18]=='2' and f[19]=='0','pending rows remain waiting when owner list clears')
+function GetInboxNumItems() return 1 end
+function GetInboxInvoiceInfo() return 'seller','Peacebloom','Buyer',0,210,25,10,0,0,0,2 end
+function GetInboxHeaderInfo() return nil,nil,'Auction House','Auction successful: Peacebloom',225,0,30 end
+callback(nil,'MAIL_SHOW');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[4]=='sell' and f[8]=='200' and f[14]=='25' and f[16]=='225','mail refund must not become sale revenue')
+ownerRows={{id=2447,q=4,sold=0},{id=2447,q=2,sold=1}};callback(nil,'AUCTION_OWNED_LIST_UPDATE');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(AZPCForeverDB.owners['1|Forever Test|horde|Tester'][2447].pending==0,'stale sold rows must not resurrect a settled sale')
+ownerRows={};callback(nil,'AUCTION_OWNED_LIST_UPDATE');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[17]=='0' and f[18]=='0' and f[19]=='4','unconfirmed disappearance becomes unresolved')
+C_Container={GetContainerNumSlots=function(bag)return bag==0 and 1 or 0 end,GetContainerItemInfo=function()return {itemID=2447,stackCount=3,hyperlink='item:2447'}end}
+function GetItemInfo() return 'Peacebloom','item:2447' end
+callback(nil,'BAG_UPDATE_DELAYED');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[4]=='inventory_snapshot' and f[20]=='3')
+local n=#AZPCForeverDB.trades;callback(nil,'BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.trades==n,'unchanged bags do not flood the ledger')
+C_Container.GetContainerNumSlots=function()return 0 end;callback(nil,'BAG_UPDATE_DELAYED');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[20]=='0','removed bag items clear availability')
+-- Modern beta owner API has an explicit completeness guard.
+local complete=false
+C_AuctionHouse={HasFullOwnedAuctionResults=function()return complete end,GetOwnedAuctions=function()return {{itemKey={itemID=2447},quantity=5,status=0}}end,GetItemKeyInfo=function()return {itemName='Peacebloom'}end}
+n=#AZPCForeverDB.trades;callback(nil,'OWNED_AUCTIONS_UPDATED');assert(#AZPCForeverDB.trades==n)
+complete=true;callback(nil,'OWNED_AUCTIONS_UPDATED');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[17]=='5')
+print('PASS: complete legacy/modern owner capture, partial-page guards, pending/settled exclusion, net deposit refund, bag availability and dedup')

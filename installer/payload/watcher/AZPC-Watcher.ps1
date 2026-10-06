@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.31"
+        version = "0.4.32"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.31"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.32"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -919,15 +919,30 @@ function Convert-ForeverTrade([string]$Export) {
     # Addon 0.1.1/0.1.2 accidentally appended Lua gsub's replacement count.
     # Recover already-saved records only when that extra field matches the character encoding.
     if($f.Count -eq 14 -and $f[13] -eq ([string]([regex]::Matches($f[12],'%[0-9A-Fa-f]{2}').Count))){$f=$f[0..12]}
-    if($f.Count -ne 13 -or $f[0] -ne 'AZPCFTRADE' -or $f[1] -ne '1' -or $f[3] -notin @('buy','sell','expired') -or $f[10] -notin @('horde','alliance')){throw 'Invalid Forever trade header.'}
+    if((($f[1] -eq '1' -and $f.Count -ne 13) -or ($f[1] -eq '2' -and $f.Count -ne 21)) -or $f[0] -ne 'AZPCFTRADE' -or $f[1] -notin @('1','2') -or $f[3] -notin @('buy','sell','expired','listing_snapshot','inventory_snapshot') -or $f[10] -notin @('horde','alliance')){throw 'Invalid Forever trade header.'}
+    if($f[1] -eq '1' -and $f[3] -notin @('buy','sell','expired')){throw 'Invalid legacy Forever trade kind.'}
+    $minimumQuantity=if($f[3] -in @('listing_snapshot','inventory_snapshot')){0}else{1}
+    $minimumStamp=if($f[1] -eq '2'){946684800000L}else{946684800L};$maximumStamp=if($f[1] -eq '2'){4102444800000L}else{4102444800L}
     $id=0L;$qty=0L;$copper=0L;$stamp=0L;$region=0
-    if(-not [long]::TryParse($f[4],[ref]$id) -or $id -le 0 -or $id -gt 10000000 -or -not [long]::TryParse($f[6],[ref]$qty) -or $qty -le 0 -or $qty -gt 1000000 -or -not [long]::TryParse($f[7],[ref]$copper) -or $copper -lt 0 -or $copper -gt 1000000000000 -or -not [long]::TryParse($f[8],[ref]$stamp) -or $stamp -lt 946684800 -or $stamp -gt 4102444800 -or -not [int]::TryParse($f[11],[ref]$region) -or $region -notin @(1,2,3,4,5,90)){throw 'Invalid Forever trade values.'}
+    if(-not [long]::TryParse($f[4],[ref]$id) -or $id -le 0 -or $id -gt 10000000 -or -not [long]::TryParse($f[6],[ref]$qty) -or $qty -lt $minimumQuantity -or $qty -gt 1000000 -or -not [long]::TryParse($f[7],[ref]$copper) -or $copper -lt 0 -or $copper -gt 1000000000000 -or -not [long]::TryParse($f[8],[ref]$stamp) -or $stamp -lt $minimumStamp -or $stamp -gt $maximumStamp -or -not [int]::TryParse($f[11],[ref]$region) -or $region -notin @(1,2,3,4,5,90)){throw 'Invalid Forever trade values.'}
     if($f[3] -eq 'expired' -and $copper -ne 0){throw 'Expired auction returns cannot have trade proceeds.'}
     $name=[uri]::UnescapeDataString($f[5]);$realm=[uri]::UnescapeDataString($f[9]);$character=[uri]::UnescapeDataString($f[12])
     if(-not $name -or $name.Length -gt 200 -or -not $realm -or $realm.Length -gt 100 -or -not $character -or $character.Length -gt 150 -or -not $f[2]){throw 'Invalid Forever trade identity.'}
     $sha=[Security.Cryptography.SHA256]::Create()
     try{$key=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes([uri]::UnescapeDataString($f[2]))))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
-    return @{eventId=('mail:'+ $key);kind=$f[3];itemId=$id;name=$name;quantity=$qty;copper=$copper;observedAt=($stamp*1000);realm=$realm;faction=$f[10];region=$region;character=$character}
+    $metadata=@{}
+    if($f[1] -eq '2'){
+        $names=@('deposit','auctionHouseCut','mailPayout','listedQuantity','pendingQuantity','unresolvedQuantity','bagQuantity','depositLoss')
+        for($i=0;$i -lt $names.Count;$i++){if($f[$i+13] -ne ''){$value=0L;if(-not [long]::TryParse($f[$i+13],[ref]$value) -or $value -lt 0 -or $value -gt 1000000000000){throw 'Invalid Forever lifecycle metadata.'};$metadata[$names[$i]]=$value}}
+        if($f[3] -eq 'sell'){$metadata.netProceedsKnown=$true;if(-not $metadata.ContainsKey('deposit') -or -not $metadata.ContainsKey('mailPayout') -or $metadata.mailPayout-$metadata.deposit -ne $copper){throw 'Invalid net proceeds and refundable deposit.'}}
+        if($f[3] -in @('listing_snapshot','inventory_snapshot') -and $copper -ne 0){throw 'Inventory observations cannot have proceeds.'}
+        if($f[3] -eq 'listing_snapshot' -and (-not $metadata.ContainsKey('listedQuantity') -or -not $metadata.ContainsKey('pendingQuantity') -or -not $metadata.ContainsKey('unresolvedQuantity'))){throw 'Missing listing quantities.'}
+        if($f[3] -eq 'inventory_snapshot' -and -not $metadata.ContainsKey('bagQuantity')){throw 'Missing bag quantity.'}
+        if($f[3] -eq 'listing_snapshot' -and ($metadata.listedQuantity+$metadata.pendingQuantity+$metadata.unresolvedQuantity -ne $qty)){throw 'Invalid listing quantities.'}
+        if($f[3] -eq 'inventory_snapshot' -and $metadata.bagQuantity -ne $qty){throw 'Invalid bag quantity.'}
+    }elseif($f[3] -eq 'sell'){$metadata.netProceedsKnown=$false}
+    $observedAt=if($f[1] -eq '2'){$stamp}else{$stamp*1000}
+    return @{eventId=('mail:'+ $key);kind=$f[3];itemId=$id;name=$name;quantity=$qty;copper=$copper;observedAt=$observedAt;realm=$realm;faction=$f[10];region=$region;character=$character;metadata=$metadata}
 }
 function Collect-ForeverTrades([string]$Text) {
     $directory=Join-Path $StateDir 'Forever\trades'
@@ -936,9 +951,12 @@ function Collect-ForeverTrades([string]$Text) {
             $event=Convert-ForeverTrade $match.Groups[1].Value
             New-Item -ItemType Directory -Path $directory -Force | Out-Null
             $target=Join-Path $directory ($event.eventId.Substring(5)+'.json')
-            if(-not (Test-Path -LiteralPath $target)){
+            $upgrade=$false
+            if((Test-Path -LiteralPath $target) -and $event.kind -eq 'sell' -and $event.metadata.netProceedsKnown -eq $true){$old=Get-Content -LiteralPath $target -Raw -Encoding UTF8 | ConvertFrom-Json;$upgrade=($old.metadata.netProceedsKnown -ne $true)}
+            if(-not (Test-Path -LiteralPath $target) -or $upgrade){
                 $event | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath ($target+'.tmp') -Encoding UTF8
                 Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
+                if($upgrade -and (Test-Path -LiteralPath ($target+'.sent'))){Remove-Item -LiteralPath ($target+'.sent') -Force}
                 Write-Log ('FOREVER TRADE QUEUED: '+$event.kind+' | '+$event.name+' x'+$event.quantity)
             }
         }catch{Write-Log ('FOREVER TRADE REJECTED: '+$_.Exception.Message)}
@@ -954,7 +972,7 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
     if(-not $files.Count){return}
     try{
         $events=@($files | ForEach-Object {Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json})
-        $body=@{game='forever';schema=1;events=$events} | ConvertTo-Json -Depth 8 -Compress
+        $body=@{game='forever';schema=2;events=$events} | ConvertTo-Json -Depth 8 -Compress
         $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 20
         if(-not $result.ok -or $result.accepted -ne $events.Count){throw 'Receiver did not acknowledge this trade batch.'}
         foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
@@ -1019,7 +1037,7 @@ function Collect-ForeverScans([string]$Root) {
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.31 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.32 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -1118,5 +1136,6 @@ while ($true) {
         Start-Sleep -Seconds 5
     }
 }
+
 
 

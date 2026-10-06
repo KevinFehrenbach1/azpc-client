@@ -1,8 +1,9 @@
 ## Interface: 16001
 ## Title: AZPC Forever
-## Notes: Captures loaded Forever Beta AH results for the AZPC watcher. Browse/search coverage only.
+## Notes: Captures Forever auction prices, owned listings, bags and confirmed mailbox trading records.
 ## Author: Kevin Fehrenbach
-## Version: 0.1.3
+## Version: 0.2.0
 ## SavedVariables: AZPCForeverDB
 AZPCForever.lua
+
 

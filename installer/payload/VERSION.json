@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.78",
-  "watcherVersion": "0.4.31",
+  "packageVersion": "0.4.79",
+  "watcherVersion": "0.4.32",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Fix Forever mailbox export field count and recover already-saved purchase, sale and expired-return records.",
-  "version": "0.4.78",
-  "foreverAddonVersion": "0.1.3"
+  "notes": "Forever lifecycle accounting, confirmed net proceeds, owner auctions and bag capture.",
+  "version": "0.4.79",
+  "foreverAddonVersion": "0.2.0"
 }

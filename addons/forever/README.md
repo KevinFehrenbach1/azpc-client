@@ -11,3 +11,8 @@ Watcher uploads confirmed trade records to `https://forever.azpc.market/api/trad
 Open `https://forever.azpc.market/my-trades`, connect your existing AZPC account, and continue to Forever. Trading data is account private and stored separately from TBC. The page includes copper-exact FIFO realized profit/loss, net sale proceeds, open basis/positions, graph ranges, and a filtered/paginated timeline. Unknown purchase basis is shown explicitly and excluded from realized profit. Manual entries allow older purchases/sales and zero-cost farmed/other acquisitions; do not manually add events already captured automatically.
 
 Real beta mailbox API support must be validated in-game after rollout. Region 90 remains separate from live regions. Characters/realms/factions stay separate. Untracked cross-character transfers are not inferred as purchases or sales. The existing launcher background start issue remains separate; use the working visible PowerShell start until repaired.
+
+
+## 0.2.0 trading lifecycle
+
+Update through Launcher 0.2.8 (watcher 0.4.32). Open your bags, AH owner tab and mailbox, then /reload. The addon captures complete owned-auction status, bag quantities and confirmed mailbox buy/sale/expired records. Refunded sale deposits are separate from net proceeds. Old saved mailbox IDs are preserved and seller invoices can enrich the existing record. Partial owner pages and missing metadata are deferred. Expired deposit losses remain unknown unless captured evidence establishes them; no beta vendor formula is assumed. The website shows FIFO P/L, profit/revenue history, pending/unresolved listings, exact-market valuation and unlisted bag opportunities.

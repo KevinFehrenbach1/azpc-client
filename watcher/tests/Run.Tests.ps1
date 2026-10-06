@@ -105,3 +105,16 @@ try {
     Send-ForeverScans 'test-client' 'test-token'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.sent').Count -eq 1) 'Mismatched acknowledgement does not mark a scan sent'
 } finally { Remove-Item $root -Recurse -Force }
+
+
+# v2 preserves exact mail refund and lifecycle observations without fabricating trades.
+$v2='AZPCFTRADE|2|v2-sale|sell|2447|Peacebloom|3|200|1790830800000|Forever%20Test|horde|90|Tester|25|10|225|||||'
+$parsed=Convert-ForeverTrade $v2
+Assert ($parsed.copper -eq 200 -and $parsed.metadata.mailPayout -eq 225 -and $parsed.metadata.deposit -eq 25 -and $parsed.metadata.netProceedsKnown -eq $true) 'v2 sale separates refunded deposit from net proceeds'
+$listing='AZPCFTRADE|2|v2-owner|listing_snapshot|2447|Peacebloom|6|0|1790830800001|Forever%20Test|horde|90|Tester||||4|2|0||'
+$parsed=Convert-ForeverTrade $listing
+Assert ($parsed.metadata.listedQuantity -eq 4 -and $parsed.metadata.pendingQuantity -eq 2 -and $parsed.observedAt -eq 1790830800001) 'v2 owner capture preserves listed and pending quantities with event order'
+$bag='AZPCFTRADE|2|v2-bags|inventory_snapshot|2447|Peacebloom|0|0|1790830800002|Forever%20Test|horde|90|Tester|||||||0|'
+$parsed=Convert-ForeverTrade $bag
+Assert ($parsed.quantity -eq 0 -and $parsed.metadata.bagQuantity -eq 0) 'empty bags clear available inventory'
+foreach($bad in @($v2.Replace('|200|','|225|'),$listing.Replace('|6|0|','|7|0|'),$bag.Replace('|inventory_snapshot|','|sell|'))){$rejected=$false;try{Convert-ForeverTrade $bad | Out-Null}catch{$rejected=$true};Assert $rejected 'Reject inconsistent v2 accounting and lifecycle records'}
