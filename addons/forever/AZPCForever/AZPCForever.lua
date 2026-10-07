@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.0"
+local addon, VERSION = ..., "0.2.1"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -102,6 +102,7 @@ SLASH_AZPCFOREVER1="/azpcf"
 local captureTrades
 SlashCmdList.AZPCFOREVER=function(command)
     if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
+    elseif command == "crafts" then AZPCForeverCrafting.Status()
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
         message(ok and "Mailbox checked. /reload saves records for My Trades." or tostring(err))

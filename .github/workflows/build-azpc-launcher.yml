@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: lua5.1 watcher/tests/forever-addon.lua
+      - run: lua5.1 watcher/tests/forever-crafting.lua
   windows:
     runs-on: windows-latest
     steps:
@@ -108,7 +109,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.8-Windows-TEST
+          name: AZPC-Launcher-0.2.9-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -122,11 +123,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.8-Windows-TEST
+          name: AZPC-Launcher-0.2.9-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.8 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.8 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.8 - Forever trading lifecycle" --notes "Forever addon 0.2.0 and watcher 0.4.32 capture owned auctions, bag inventory and mailbox settlements. Sale revenue excludes refunded deposits. Update Forever through Launcher; existing credentials and SavedVariables are preserved."
+          if gh release view launcher-v0.2.9 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.9 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.9 - Forever crafting capture" --notes "Forever addon 0.2.1 captures learned recipe requirements and completed item crafts. Open a profession, craft normally, use /azpcf crafts to inspect capture, then /reload to save. Stage 1 stores craft evidence locally; cost transfer and website crafting tools come next. Watcher remains 0.4.32. Existing trades and credentials are preserved."

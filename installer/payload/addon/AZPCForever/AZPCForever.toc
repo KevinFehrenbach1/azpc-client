@@ -1,9 +1,10 @@
 ## Interface: 16001
 ## Title: AZPC Forever
-## Notes: Captures Forever auction prices, owned listings, bags and confirmed mailbox trading records.
+## Notes: Captures Forever auction prices, owned listings, bags and confirmed mailbox trading records, recipes and completed crafts.
 ## Author: Kevin Fehrenbach
-## Version: 0.2.0
+## Version: 0.2.1
 ## SavedVariables: AZPCForeverDB
 AZPCForever.lua
 
 
+AZPCForeverCrafting.lua

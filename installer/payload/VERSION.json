@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.79",
+  "packageVersion": "0.4.80",
   "watcherVersion": "0.4.32",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Forever lifecycle accounting, confirmed net proceeds, owner auctions and bag capture.",
-  "version": "0.4.79",
-  "foreverAddonVersion": "0.2.0"
+  "notes": "Forever recipe and confirmed craft capture; trading and watcher accounting unchanged.",
+  "version": "0.4.80",
+  "foreverAddonVersion": "0.2.1"
 }

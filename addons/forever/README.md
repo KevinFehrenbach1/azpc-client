@@ -16,3 +16,14 @@ Real beta mailbox API support must be validated in-game after rollout. Region 90
 ## 0.2.0 trading lifecycle
 
 Update through Launcher 0.2.8 (watcher 0.4.32). Open your bags, AH owner tab and mailbox, then /reload. The addon captures complete owned-auction status, bag quantities and confirmed mailbox buy/sale/expired records. Refunded sale deposits are separate from net proceeds. Old saved mailbox IDs are preserved and seller invoices can enrich the existing record. Partial owner pages and missing metadata are deferred. Expired deposit losses remain unknown unless captured evidence establishes them; no beta vendor formula is assumed. The website shows FIFO P/L, profit/revenue history, pending/unresolved listings, exact-market valuation and unlisted bag opportunities.
+
+
+## 0.2.1 recipe and completed-craft capture (stage 1)
+
+Update Forever through Launcher 0.2.9. Open Tailoring (or another item-crafting profession), craft normally, then use `/azpcf crafts` and `/reload`. The status reports saved recipe and completed-craft counts and the most recent output. Requirements are captured automatically on profession updates; the command also refreshes loaded recipes. Each completed craft reports its actual output quantity.
+
+Records live in `AZPCForeverDB.crafting` in the existing account SavedVariables file. Recipes include output item/range, reagent slots and per-craft requirements, profession, character and exact market. Craft records preserve their own recipe requirements, actual output quantity, cast identity, material returns, time and character. They require a successful player spell and a matching `TRADE_SKILL_ITEM_CRAFTED_RESULT`; clicking Craft, cancellation, ordinary loot and bag changes do not count. Cast identities persist for deduplication across reloads. Only learned item recipes are accepted; linked/guild/NPC, enchants, recrafts, gathering and salvage are excluded. Missing/ambiguous selection evidence leaves material consumption unresolved rather than assigning a zero cost.
+
+This stage is local capture only: the watcher does not upload these records yet, and they do not enter My Trades or change cost basis. Material-cost transfer, vendor purchase tracking, calculator UI and realized crafted profit are subsequent steps. Existing purchases/sales and FIFO accounting remain unchanged. Beta runtime validation is still required: craft one Bolt of Linen Cloth, inspect `/azpcf crafts`, then `/reload` and confirm the count survives.
+
+API reference used: Blizzard UI source for the Forever branch, `TradeSkillUIDocumentation.lua` and `TradeSkillUITypesDocumentation.lua` (https://github.com/Gethe/wow-ui-source/tree/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated). Tests cover confirmations in either order, separate batch casts into the same stack, duplicate notifications, failures/interruption, refunds of materials, unknown selections, reload replay and unavailable APIs.
