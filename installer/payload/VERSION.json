@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.80",
+  "packageVersion": "0.4.81",
   "watcherVersion": "0.4.32",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Forever recipe and confirmed craft capture; trading and watcher accounting unchanged.",
-  "version": "0.4.80",
-  "foreverAddonVersion": "0.2.1"
+  "notes": "Forever local craft material costs and chained recipe cost transfer; missing sources remain unknown.",
+  "version": "0.4.81",
+  "foreverAddonVersion": "0.2.2"
 }
