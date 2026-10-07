@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.2"
+local addon, VERSION = ..., "0.2.3"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -575,16 +575,22 @@ local function mail(export)
 end
 local function rebuild()
     local db=AZPCForeverDB.crafting
+    if db.vendorCostingBlocked then error('Vendor ledger capacity reached; material costs cannot currently be verified.')end
     local events,seen={},{}
     for _,row in ipairs(AZPCForeverDB.trades or {}) do
         local e=mail(row.tradeExport);if e and not seen[e.eventId] then seen[e.eventId]=true;events[#events+1]=e end
+    end
+    for _,e in ipairs(db.vendorEvents or {})do
+        if type(e.eventId)=='string' and not seen[e.eventId] and (e.kind=='buy' or e.kind=='sell' or e.kind=='vendor_unresolved') and integer(e.itemId,10000000) and e.itemId>0 and integer(e.quantity,1000000) and e.quantity>0 and integer(e.copper) then
+            seen[e.eventId]=true;events[#events+1]=e
+        end
     end
     for _,r in ipairs(db.crafts) do
         if type(r.eventId)=='string' and not seen[r.eventId] then
             seen[r.eventId]=true;events[#events+1]={kind='craft',itemId=r.itemId,quantity=r.quantity,observedAt=r.observedAt,eventId=r.eventId,realm=r.realm,faction=r.faction,region=r.region,character=r.character,name=r.name,record=r}
         end
     end
-    local rank={buy=1,craft=2,sell=3}
+    local rank={buy=1,craft=2,sell=3,vendor_unresolved=4}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
     local pools={};local unresolved=0;local updates={}
     local function pool(e,id)
@@ -619,6 +625,7 @@ local function rebuild()
         local p=pool(e,e.itemId)
         if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.copper}
         elseif e.kind=='sell' then sale(p,e.quantity)
+        elseif e.kind=='vendor_unresolved' then p.uncertain=true
         else
             local r=e.record;local inputs,missing,partial,complete={},{},0,r.materialsKnown==true and type(r.consumedReagents)=='table'
             local demand={}
@@ -689,7 +696,7 @@ AZPCForeverCrafting.Status=function()
     if r.costBasis.complete and not r.costConflict then
         print('|cff9cc1ffAZPC Forever:|r Saved craft cost: '..money(r.costBasis.totalCopper)..' for '..r.quantity..' output. Based on your recorded material purchases at crafting time.')
     else
-        print('|cff9cc1ffAZPC Forever:|r Craft cost incomplete: '..money(r.costBasis.recordedCopper or 0)..' recorded material cost; missing costs are unknown. Vendor purchases and untracked transfers are not included.')
+        print('|cff9cc1ffAZPC Forever:|r Craft cost incomplete: '..money(r.costBasis.recordedCopper or 0)..' recorded material cost; missing costs are unknown. Unrecorded purchases and transfers have unknown costs.')
         if r.costConflict then print('|cff9cc1ffAZPC Forever:|r Historical source conflict: the saved craft cost is preserved, but cannot currently be verified.') end
         for _,m in ipairs(r.costingMissing or r.costBasis.missing or {})do if m.itemId then print('|cff9cc1ffAZPC Forever:|r Material '..m.itemId..': '..m.recordedQuantity..' of '..m.quantity..' units have a recorded source.') end end
     end
@@ -701,4 +708,170 @@ frame:SetScript('OnEvent',function(_,event)
     elseif event=='ADDON_LOADED' then schedule()
     else C_Timer.After(0.75,schedule) end
 end)
+end
+
+-- Cash-only vendor transactions: hook intent, then require matching money and bag changes.
+do
+local active,baseline,requests,items,buybacks=false,nil,{}, {},{}
+local queued,generation,attempts=false,0,0
+local function safe(n,max)
+    if type(issecretvalue)=='function' and issecretvalue(n) then return end
+    if type(n)=='number' and n>=0 and n==math.floor(n) and n<=(max or 1000000000000) then return n end
+end
+local function call(fn,...)
+    if type(fn)~='function' then return end
+    local ok,value=pcall(fn,...);if ok then return value end
+end
+local function db()
+    setup();AZPCForeverDB.crafting=AZPCForeverDB.crafting or {schema=1,recipes={},crafts={},seen={}}
+    local d=AZPCForeverDB.crafting;d.vendorEvents=d.vendorEvents or {};return d
+end
+local function snapshot()
+    if not C_Container or not GetMoney then return end
+    local cash=safe(call(GetMoney));if not cash then return end
+    local s={money=cash,counts={},slots={},craftCount=AZPCForeverDB and AZPCForeverDB.crafting and #AZPCForeverDB.crafting.crafts or 0}
+    for bag=0,(NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4) do
+        local slots=safe(call(C_Container.GetContainerNumSlots,bag),1000);if not slots then return end
+        for slot=1,slots do
+            local info=call(C_Container.GetContainerItemInfo,bag,slot)
+            if info then
+                local id=safe(info.itemID,10000000);local q=safe(info.stackCount,1000000)
+                if not id or id<1 or not q then return end
+                local sell
+                if C_Item and type(C_Item.GetItemInfo)=='function' then
+                    local ok,_,_,_,_,_,_,_,_,_,_,price=pcall(C_Item.GetItemInfo,id);if ok then sell=safe(price)end
+                end
+                local refund=call(C_Container.GetContainerItemPurchaseInfo,bag,slot,false)
+                s.counts[id]=(s.counts[id] or 0)+q
+                s.slots[bag..':'..slot]={itemId=id,quantity=q,name=info.itemName or ('Item '..id),sellCopper=sell,refund=refund}
+            end
+        end
+    end
+    return s
+end
+local function catalog()
+    items={};buybacks={}
+    for i=1,(safe(call(GetMerchantNumItems),1000) or 0)do
+        local info=call(C_MerchantFrame and C_MerchantFrame.GetItemInfo,i)
+        if not info and type(GetMerchantItemInfo)=='function' then
+            local name,_,price,stack,_,purchasable,_,extended=GetMerchantItemInfo(i)
+            info={name=name,price=price,stackCount=stack,isPurchasable=purchasable,hasExtendedCost=extended}
+        end
+        local link=call(GetMerchantItemLink,i);local id=type(link)=='string' and tonumber(link:match('item:(%d+)'))
+        if info and safe(id,10000000) and id>0 and safe(info.price) and safe(info.stackCount,1000000) and info.stackCount>0 and not info.hasExtendedCost and not info.currencyID then
+            items[i]={itemId=id,name=info.name or ('Item '..id),price=info.price,stack=info.stackCount}
+        end
+    end
+    for i=1,(safe(call(GetNumBuybackItems),100) or 0)do
+        if type(GetBuybackItemInfo)=='function' then
+            local name,_,price,q=GetBuybackItemInfo(i)
+            local link=call(GetBuybackItemLink,i);local id=type(link)=='string' and tonumber(link:match('item:(%d+)'))
+            if safe(id,10000000) and id>0 and safe(price) and safe(q,1000000) and q>0 then buybacks[i]={itemId=id,name=name or ('Item '..id),price=price,quantity=q}end
+        end
+    end
+end
+local function save(kind,id,q,c,name,at,source)
+    local d=db();if #d.vendorEvents>=10000 then d.vendorError='Vendor ledger is full; existing records are preserved.';d.vendorCostingBlocked=true;return false end
+    local realm,character,faction=GetRealmName() or '',UnitName('player') or '',(UnitFactionGroup('player') or ''):lower()
+    local region=safe(call(GetCurrentRegion),100)
+    if realm=='' or character=='' or not region or region<1 or (faction~='horde' and faction~='alliance') then return false end
+    d.vendorSequence=(d.vendorSequence or 0)+1
+    d.vendorEvents[#d.vendorEvents+1]={schema=1,eventId=tostring(call(UnitGUID,'player') or character)..':vendor:'..at..':'..d.vendorSequence,
+        kind=kind,itemId=id,quantity=q,copper=c,name=name or ('Item '..id),observedAt=at,realm=realm,character=character,faction=faction,region=region,source=source,confirmation='vendor_intent_money_and_bags'}
+    return true
+end
+local schedule
+local function reconcile(force)
+    local now=snapshot();if not baseline or not now then return end
+    local deltas={};for id,q in pairs(baseline.counts)do deltas[id]=(now.counts[id] or 0)-q end
+    for id,q in pairs(now.counts)do if baseline.counts[id]==nil then deltas[id]=q end end
+    local expected,cash,directions,valid={},0,{},#requests>0
+    for _,r in ipairs(requests)do
+        local sign=r.kind=='buy' and 1 or -1
+        if directions[r.itemId] and directions[r.itemId]~=sign then valid=false end
+        directions[r.itemId]=sign;expected[r.itemId]=(expected[r.itemId] or 0)+sign*r.quantity;cash=cash-sign*r.copper
+    end
+    if now.money-baseline.money~=cash then valid=false end
+    for id,q in pairs(expected)do if (deltas[id] or 0)~=q then valid=false end end
+    for id,q in pairs(deltas)do if q~=(expected[id] or 0)then valid=false end end
+    if valid and #db().vendorEvents+#requests>10000 then
+        db().vendorCostingBlocked=true;db().vendorError='Vendor ledger is full; existing records are preserved.'
+    elseif valid then
+        for _,r in ipairs(requests)do save(r.kind,r.itemId,r.quantity,r.copper,r.name,r.at,r.source)end
+        db().vendorError=nil
+    elseif #requests>0 and not force and attempts<10 then attempts=attempts+1;schedule();return
+    else
+        -- Crafting while a merchant remains open is not a vendor disposal.
+        local crafts=db().crafts;local craftChange=#requests==0 and now.money==baseline.money and #crafts>baseline.craftCount
+        local craftDelta={}
+        if craftChange then
+            for i=baseline.craftCount+1,#crafts do
+                local r=crafts[i];if not r.materialsKnown or type(r.consumedReagents)~='table'then craftChange=false;break end
+                craftDelta[r.itemId]=(craftDelta[r.itemId] or 0)+r.quantity
+                for _,m in ipairs(r.consumedReagents)do craftDelta[m.itemId]=(craftDelta[m.itemId] or 0)-m.quantity end
+            end
+            for id,q in pairs(craftDelta)do if q~=(deltas[id] or 0)then craftChange=false end end
+            for id,q in pairs(deltas)do if q~=(craftDelta[id] or 0)then craftChange=false end end
+        end
+        local changed=false
+        if not craftChange then
+        for id,q in pairs(deltas)do if q~=0 then changed=true;save('vendor_unresolved',id,math.abs(q),0,nil,observedMillis(),'unconfirmed_vendor_change')end end
+        end
+        if changed then db().vendorError='Vendor change could not be matched to cash-only payment; affected material costs are unresolved.' end
+    end
+    baseline=now;requests={};attempts=0
+    catalog();if not active then baseline=nil end;if AZPCForeverCrafting.ScheduleCosts then AZPCForeverCrafting.ScheduleCosts()end
+end
+schedule=function()
+    if queued then return end;queued=true;local token=generation
+    C_Timer.After(0.2,function()if token~=generation then return end;queued=false;local ok,err=pcall(reconcile,false);if not ok then db().vendorError=tostring(err)end end)
+end
+local function request(kind,r,q,c,source)
+    if not active or not baseline or not r or not safe(q,1000000) or q<1 or not safe(c) then return end
+    requests[#requests+1]={kind=kind,itemId=r.itemId,name=r.name,quantity=q,copper=c,source=source,at=observedMillis()};attempts=0;schedule()
+end
+local hooked=false
+local function install()
+    if hooked or type(hooksecurefunc)~='function' then return end
+    local function hook(target,key,fn)
+        local f=target and target[key] or _G[key]
+        if type(f)=='function' then
+            local safeFn=function(...)local ok,err=pcall(fn,...);if not ok then db().vendorError=tostring(err)end end
+            if target then hooksecurefunc(target,key,safeFn)else hooksecurefunc(key,safeFn)end
+        end
+    end
+    hook(nil,'BuyMerchantItem',function(index,quantity)
+        local r=items[index];if not r then return end
+        local q=quantity or r.stack;request('buy',r,q,r.price*q/r.stack,'vendor_purchase')
+    end)
+    hook(nil,'BuybackItem',function(index)local r=buybacks[index];if r then request('buy',r,r.quantity,r.price,'vendor_buyback')end end)
+    hook(C_Container,'UseContainerItem',function(bag,slot)
+        local r=baseline and baseline.slots[bag..':'..slot]
+        if r and r.sellCopper then request('sell',r,r.quantity,r.sellCopper*r.quantity,'vendor_sale')end
+    end)
+    hook(C_Container,'ContainerRefundItemPurchase',function(bag,slot,equipped)
+        local r=baseline and baseline.slots[bag..':'..slot];local info=r and r.refund
+        if not equipped and info and safe(info.money) and info.itemCount==0 and info.currencyCount==0 then request('sell',r,r.quantity,info.money,'vendor_refund')end
+    end)
+    hooked=true
+end
+local frame=CreateFrame('Frame')
+for _,event in ipairs({'ADDON_LOADED','MERCHANT_SHOW','MERCHANT_CLOSED','MERCHANT_UPDATE','PLAYER_MONEY','BAG_UPDATE_DELAYED','PLAYER_LOGOUT'})do pcall(frame.RegisterEvent,frame,event)end
+frame:SetScript('OnEvent',function(_,event)
+    local ok,err=pcall(function()
+        if event=='ADDON_LOADED'then db();install()
+        elseif event=='MERCHANT_SHOW'then
+            if baseline then reconcile(true)end
+            generation=generation+1;queued=false;requests={};attempts=0;active=true;baseline=snapshot();catalog();install()
+        elseif event=='MERCHANT_CLOSED'then active=false;schedule()
+        elseif event=='PLAYER_LOGOUT'then if baseline then reconcile(true)end;AZPCForeverCrafting.RebuildCosts()
+        elseif baseline and (active or #requests>0)then schedule()end
+    end)
+    if not ok then db().vendorError=tostring(err)end
+end)
+local oldStatus=AZPCForeverCrafting.Status
+AZPCForeverCrafting.Status=function()
+    oldStatus();local d=db();local n=0;for _,e in ipairs(d.vendorEvents)do if e.source=='vendor_purchase' or e.source=='vendor_buyback'then n=n+1 end end
+    message('Vendor capture: '..n..' confirmed purchases/buybacks.'..(d.vendorError and ' '..d.vendorError or ' Cash purchases require matching bag and money changes.'))
+end
 end

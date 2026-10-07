@@ -23,6 +23,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-addon.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
+      - run: lua5.1 watcher/tests/forever-vendor.lua
   windows:
     runs-on: windows-latest
     steps:
@@ -110,7 +111,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.10-Windows-TEST
+          name: AZPC-Launcher-0.2.11-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -124,11 +125,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.10-Windows-TEST
+          name: AZPC-Launcher-0.2.11-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.10 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.10 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.10 - Forever crafting costs" --notes "Forever addon 0.2.2 saves completed craft costs using recorded material purchases and carries those costs through intermediate recipes. Use /azpcf crafts to inspect your latest craft. Missing sources stay unknown. Costs are local; website syncing comes next. Watcher remains 0.4.32. Existing trades and credentials are preserved."
+          if gh release view launcher-v0.2.11 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.11 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.11 - Forever vendor material costs" --notes "Forever addon 0.2.3 confirms cash vendor purchases against bag and money changes and includes them in local craft costs. Vendor sales, cash refunds and buybacks update remaining material costs. Currency exchanges remain unresolved. Use /azpcf crafts to inspect your latest craft and vendor capture. Website syncing comes next. Watcher remains 0.4.32."
