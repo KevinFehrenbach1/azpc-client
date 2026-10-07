@@ -9,7 +9,7 @@ try {
  $dir=Join-Path $root 'Forever/crafting';$files=@(Get-ChildItem $dir -Filter '*.json')
  Assert ($files.Count -eq 4) 'Actual addon JSON recipes, vendor purchases and crafts queue once'
  $parsed=Convert-ForeverCrafting $fixture.exports[3]
- Assert ($parsed.data.name -eq 'Bag café' -and $parsed.data.costBasis.totalCopper -eq 12 -and $parsed.data.consumedReagents.Count -eq 2) 'UTF8 name and chained cost survive JSON export parsing'
+ Assert ($parsed.data.name -eq ('Bag caf'+[char]0x00e9) -and $parsed.data.costBasis.totalCopper -eq 12 -and $parsed.data.consumedReagents.Count -eq 2) 'UTF8 name and chained cost survive JSON export parsing'
  $script:requests=0;$script:fail=$true;$script:badAck=$false
  function Invoke-RestMethod {
   param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
