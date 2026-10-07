@@ -1,0 +1,189 @@
+{
+  "exports": [
+    "AZPCFCRAFT|1|%7B%22data%22%3A%7B%22character%22%3A%22Lu%22%2C%22faction%22%3A%22horde%22%2C%22materialsKnown%22%3Atrue%2C%22name%22%3A%22Bag%20caf%C3%A9%22%2C%22observedAt%22%3A1791403200000%2C%22outputItemId%22%3A4496%2C%22outputMax%22%3A1%2C%22outputMin%22%3A1%2C%22profession%22%3A%22Tailoring%22%2C%22reagentSlots%22%3A%5B%5D%2C%22reagents%22%3A%5B%7B%22itemId%22%3A2996%2C%22quantity%22%3A1%7D%2C%7B%22itemId%22%3A2320%2C%22quantity%22%3A1%7D%5D%2C%22realm%22%3A%22Realm%22%2C%22recipeId%22%3A100%2C%22recipeKey%22%3A%22recipe%22%2C%22region%22%3A90%2C%22schema%22%3A1%7D%2C%22recordId%22%3A%22recipe%22%2C%22recordType%22%3A%22recipe%22%2C%22schema%22%3A1%7D",
+    "AZPCFCRAFT|1|%7B%22data%22%3A%7B%22character%22%3A%22Lu%22%2C%22confirmation%22%3A%22vendor_intent_money_and_bags%22%2C%22copper%22%3A10%2C%22eventId%22%3A%22vendor%3A1%22%2C%22faction%22%3A%22horde%22%2C%22itemId%22%3A2320%2C%22kind%22%3A%22buy%22%2C%22name%22%3A%22Thread%22%2C%22observedAt%22%3A1791403200001%2C%22quantity%22%3A1%2C%22realm%22%3A%22Realm%22%2C%22region%22%3A90%2C%22schema%22%3A1%2C%22source%22%3A%22vendor_purchase%22%7D%2C%22recordId%22%3A%22vendor%3A1%22%2C%22recordType%22%3A%22vendor%22%2C%22schema%22%3A1%7D",
+    "AZPCFCRAFT|1|%7B%22data%22%3A%7B%22character%22%3A%22Lu%22%2C%22confirmation%22%3A%22player_spell_success_and_item_result%22%2C%22consumedReagents%22%3A%5B%7B%22itemId%22%3A2589%2C%22quantity%22%3A2%7D%5D%2C%22costBasis%22%3A%7B%22complete%22%3Atrue%2C%22costedAt%22%3A1791403200002%2C%22inputs%22%3A%5B%7B%22availableQuantity%22%3A2%2C%22complete%22%3Atrue%2C%22itemId%22%3A2589%2C%22knownCopper%22%3A2%2C%22quantity%22%3A2%2C%22recordedQuantity%22%3A2%7D%5D%2C%22method%22%3A%22remaining_material_weighted_average%22%2C%22missing%22%3A%5B%5D%2C%22outputQuantity%22%3A1%2C%22recordedCopper%22%3A2%2C%22schema%22%3A1%2C%22totalCopper%22%3A2%7D%2C%22costConflict%22%3Afalse%2C%22eventId%22%3A%22craft%3A1%22%2C%22faction%22%3A%22horde%22%2C%22itemId%22%3A2996%2C%22materialsKnown%22%3Atrue%2C%22name%22%3A%22Bolt%22%2C%22observedAt%22%3A1791403200002%2C%22quantity%22%3A1%2C%22realm%22%3A%22Realm%22%2C%22recipeId%22%3A100%2C%22recipeKey%22%3A%22recipe%22%2C%22recipeReagents%22%3A%5B%7B%22itemId%22%3A2589%2C%22quantity%22%3A2%7D%5D%2C%22region%22%3A90%2C%22resourcesReturned%22%3A%5B%5D%2C%22schema%22%3A1%7D%2C%22recordId%22%3A%22craft%3A1%22%2C%22recordType%22%3A%22craft%22%2C%22schema%22%3A1%7D",
+    "AZPCFCRAFT|1|%7B%22data%22%3A%7B%22character%22%3A%22Lu%22%2C%22confirmation%22%3A%22player_spell_success_and_item_result%22%2C%22consumedReagents%22%3A%5B%7B%22itemId%22%3A2996%2C%22quantity%22%3A1%7D%2C%7B%22itemId%22%3A2320%2C%22quantity%22%3A1%7D%5D%2C%22costBasis%22%3A%7B%22complete%22%3Atrue%2C%22costedAt%22%3A1791403200003%2C%22inputs%22%3A%5B%7B%22availableQuantity%22%3A1%2C%22complete%22%3Atrue%2C%22itemId%22%3A2320%2C%22knownCopper%22%3A10%2C%22quantity%22%3A1%2C%22recordedQuantity%22%3A1%7D%2C%7B%22availableQuantity%22%3A1%2C%22complete%22%3Atrue%2C%22itemId%22%3A2996%2C%22knownCopper%22%3A2%2C%22quantity%22%3A1%2C%22recordedQuantity%22%3A1%7D%5D%2C%22method%22%3A%22remaining_material_weighted_average%22%2C%22missing%22%3A%5B%5D%2C%22outputQuantity%22%3A1%2C%22recordedCopper%22%3A12%2C%22schema%22%3A1%2C%22totalCopper%22%3A12%7D%2C%22costConflict%22%3Afalse%2C%22eventId%22%3A%22craft%3A2%22%2C%22faction%22%3A%22horde%22%2C%22itemId%22%3A4496%2C%22materialsKnown%22%3Atrue%2C%22name%22%3A%22Bag%20caf%C3%A9%22%2C%22observedAt%22%3A1791403200003%2C%22quantity%22%3A1%2C%22realm%22%3A%22Realm%22%2C%22recipeId%22%3A100%2C%22recipeKey%22%3A%22recipe%22%2C%22recipeReagents%22%3A%5B%7B%22itemId%22%3A2996%2C%22quantity%22%3A1%7D%2C%7B%22itemId%22%3A2320%2C%22quantity%22%3A1%7D%5D%2C%22region%22%3A90%2C%22resourcesReturned%22%3A%5B%5D%2C%22schema%22%3A1%7D%2C%22recordId%22%3A%22craft%3A2%22%2C%22recordType%22%3A%22craft%22%2C%22schema%22%3A1%7D"
+  ],
+  "records": [
+    {
+      "data": {
+        "character": "Lu",
+        "faction": "horde",
+        "materialsKnown": true,
+        "name": "Bag café",
+        "observedAt": 1791403200000,
+        "outputItemId": 4496,
+        "outputMax": 1,
+        "outputMin": 1,
+        "profession": "Tailoring",
+        "reagentSlots": [],
+        "reagents": [
+          {
+            "itemId": 2996,
+            "quantity": 1
+          },
+          {
+            "itemId": 2320,
+            "quantity": 1
+          }
+        ],
+        "realm": "Realm",
+        "recipeId": 100,
+        "recipeKey": "recipe",
+        "region": 90,
+        "schema": 1
+      },
+      "recordId": "recipe",
+      "recordType": "recipe",
+      "schema": 1
+    },
+    {
+      "data": {
+        "character": "Lu",
+        "confirmation": "vendor_intent_money_and_bags",
+        "copper": 10,
+        "eventId": "vendor:1",
+        "faction": "horde",
+        "itemId": 2320,
+        "kind": "buy",
+        "name": "Thread",
+        "observedAt": 1791403200001,
+        "quantity": 1,
+        "realm": "Realm",
+        "region": 90,
+        "schema": 1,
+        "source": "vendor_purchase"
+      },
+      "recordId": "vendor:1",
+      "recordType": "vendor",
+      "schema": 1
+    },
+    {
+      "data": {
+        "character": "Lu",
+        "confirmation": "player_spell_success_and_item_result",
+        "consumedReagents": [
+          {
+            "itemId": 2589,
+            "quantity": 2
+          }
+        ],
+        "costBasis": {
+          "complete": true,
+          "costedAt": 1791403200002,
+          "inputs": [
+            {
+              "availableQuantity": 2,
+              "complete": true,
+              "itemId": 2589,
+              "knownCopper": 2,
+              "quantity": 2,
+              "recordedQuantity": 2
+            }
+          ],
+          "method": "remaining_material_weighted_average",
+          "missing": [],
+          "outputQuantity": 1,
+          "recordedCopper": 2,
+          "schema": 1,
+          "totalCopper": 2
+        },
+        "costConflict": false,
+        "eventId": "craft:1",
+        "faction": "horde",
+        "itemId": 2996,
+        "materialsKnown": true,
+        "name": "Bolt",
+        "observedAt": 1791403200002,
+        "quantity": 1,
+        "realm": "Realm",
+        "recipeId": 100,
+        "recipeKey": "recipe",
+        "recipeReagents": [
+          {
+            "itemId": 2589,
+            "quantity": 2
+          }
+        ],
+        "region": 90,
+        "resourcesReturned": [],
+        "schema": 1
+      },
+      "recordId": "craft:1",
+      "recordType": "craft",
+      "schema": 1
+    },
+    {
+      "data": {
+        "character": "Lu",
+        "confirmation": "player_spell_success_and_item_result",
+        "consumedReagents": [
+          {
+            "itemId": 2996,
+            "quantity": 1
+          },
+          {
+            "itemId": 2320,
+            "quantity": 1
+          }
+        ],
+        "costBasis": {
+          "complete": true,
+          "costedAt": 1791403200003,
+          "inputs": [
+            {
+              "availableQuantity": 1,
+              "complete": true,
+              "itemId": 2320,
+              "knownCopper": 10,
+              "quantity": 1,
+              "recordedQuantity": 1
+            },
+            {
+              "availableQuantity": 1,
+              "complete": true,
+              "itemId": 2996,
+              "knownCopper": 2,
+              "quantity": 1,
+              "recordedQuantity": 1
+            }
+          ],
+          "method": "remaining_material_weighted_average",
+          "missing": [],
+          "outputQuantity": 1,
+          "recordedCopper": 12,
+          "schema": 1,
+          "totalCopper": 12
+        },
+        "costConflict": false,
+        "eventId": "craft:2",
+        "faction": "horde",
+        "itemId": 4496,
+        "materialsKnown": true,
+        "name": "Bag café",
+        "observedAt": 1791403200003,
+        "quantity": 1,
+        "realm": "Realm",
+        "recipeId": 100,
+        "recipeKey": "recipe",
+        "recipeReagents": [
+          {
+            "itemId": 2996,
+            "quantity": 1
+          },
+          {
+            "itemId": 2320,
+            "quantity": 1
+          }
+        ],
+        "region": 90,
+        "resourcesReturned": [],
+        "schema": 1
+      },
+      "recordId": "craft:2",
+      "recordType": "craft",
+      "schema": 1
+    }
+  ]
+}

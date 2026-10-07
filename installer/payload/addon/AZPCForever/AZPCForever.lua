@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.3"
+local addon, VERSION = ..., "0.2.4"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -446,6 +446,9 @@ local function finish(c)
     local record={schema=1,eventId=eventId,castGuid=c.guid,operationId=result.operationID,recipeId=c.recipe.recipeId,recipeKey=c.recipe.recipeKey,
         name=c.recipe.name,itemId=result.itemID,quantity=result.quantity,observedAt=db.lastMillis,character=c.who.character,realm=c.who.realm,faction=c.who.faction,region=c.who.region,
         confirmation='player_spell_success_and_item_result',materialsKnown=known,recipeReagents=required,resourcesReturned=returned}
+    local candidates={};record.candidateItemIds={}
+    for _,slot in ipairs(c.recipe.reagentSlots or {})do for _,option in ipairs(slot.options or {})do if option.itemId then candidates[option.itemId]=true end end end
+    for id in pairs(candidates)do record.candidateItemIds[#record.candidateItemIds+1]=id end;table.sort(record.candidateItemIds)
     if known then record.consumedReagents=consumed end
     db.crafts[#db.crafts+1]=record;db.seen[eventId]=true
     if AZPCForeverCrafting.ScheduleCosts then AZPCForeverCrafting.ScheduleCosts() end
@@ -646,6 +649,7 @@ local function rebuild()
                 -- Without reliable consumption, these candidate material pools cannot establish later costs.
                 local candidates={}
                 for _,m in ipairs(r.recipeReagents or {})do candidates[m.itemId]=true end
+                for _,id in ipairs(r.candidateItemIds or {})do candidates[id]=true end
                 local catalog=db.recipes[r.recipeKey]
                 for _,slot in ipairs(catalog and catalog.reagentSlots or {})do for _,option in ipairs(slot.options or {})do if option.itemId then candidates[option.itemId]=true end end end
                 for id in pairs(candidates)do pool(e,id).uncertain=true end
@@ -873,5 +877,46 @@ local oldStatus=AZPCForeverCrafting.Status
 AZPCForeverCrafting.Status=function()
     oldStatus();local d=db();local n=0;for _,e in ipairs(d.vendorEvents)do if e.source=='vendor_purchase' or e.source=='vendor_buyback'then n=n+1 end end
     message('Vendor capture: '..n..' confirmed purchases/buybacks.'..(d.vendorError and ' '..d.vendorError or ' Cash purchases require matching bag and money changes.'))
+end
+end
+
+-- Percent-encoded JSON exports keep the desktop reader away from executable Lua.
+do
+local arrays={candidateItemIds=true,reagents=true,reagentSlots=true,options=true,recipeReagents=true,consumedReagents=true,resourcesReturned=true,inputs=true,missing=true}
+local function json(value,key,depth)
+    depth=depth or 0;if depth>12 then error('Crafting export exceeds nesting limit.')end
+    local kind=type(value)
+    if kind=='nil'then return 'null'
+    elseif kind=='boolean'then return value and 'true' or 'false'
+    elseif kind=='number'then if value~=value or value==math.huge or value==-math.huge then error('Invalid crafting number.')end;return string.format('%.0f',value)
+    elseif kind=='string'then return '"'..value:gsub('[%z\1-\31\\"]',function(c)if c=='"'then return '\\"'elseif c=='\\'then return '\\\\'else return string.format('\\u%04x',string.byte(c))end end)..'"'
+    elseif kind=='table'then
+        local out={}
+        if arrays[key]then for _,v in ipairs(value)do out[#out+1]=json(v,nil,depth+1)end;return '['..table.concat(out,',')..']'end
+        local keys={};for k in pairs(value)do if type(k)=='string'and k~='syncExport' and k~='costingMissing'then keys[#keys+1]=k end end;table.sort(keys)
+        for _,k in ipairs(keys)do out[#out+1]=json(k,nil,depth+1)..':'..json(value[k],k,depth+1)end
+        return '{'..table.concat(out,',')..'}'
+    end
+    error('Unsupported crafting export value.')
+end
+local function exports()
+    local d=AZPCForeverDB and AZPCForeverDB.crafting;if not d then return end
+    for _,r in pairs(d.recipes)do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='recipe',recordId=r.recipeKey,data=r}))end
+    for _,r in ipairs(d.crafts)do
+        if not r.candidateItemIds then
+            local ids={};r.candidateItemIds={};local catalog=d.recipes[r.recipeKey]
+            for _,m in ipairs(r.recipeReagents or {})do ids[m.itemId]=true end
+            for _,slot in ipairs(catalog and catalog.reagentSlots or {})do for _,option in ipairs(slot.options or {})do if option.itemId then ids[option.itemId]=true end end end
+            for id in pairs(ids)do r.candidateItemIds[#r.candidateItemIds+1]=id end;table.sort(r.candidateItemIds)
+        end
+        r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='craft',recordId=r.eventId,data=r}))end
+    for _,r in ipairs(d.vendorEvents or {})do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='vendor',recordId=r.eventId,data=r}))end
+end
+local old=AZPCForeverCrafting.RebuildCosts
+AZPCForeverCrafting.RebuildCosts=function()
+    local state,err=old();local ok,exportError=pcall(exports)
+    if not ok and AZPCForeverDB and AZPCForeverDB.crafting then AZPCForeverDB.crafting.syncError=tostring(exportError)
+    elseif AZPCForeverDB and AZPCForeverDB.crafting then AZPCForeverDB.crafting.syncError=nil end
+    return state,err
 end
 end

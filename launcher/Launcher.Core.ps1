@@ -133,7 +133,7 @@ function Test-Manifest($Manifest) {
 function Get-RemoteManifest {
     param([string]$ApiToken='', [string]$Game='tbc-anniversary')
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.11'; Accept = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.12'; Accept = 'application/vnd.github+json' }
     if($ApiToken){ $headers['Authorization']='Bearer '+$ApiToken }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $manifestName=if($Game -eq 'forever'){'azpc-forever-update.json'}else{'azpc-update.json'}
@@ -154,14 +154,14 @@ function Get-RemoteManifest {
             $files+=@{path=$path;sha256=$digest}
             if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
         }
-        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.11';sourceCommit=[string]$commit.sha;files=$files}
+        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.12';sourceCommit=[string]$commit.sha;files=$files}
         Test-Manifest $manifest
         return $manifest
     }
     if($asset.Count -ne 1){ throw 'The release includes multiple update manifests.' }
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
-    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.11' } -TimeoutSec 30
+    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.12' } -TimeoutSec 30
     if($manifest -is [string]){ $manifest=$manifest.TrimStart([char[]]@(0xFEFF,0xEF,0xBB,0xBF)) | ConvertFrom-Json }
     Test-Manifest $manifest
     if($manifest.game -ne $Game){ throw 'Release game does not match your selection.' }
@@ -175,7 +175,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
             $destination=Join-Path $target ([string]$file.path)
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
             $url='https://raw.githubusercontent.com/'+$script:Repo+'/'+$Manifest.sourceCommit+'/installer/payload/'+$file.path
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.11'}
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.12'}
             if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
         }
         $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
@@ -183,7 +183,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
         return $target
     }
     $archive = Join-Path $Workspace 'bundle.zip' 
-    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.11' }
+    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.12' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem

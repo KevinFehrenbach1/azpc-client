@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.32"
+        version = "0.4.33"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.32"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.33"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -1005,6 +1005,58 @@ function Send-ForeverScans([string]$ClientId,[string]$Token) {
     } catch { Write-Log ('FOREVER SCAN UPLOAD PENDING: '+$_.Exception.Message+' Scan kept locally; retrying later.') }
 }
 
+function Convert-ForeverCrafting([string]$Export) {
+    $f=$Export.Split('|')
+    if($f.Count -ne 3 -or $f[0] -ne 'AZPCFCRAFT' -or $f[1] -ne '1' -or $Export.Length -gt 200000){throw 'Invalid Forever crafting export.'}
+    $json=[uri]::UnescapeDataString($f[2]);$row=$json | ConvertFrom-Json
+    if($row.schema -ne 1 -or $row.recordType -notin @('recipe','craft','vendor') -or -not $row.recordId -or $row.recordId.Length -gt 500 -or -not $row.data){throw 'Invalid Forever crafting identity.'}
+    $d=$row.data
+    if(-not $d.realm -or -not $d.character -or $d.faction -notin @('horde','alliance') -or $d.region -notin @(1,2,3,4,5,90) -or $d.observedAt -lt 946684800000L -or $d.observedAt -gt 4102444800000L){throw 'Invalid Forever crafting market.'}
+    if($row.recordType -eq 'recipe'){
+        if($row.recordId -ne $d.recipeKey -or $d.recipeId -le 0 -or $d.outputItemId -le 0){throw 'Invalid Forever recipe.'}
+    }elseif($row.recordId -ne $d.eventId -or $d.itemId -le 0 -or $d.quantity -le 0){throw 'Invalid Forever craft/vendor event.'}
+    if($row.recordType -eq 'craft' -and $d.confirmation -ne 'player_spell_success_and_item_result'){throw 'Unconfirmed Forever craft.'}
+    if($row.recordType -eq 'vendor' -and ($d.kind -notin @('buy','sell','vendor_unresolved') -or $d.confirmation -ne 'vendor_intent_money_and_bags')){throw 'Unconfirmed Forever vendor event.'}
+    return $row
+}
+function Collect-ForeverCrafting([string]$Text) {
+    $directory=Join-Path $StateDir 'Forever\crafting'
+    foreach($match in [regex]::Matches($Text,'\["syncExport"\]\s*=\s*"(AZPCFCRAFT\|[^"\r\n]+)"')){
+        try{
+            $row=Convert-ForeverCrafting $match.Groups[1].Value
+            $body=$row | ConvertTo-Json -Depth 16 -Compress
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try{$key=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes([string]$row.recordId)))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            $target=Join-Path $directory ($key+'.json')
+            if((Test-Path -LiteralPath $target) -and (Get-Content -LiteralPath $target -Raw -Encoding UTF8).Trim() -eq $body){continue}
+            Set-Content -LiteralPath ($target+'.tmp') -Value $body -Encoding UTF8
+            Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
+            if(Test-Path -LiteralPath ($target+'.sent')){Remove-Item -LiteralPath ($target+'.sent') -Force}
+            Write-Log ('FOREVER CRAFTING QUEUED: '+$row.recordType+' | '+$row.data.name)
+        }catch{Write-Log ('FOREVER CRAFTING REJECTED: '+$_.Exception.Message)}
+    }
+}
+$script:ForeverCraftUploadAttempt=[datetime]::MinValue
+function Send-ForeverCrafting([string]$ClientId,[string]$Token) {
+    if(((Get-Date)-$script:ForeverCraftUploadAttempt).TotalSeconds -lt 30){return}
+    $script:ForeverCraftUploadAttempt=Get-Date
+    $directory=Join-Path $StateDir 'Forever\crafting'
+    if(-not(Test-Path -LiteralPath $directory)){return}
+    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not(Test-Path -LiteralPath ($_.FullName+'.sent'))} | Sort-Object @{Expression={if(Test-Path -LiteralPath ($_.FullName+'.attempt')){(Get-Item -LiteralPath ($_.FullName+'.attempt')).LastWriteTimeUtc}else{[datetime]::MinValue}}},Name | Select-Object -First 30)
+    if(-not $files.Count){return}
+    try{
+        $records=@($files | ForEach-Object {Set-Content -LiteralPath ($_.FullName+'.attempt') -Value 'pending' -Encoding ASCII;Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json})
+        $body=@{game='forever';schema=1;records=$records} | ConvertTo-Json -Depth 16 -Compress
+        $bytes=[Text.Encoding]::UTF8.GetBytes($body);if($bytes.Length -gt 1048576){throw 'Crafting batch exceeds receiver limit.'}
+        $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/crafting-upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body $bytes -TimeoutSec 20
+        if(-not $result.ok -or $result.accepted -ne $records.Count -or @($result.recordIds).Count -ne $records.Count){throw 'Receiver did not acknowledge this crafting batch.'}
+        for($i=0;$i -lt $records.Count;$i++){if($result.recordIds[$i] -ne $records[$i].recordId){throw 'Receiver acknowledged a different crafting identity.'}}
+        foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
+        Write-Log ('FOREVER CRAFTING UPLOADED: '+$records.Count+' recipes/crafts/vendor records.')
+    }catch{Write-Log ('FOREVER CRAFTING UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
+}
+
 $script:ForeverReadVersions=@{}
 function Collect-ForeverScans([string]$Root) {
     foreach($path in @(Find-ForeverSavedVariables $Root)) {
@@ -1012,9 +1064,10 @@ function Collect-ForeverScans([string]$Root) {
             $info=Get-Item -LiteralPath $path
             $writeVersion=$info.LastWriteTimeUtc.Ticks.ToString()+':'+$info.Length
             if($script:ForeverReadVersions[$path] -eq $writeVersion){continue}
-            if($info.Length -gt 10485760){ throw 'Forever SavedVariables exceeds 10 MB.' }
+            if($info.Length -gt 67108864){ throw 'Forever SavedVariables exceeds 64 MB.' }
             $text=Get-Content -LiteralPath $path -Raw -Encoding UTF8
             Collect-ForeverTrades $text
+            Collect-ForeverCrafting $text
             foreach($match in [regex]::Matches($text,'\["export"\]\s*=\s*"(AZPCFOREVER\|[^"\r\n]+)"')) {
                 $export=$match.Groups[1].Value
                 try { $scan=Convert-ForeverExport $export } catch { Write-Log ('FOREVER SCAN REJECTED: '+$_.Exception.Message+' Waiting for new saved data.'); continue }
@@ -1037,7 +1090,7 @@ function Collect-ForeverScans([string]$Root) {
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.32 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.33 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -1068,6 +1121,7 @@ while ($true) {
         }
         Collect-ForeverScans $WowRoot
         Send-ForeverTrades $privateClientId $watcherToken
+        Send-ForeverCrafting $privateClientId $watcherToken
         Send-ForeverScans $privateClientId $watcherToken
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."

@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.82",
-  "watcherVersion": "0.4.32",
+  "packageVersion": "0.4.83",
+  "watcherVersion": "0.4.33",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Confirmed cash vendor supplies, sales, refunds and buybacks feed local crafting costs.",
-  "version": "0.4.82",
-  "foreverAddonVersion": "0.2.3"
+  "notes": "Private Forever recipe, craft and vendor sync with stable identities and retry acknowledgements.",
+  "version": "0.4.83",
+  "foreverAddonVersion": "0.2.4"
 }
