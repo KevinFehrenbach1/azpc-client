@@ -7,4 +7,3 @@
 AZPCForever.lua
 
 
-AZPCForeverCrafting.lua

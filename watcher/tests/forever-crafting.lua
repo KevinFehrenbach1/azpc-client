@@ -1,3 +1,4 @@
+SlashCmdList={}
 local frames,hooks={},{}
 local now=1
 function GetTime() return now end
@@ -31,7 +32,7 @@ C_TradeSkillUI={
     IsTradeSkillLinked=function()return linked end,
     CraftRecipe=function()end,
 }
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverCrafting.lua'))('AZPCForever')
+assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
 emit('ADDON_LOADED','AZPCForever');emit('TRADE_SKILL_SHOW')
 local db=AZPCForeverDB.crafting
 local n=0;for _ in pairs(db.recipes)do n=n+1 end;assert(n==2,'only learned recipes are saved')
@@ -79,11 +80,11 @@ emit('TRADE_SKILL_LIST_UPDATE');assert(db.crafts[1].recipeReagents[1].quantity==
 now=now+1;start('cast-unresolved',100);success('cast-unresolved',100);output(11)
 assert(#db.crafts==6 and not db.crafts[6].materialsKnown and not db.crafts[6].consumedReagents,'selected reagent mismatch stays unresolved')
 -- Reload restores the saved ledger but creates no pending craft and no duplicate.
-frames={};hooks={};assert(loadfile('addons/forever/AZPCForever/AZPCForeverCrafting.lua'))('AZPCForever');emit('ADDON_LOADED','AZPCForever')
+frames={};hooks={};assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever');emit('ADDON_LOADED','AZPCForever')
 output(11);assert(#db.crafts==6)
 success('cast-unresolved',100);output(12);assert(#db.crafts==6,'persisted cast identity prevents replay across reload')
 linked=true;local before=0;for _ in pairs(db.recipes)do before=before+1 end;emit('TRADE_SKILL_SHOW');linked=false
 local after=0;for _ in pairs(db.recipes)do after=after+1 end;assert(before==after,'linked professions are not the player recipe catalog')
-C_TradeSkillUI=nil;AZPCForeverCrafting.Status();emit('TRADE_SKILL_SHOW');success('other-spell',999);assert(#db.crafts==6,'unsupported APIs and unrelated spells do not break capture')
-assert(AZPCForeverDB.trades==nil,'craft evidence never adds free acquisitions or changes the trading ledger')
+C_TradeSkillUI=nil;SlashCmdList.AZPCFOREVER('crafts');emit('TRADE_SKILL_SHOW');success('other-spell',999);assert(#db.crafts==6,'unsupported APIs and unrelated spells do not break capture')
+assert(#AZPCForeverDB.trades==0,'craft evidence never adds free acquisitions or changes the trading ledger')
 print('PASS: learned recipes, per-cast requirements, actual output quantities, batch identity, success/result ordering, cancellations, replay/reload dedupe, material returns, unknown selections and API guards')
