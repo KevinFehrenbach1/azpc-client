@@ -5,11 +5,13 @@ on:
     branches: [main, launcher/forever-v0.2.3]
     paths:
       - 'launcher/**'
+      - 'watcher/tests/**'
       - 'installer/payload/**'
       - '.github/workflows/build-azpc-launcher.yml'
   pull_request:
     paths:
       - 'launcher/**'
+      - 'watcher/tests/**'
       - 'installer/payload/**'
       - '.github/workflows/build-azpc-launcher.yml'
 permissions:
