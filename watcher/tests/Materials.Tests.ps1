@@ -21,4 +21,13 @@ try {
  $row=@{schema=1;recordType='material';recordId='free-test';data=@{eventId='free-test';kind='free';itemId=2589;quantity=10;realm='Realm';character='Wet';region=90;faction='horde';observedAt=1791400000000L;name='Cloth';source='farmed';untrackedQuantity=10;confirmation='material_quantity_confirmed'}}
  $export='AZPCFCRAFT|1|'+[uri]::EscapeDataString(($row | ConvertTo-Json -Depth 8 -Compress));$parsed=Convert-ForeverCrafting $export
  Assert ($parsed.recordType -eq 'material' -and $parsed.data.quantity -eq 10) 'Addon-confirmed material sources return through durable crafting uploads'
+ $identity='Player-test:Realm:90:buyer:2319:20:29:29899816:Senpai%20Luck:Horde%20Auction%20House:Auction%20won%3A%20Medium%20Leather%20%2829%29:7:1'
+ $trade='AZPCFTRADE|1|'+[uri]::EscapeDataString($identity)+'|buy|2319|Medium%20Leather|20|29|1791396972|Realm|horde|90|Wet'
+ $other='AZPCFTRADE|1|'+[uri]::EscapeDataString($identity.Replace(':2319:20:29:',':2319:29:29:'))+'|buy|2319|Medium%20Leather|29|29|1791396973|Realm|horde|90|Wet'
+ $first=Convert-ForeverTrade $trade;$second=Convert-ForeverTrade $other
+ Assert ($first.metadata.mailPurchaseIdentity -eq $second.metadata.mailPurchaseIdentity -and $first.eventId -ne $second.eventId) 'Quantity-independent purchase evidence preserves raw events while identifying conflicting copies'
+ $dir=Join-Path $StateDir 'Forever\trades';New-Item -ItemType Directory -Path $dir -Force | Out-Null;$target=Join-Path $dir ($first.eventId.Substring(5)+'.json')
+ $old=$first.Clone();$old.metadata=$first.metadata.Clone();$old.metadata.Remove('mailPurchaseIdentity');$old|ConvertTo-Json -Depth 5|Set-Content $target -Encoding UTF8;Set-Content ($target+'.sent') 'ack'
+ Collect-ForeverTrades ('["tradeExport"] = "'+$trade+'"')
+ Assert (-not (Test-Path ($target+'.sent')) -and (Get-Content $target -Raw|ConvertFrom-Json).metadata.mailPurchaseIdentity) 'Old sent purchases are requeued once with repair evidence'
 } finally {Remove-Item $root -Recurse -Force}

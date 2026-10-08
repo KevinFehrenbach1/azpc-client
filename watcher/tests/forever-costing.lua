@@ -48,3 +48,13 @@ assert(a.costConflict and a.costBasis.totalCopper==40 and not position(2).costCo
 reset();trade('buy',1,2,40,1000);a=craft(2,1,2000,{mat(1,2)});trade('buy',3,1,1000000000000,3000);trade('buy',3,1,1,4000)
 local state,err=AZPCForeverCrafting.RebuildCosts();assert(not state and err and a.costBasis==nil,'overflow fails without committing partial snapshots')
 print('PASS: Forever weighted material costs, chains, missing sources, isolation, FIFO sales, replay, frozen history, exact copper and atomic failure')
+reset()
+local function purchase(q,c,stamp)
+ local fingerprint='Player-test:Realm:90:buyer:2319:'..q..':'..c..':29899816:Senpai%20Luck:Horde%20Auction%20House:Auction%20won%3A%20Medium%20Leather%20%2829%29:7:1'
+ fingerprint=fingerprint:gsub('([^%w%-_%.])',function(x)return string.format('%%%02X',string.byte(x))end)
+ AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat({'AZPCFTRADE','1',fingerprint,'buy',2319,'Medium%20Leather',q,c,stamp,'Realm','horde',90,'Lu'},'|')}
+end
+purchase(20,29,1791396972);purchase(29,29,1791396973)
+local repaired=position(2319);assert(repaired.quantity==20 and repaired.totalCopper==29,'old quantity/price duplicate cannot inflate materials or copper')
+reset();purchase(29,29,1791396973);assert(position(2319).quantity==29,'unpaired record stays unchanged')
+print('PASS: legacy buyer quantity/price conflicts are repaired conservatively')

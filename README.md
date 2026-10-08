@@ -1,3 +1,6 @@
+## Purchase quantity repair (addon 0.2.10 / watcher 0.4.37)
+Purchase capture requires the attached stack quantity; invoice fallback is disabled. Historical purchase records where the quantity equals the copper amount are omitted from accounting only if exactly one differently quantified observation of the same mail (including counterpart, subject and occurrence) is found within five seconds and two expiry minutes. Unpaired records stay unchanged. Raw records remain intact. Watcher upgrades and requeues old JSON evidence once so the server can repair the same history. The material table separates bought, farmed, crafted and received origins; missing earlier actions are not invented.
+
 ## Automatic farmed materials (Forever addon 0.2.8)
 New corpse and gathering loot (including skinning, herbs, mining and fishing loot windows) is recorded automatically at zero cash cost when a world loot source, your localized self-loot receipt and exact bag increase match. Repeated notifications cannot add duplicate stock. Item-container sources and unexplained changes remain unknown; purchases retain paid costs. Reload/logout saves events for the watcher. Existing inventory still needs explicit classification because its origin was not observed. Confirmed alt mail retains the original material cost. Manual classification remains a fallback.
 

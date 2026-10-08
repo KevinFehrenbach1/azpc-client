@@ -152,3 +152,10 @@ callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==0,'seller capture waits 
 buyerName='Glesmord Hillmont';stamp=stamp+1;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==1,'hydrated invoice records one sale')
 callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1)
 print('PASS: actual blank-then-named invoice hydration does not duplicate sale')
+local oldTrades=#AZPCForeverDB.trades
+function GetInboxNumItems()return 1 end
+function GetInboxInvoiceInfo()return 'buyer','Peacebloom','Seller',29,29,0,0,0,0,0,29 end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction won: Peacebloom (29)',0,0,30 end
+function GetInboxItem()return 'Peacebloom',2447,nil,nil end
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==oldTrades,'missing purchase attachment count never falls back to invoice quantity/price')
+print('PASS: buyer attachment count is mandatory, invoice fallback cannot create phantom stock')

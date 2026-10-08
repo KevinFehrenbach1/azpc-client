@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$WowRoot = "",
     [string]$SetupCode = "",
     [string]$DataDir = "",
@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.36"
+        version = "0.4.37"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.36"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.37"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -954,6 +954,11 @@ function Convert-ForeverTrade([string]$Export) {
                 $metadata.mailExpiryMinute=$expiry
                 $parts=$identity.Split(':')
                 if($parts.Count -eq 13){
+                    if($f[3] -eq 'buy'){
+                        $purchaseParts=$parts.Clone();$purchaseParts[5]='';$purchaseParts[7]=''
+                        $sha=[Security.Cryptography.SHA256]::Create()
+                        try{$metadata.mailPurchaseIdentity=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($purchaseParts -join ':'))))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+                    }
                     $metadata.mailBuyerKnown=($parts[8] -ne '')
                     $parts[7]='';$parts[8]=''
                     $sha=[Security.Cryptography.SHA256]::Create()
@@ -973,7 +978,7 @@ function Collect-ForeverTrades([string]$Text) {
             New-Item -ItemType Directory -Path $directory -Force | Out-Null
             $target=Join-Path $directory ($event.eventId.Substring(5)+'.json')
             $upgrade=$false
-            if(Test-Path -LiteralPath $target){$old=Get-Content -LiteralPath $target -Raw -Encoding UTF8 | ConvertFrom-Json;$upgrade=($event.kind -eq 'sell' -and $event.metadata.netProceedsKnown -eq $true -and $old.metadata.netProceedsKnown -ne $true) -or ($event.metadata.mailIdentity -and $old.metadata.mailIdentity -ne $event.metadata.mailIdentity) -or ($event.metadata.mailEnvelope -and $old.metadata.mailEnvelope -ne $event.metadata.mailEnvelope)}
+            if(Test-Path -LiteralPath $target){$old=Get-Content -LiteralPath $target -Raw -Encoding UTF8 | ConvertFrom-Json;$upgrade=($event.kind -eq 'sell' -and $event.metadata.netProceedsKnown -eq $true -and $old.metadata.netProceedsKnown -ne $true) -or ($event.metadata.mailIdentity -and $old.metadata.mailIdentity -ne $event.metadata.mailIdentity) -or ($event.metadata.mailEnvelope -and $old.metadata.mailEnvelope -ne $event.metadata.mailEnvelope) -or ($event.metadata.mailPurchaseIdentity -and $old.metadata.mailPurchaseIdentity -ne $event.metadata.mailPurchaseIdentity)}
             if(-not (Test-Path -LiteralPath $target) -or $upgrade){
                 $event | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath ($target+'.tmp') -Encoding UTF8
                 Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
@@ -1149,7 +1154,7 @@ function Sync-ForeverMaterialCommands([string]$ClientId,[string]$Token,[string]$
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.36 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.37 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId

@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.7"
+local addon, VERSION = ..., "0.2.10"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -169,7 +169,8 @@ captureTrades=function()
                 if type(link) == "string" then id=tonumber(link:match("item:(%d+)")) end
             end
             id=id or (AZPCForeverDB.itemIds and AZPCForeverDB.itemIds[name])
-            quantity = number(quantity) or number(invoiceCount)
+            -- Purchase quantities must come from the attached stack, never an invoice fallback.
+            quantity = number(quantity) or (invoice=="seller" and number(invoiceCount) or nil)
             local copper = invoice == "expired" and 0 or (invoice == "buyer" and (number(buyout) or number(bid)) or number(money))
             if invoice == "buyer" and copper == 0 then copper = number(bid) end
             -- Missing item ID/count or delayed seller proceeds stay unresolved; never assume one item.
@@ -594,7 +595,7 @@ local function mail(export)
     if e.realm=='' or e.character=='' or (e.faction~='horde' and e.faction~='alliance') then return end
     local prefix,expiry,suffix=decode(f[3]):match('^(.*:seller:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')
     if not prefix then prefix,expiry,suffix=decode(f[3]):match('^(.*:buyer:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')end
-    if prefix then e.mailIdentity=prefix..suffix;e.mailExpiry=tonumber(expiry)end
+    if prefix then e.mailIdentity=prefix..suffix;e.mailExpiry=tonumber(expiry);if e.kind=='buy'then e.mailPurchaseIdentity=prefix:gsub('(:buyer:%d+:)%d+:(%d+:)$','%1%2')..suffix end end
     if prefix then local buyer,rest=suffix:match('^:([^:]*)(:.*)$');e.mailBuyerKnown=buyer~='';e.mailEnvelope=prefix..rest end
     return e
 end
@@ -607,6 +608,13 @@ local function rebuild()
     table.sort(receipts,function(a,b)return a.observedAt<b.observedAt or a.observedAt==b.observedAt and a.eventId<b.eventId end)
     for _,e in ipairs(receipts)do
         local duplicate=false
+        if e.kind=='buy' and e.quantity==e.copper and e.mailPurchaseIdentity then
+            local matches={};local count=0
+            for _,other in ipairs(receipts)do
+                if other.kind=='buy' and other.quantity~=e.quantity and other.mailPurchaseIdentity==e.mailPurchaseIdentity and other.copper==e.copper and math.abs(other.observedAt-e.observedAt)<=5000 and math.abs(other.mailExpiry-e.mailExpiry)<=2 and not matches[other.mailIdentity]then matches[other.mailIdentity]=true;count=count+1 end
+            end
+            duplicate=count==1
+        end
         if e.kind=='sell' and e.mailEnvelope and not e.mailBuyerKnown then
             local matches={};local count=0
             for _,other in ipairs(receipts)do
