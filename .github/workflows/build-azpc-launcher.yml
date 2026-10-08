@@ -27,6 +27,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
+      - run: lua5.1 watcher/tests/forever-materials.lua
   windows:
     runs-on: windows-latest
     steps:
@@ -40,6 +41,9 @@ jobs:
       - name: Check Forever scan queue and upload retries
         shell: powershell
         run: ./watcher/tests/Run.Tests.ps1
+      - name: Check material source round-trip sync
+        shell: powershell
+        run: ./watcher/tests/Materials.Tests.ps1
       - name: Build launcher and update bundle
         shell: powershell
         run: ./launcher/Build.ps1
@@ -117,7 +121,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.14-Windows-TEST
+          name: AZPC-Launcher-0.2.15-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -131,11 +135,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.14-Windows-TEST
+          name: AZPC-Launcher-0.2.15-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.14 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.14 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.14 - Forever duplicate sale fix" --notes "Forever addon 0.2.6 waits for buyer invoice data before recording sales. Watcher 0.4.35 resends envelope evidence to reconcile historical blank-then-named buyer duplicates. Separate named buyers remain distinct and ambiguous records are preserved. Exit WoW, update Forever, reopen and /reload to resync your saved receipts."
+          if gh release view launcher-v0.2.15 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.15 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.15 - Forever material sources and alt transfers" --notes "Forever addon 0.2.7 and watcher 0.4.36 add explicit farmed/free material classification and confirmed personal mail transfers. Paid and free stock use remaining weighted average costs; matched transfers carry donor costs without duplicate stock. Unknown origins remain unknown. Classify held materials on the Crafting page, keep the watcher running, reload on the selected character to apply, then reload again to save. Failed quantity checks are durably rejected. Existing accounting and saved craft costs are preserved."

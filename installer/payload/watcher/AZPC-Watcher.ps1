@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.35"
+        version = "0.4.36"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.35"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.36"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -1030,7 +1030,7 @@ function Convert-ForeverCrafting([string]$Export) {
     $f=$Export.Split('|')
     if($f.Count -ne 3 -or $f[0] -ne 'AZPCFCRAFT' -or $f[1] -ne '1' -or $Export.Length -gt 200000){throw 'Invalid Forever crafting export.'}
     $json=[uri]::UnescapeDataString($f[2]);$row=$json | ConvertFrom-Json
-    if($row.schema -ne 1 -or $row.recordType -notin @('recipe','craft','vendor') -or -not $row.recordId -or $row.recordId.Length -gt 500 -or -not $row.data){throw 'Invalid Forever crafting identity.'}
+    if($row.schema -ne 1 -or $row.recordType -notin @('recipe','craft','vendor','material') -or -not $row.recordId -or $row.recordId.Length -gt 500 -or -not $row.data){throw 'Invalid Forever crafting identity.'}
     $d=$row.data
     if(-not $d.realm -or -not $d.character -or $d.faction -notin @('horde','alliance') -or $d.region -notin @(1,2,3,4,5,90) -or $d.observedAt -lt 946684800000L -or $d.observedAt -gt 4102444800000L){throw 'Invalid Forever crafting market.'}
     if($row.recordType -eq 'recipe'){
@@ -1038,6 +1038,7 @@ function Convert-ForeverCrafting([string]$Export) {
     }elseif($row.recordId -ne $d.eventId -or $d.itemId -le 0 -or $d.quantity -le 0){throw 'Invalid Forever craft/vendor event.'}
     if($row.recordType -eq 'craft' -and $d.confirmation -ne 'player_spell_success_and_item_result'){throw 'Unconfirmed Forever craft.'}
     if($row.recordType -eq 'vendor' -and ($d.kind -notin @('buy','sell','vendor_unresolved') -or $d.confirmation -ne 'vendor_intent_money_and_bags')){throw 'Unconfirmed Forever vendor event.'}
+    if($row.recordType -eq 'material' -and ($d.kind -notin @('free','request_rejected','transfer_out','transfer_in') -or $d.confirmation -notin @('material_quantity_confirmed','material_request_rejected'))){throw 'Unconfirmed material source.'}
     return $row
 }
 function Collect-ForeverCrafting([string]$Text) {
@@ -1109,9 +1110,46 @@ function Collect-ForeverScans([string]$Root) {
     }
 }
 
+# Website source declarations are copied as data into the installed addon only.
+# SavedVariables and account credentials are never rewritten.
+function Convert-MaterialLuaString([string]$Text) {
+    $encoded=([Text.Encoding]::UTF8.GetBytes($Text) | ForEach-Object {'\'+$_.ToString('000')}) -join ''
+    return '"'+$encoded+'"'
+}
+$script:MaterialCommandsAttempt=[datetime]::MinValue
+function Sync-ForeverMaterialCommands([string]$ClientId,[string]$Token,[string]$Root) {
+    if(((Get-Date)-$script:MaterialCommandsAttempt).TotalSeconds -lt 30){return}
+    $script:MaterialCommandsAttempt=Get-Date
+    try {
+        $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/material-commands' -Method Get -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -TimeoutSec 20
+        if(-not $result.ok -or @($result.commands).Count -gt 500){throw 'Invalid material command reply.'}
+        $rows=@()
+        foreach($c in @($result.commands)){
+            if(-not $c.commandId -or $c.commandId -notmatch '^material-free:[0-9a-f-]{36}$' -or $c.itemId -lt 1 -or $c.itemId -gt 10000000 -or $c.quantity -lt 1 -or $c.quantity -gt 1000000 -or $c.quantity -ne [math]::Floor($c.quantity) -or $c.region -notin @(1,2,3,4,5,90) -or $c.faction -notin @('horde','alliance') -or $c.source -notin @('farmed','gift')){throw 'Invalid material command.'}
+            $fields=@();foreach($name in @('commandId','realm','character','name','faction','source')){if(-not $c.$name -or ([string]$c.$name).Length -gt 500){throw 'Invalid material command text.'};$fields+=($name+'='+ (Convert-MaterialLuaString ([string]$c.$name)))}
+            foreach($name in @('itemId','quantity','region')){$fields+=($name+'='+[long]$c.$name)}
+            $rows+=('{'+($fields -join ',')+'}')
+        }
+        $block="`n-- AZPC MATERIAL COMMANDS BEGIN`nAZPCForeverMaterialCommands = {"+($rows -join ',')+"}`n-- AZPC MATERIAL COMMANDS END`n"
+        $paths=@(Find-ForeverSavedVariables $Root | ForEach-Object {
+            $dir=(Get-Item -LiteralPath $_).Directory
+            while($dir -and $dir.Name -ne '_classic_beta_'){$dir=$dir.Parent}
+            if($dir){Join-Path $dir.FullName 'Interface\AddOns\AZPCForever\AZPCForever.lua'}
+        } | Select-Object -Unique)
+        foreach($path in $paths){
+            if(-not(Test-Path -LiteralPath $path)){continue}
+            $text=[IO.File]::ReadAllText($path)
+            if($text -notmatch 'ApplyMaterialCommands'){continue}
+            $base=[regex]::Replace($text,'\r?\n-- AZPC MATERIAL COMMANDS BEGIN[\s\S]*?-- AZPC MATERIAL COMMANDS END\r?\n?','')
+            $updated=$base.TrimEnd()+$block
+            if($updated -ne $text){[IO.File]::WriteAllText($path+'.material.tmp',$updated,(New-Object Text.UTF8Encoding($false)));Move-Item -LiteralPath ($path+'.material.tmp') -Destination $path -Force;Write-Log ('FOREVER MATERIAL COMMANDS READY: '+$rows.Count+' declaration(s); /reload applies them.')}
+        }
+    }catch{Write-Log ('FOREVER MATERIAL SYNC PENDING: '+$_.Exception.Message)}
+}
+
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.35 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.36 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
@@ -1143,6 +1181,7 @@ while ($true) {
         Collect-ForeverScans $WowRoot
         Send-ForeverTrades $privateClientId $watcherToken
         Send-ForeverCrafting $privateClientId $watcherToken
+        Sync-ForeverMaterialCommands $privateClientId $watcherToken $WowRoot
         Send-ForeverScans $privateClientId $watcherToken
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."

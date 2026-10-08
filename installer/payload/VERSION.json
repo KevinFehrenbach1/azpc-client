@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.85",
-  "watcherVersion": "0.4.35",
+  "packageVersion": "0.4.86",
+  "watcherVersion": "0.4.36",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Stabilize mailbox receipt identities and repair expiry-drift duplicate sales.",
-  "version": "0.4.85",
-  "foreverAddonVersion": "0.2.6"
+  "notes": "Explicit farmed/free source declarations, confirmed mail cost transfers and private round-trip sync.",
+  "version": "0.4.86",
+  "foreverAddonVersion": "0.2.7"
 }

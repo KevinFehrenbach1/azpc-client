@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.6"
+local addon, VERSION = ..., "0.2.7"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -626,14 +626,17 @@ local function rebuild()
             seen[e.eventId]=true;events[#events+1]=e
         end
     end
+    for _,e in ipairs(db.materialEvents or {})do
+        if e.kind~='request_rejected' and type(e.eventId)=='string' and not seen[e.eventId]then seen[e.eventId]=true;events[#events+1]=e end
+    end
     for _,r in ipairs(db.crafts) do
         if type(r.eventId)=='string' and not seen[r.eventId] then
             seen[r.eventId]=true;events[#events+1]={kind='craft',itemId=r.itemId,quantity=r.quantity,observedAt=r.observedAt,eventId=r.eventId,realm=r.realm,faction=r.faction,region=r.region,character=r.character,name=r.name,record=r}
         end
     end
-    local rank={buy=1,craft=2,sell=3,vendor_unresolved=4}
+    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
-    local pools={};local unresolved=0;local updates={}
+    local pools={};local transit={};local unresolved=0;local updates={}
     local function pool(e,id)
         local key=market(e)..'|'..id
         if not pools[key] then pools[key]={key=key,itemId=id,realm=e.realm,character=e.character,faction=e.faction,region=e.region,name=id==e.itemId and e.name or ('Item '..id),lots={}} end
@@ -665,6 +668,27 @@ local function rebuild()
     for _,e in ipairs(events) do
         local p=pool(e,e.itemId)
         if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.copper}
+        elseif e.kind=='free' then
+            local remaining=e.quantity-e.untrackedQuantity
+            local new={}
+            for _,l in ipairs(p.lots)do
+                if l.copper==nil and remaining>0 then
+                    if (l.partialCopper or 0)>0 then error('Cannot classify partially paid material stock as free.')end
+                    local use=math.min(remaining,l.quantity);l.quantity=l.quantity-use;remaining=remaining-use;new[#new+1]={quantity=use,copper=0}
+                end
+            end
+            if remaining>0 then error('Free classification exceeds unknown material stock.')end
+            if e.untrackedQuantity>0 then new[#new+1]={quantity=e.untrackedQuantity,copper=0}end
+            for _,l in ipairs(p.lots)do if l.quantity>0 then new[#new+1]=l end end;p.lots=new
+        elseif e.kind=='transfer_out' then
+            local used=average(p,e.quantity);transit[#transit+1]={event=e,quantity=e.quantity,copper=used.complete and used.knownCopper or nil,partialCopper=not used.complete and used.knownCopper or nil}
+        elseif e.kind=='transfer_in' then
+            local matches={}
+            for _,t in ipairs(transit)do local from=t.event
+                if not t.received and from.itemId==e.itemId and from.quantity==e.quantity and from.realm==e.realm and from.region==e.region and from.faction==e.faction and from.character:lower()==e.counterparty:lower() and from.counterparty:lower()==e.character:lower() and from.transferKey==e.transferKey and from.observedAt<=e.observedAt then matches[#matches+1]=t end
+            end
+            if #matches==1 then local t=matches[1];t.received=true;p.lots[#p.lots+1]={quantity=e.quantity,copper=t.copper,partialCopper=t.partialCopper}
+            else p.lots[#p.lots+1]={quantity=e.quantity,partialCopper=0}end
         elseif e.kind=='sell' then sale(p,e.quantity)
         elseif e.kind=='vendor_unresolved' then p.uncertain=true
         else
@@ -706,7 +730,7 @@ local function rebuild()
     local positions={}
     for _,p in pairs(pools) do
         local q,c,known=totals(p)
-        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,costComplete=known,totalCopper=known and c or nil,recordedCopper=c} end
+        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
     end
     table.sort(positions,function(a,b)return a.key<b.key end)
     local state={schema=1,method='remaining_material_weighted_average',positions=positions,unresolvedCrafts=unresolved}
@@ -918,6 +942,105 @@ AZPCForeverCrafting.Status=function()
 end
 end
 
+-- Explicit material sources and confirmed personal mail transfers.
+do
+local function d() local c=AZPCForeverDB.crafting;c.materialEvents=c.materialEvents or {};return c end
+local function call(fn,...)if type(fn)=='function'then local ok,a,b,c,e=pcall(fn,...);if ok then return a,b,c,e end end end
+local function held(id)return call(C_Item and C_Item.GetItemCount or GetItemCount,id,false,false)or 0 end
+local function current()
+ return {realm=GetRealmName() or '',character=UnitName('player') or '',faction=(UnitFactionGroup('player')or''):lower(),region=GetCurrentRegion and GetCurrentRegion()or 0}
+end
+local function counterpart(name)
+ if type(name)~='string'then return ''end
+ local char,realm=name:match('^(.-)%-(.+)$')
+ if char and realm:gsub('%s',''):lower()==(GetRealmName()or''):gsub('%s',''):lower()then return char end
+ return name
+end
+local function record(kind,id,q,name,extra,eventId)
+ local c=d();if #c.materialEvents>=10000 then message('Material ledger full; existing data preserved.');return end
+ for _,e in ipairs(c.materialEvents)do if eventId and e.eventId==eventId then return end end
+ c.materialSequence=(c.materialSequence or 0)+1
+ local e=current();e.kind=kind;e.itemId=id;e.quantity=q;e.name=name or ('Item '..id);e.observedAt=observedMillis();e.eventId=eventId or tostring(UnitGUID('player'))..':material:'..e.observedAt..':'..c.materialSequence;e.confirmation='material_quantity_confirmed'
+ for k,v in pairs(extra or {})do e[k]=v end;c.materialEvents[#c.materialEvents+1]=e
+ AZPCForeverCrafting.RebuildCosts();return e
+end
+local function free(command)
+ local me=current();if command.character~=me.character or command.realm~=me.realm or command.region~=me.region or command.faction~=me.faction then return end
+ for _,e in ipairs(d().materialEvents)do if e.eventId==command.commandId then return end end
+ local state=AZPCForeverCrafting.RebuildCosts();if not state then return end
+ local recorded,unknown,partial=0,0,0
+ for _,p in ipairs(state.positions)do if p.itemId==command.itemId and p.character==me.character and p.realm==me.realm and p.region==me.region and p.faction==me.faction then recorded=p.quantity;unknown=p.unknownQuantity or 0;partial=p.unknownRecordedCopper or 0 end end
+ local owners=AZPCForeverDB.owners and AZPCForeverDB.owners[table.concat({me.region,me.realm,me.faction,me.character},'|')]
+ local reserved=owners and owners[command.itemId];reserved=reserved and ((reserved.listed or 0)+(reserved.pending or 0)+(reserved.unresolved or 0))or 0
+ local untracked=math.max(0,held(command.itemId)-math.max(0,recorded-reserved))
+ if command.quantity<1 or command.quantity%1~=0 or command.quantity>math.min(held(command.itemId),untracked+unknown) or unknown>0 and partial>0 then record('request_rejected',command.itemId,command.quantity,command.name,{reason='quantity_or_source_changed',confirmation='material_request_rejected'},command.commandId);message('Free material request rejected: '..command.name..' quantity/source changed. Known paid costs cannot be erased.');return end
+ local extra=math.min(command.quantity,untracked)
+ record('free',command.itemId,command.quantity,command.name,{untrackedQuantity=extra,heldQuantity=held(command.itemId),source=command.source},command.commandId)
+ message('Classified '..command.quantity..' '..command.name..' as '..command.source..' at zero cash cost. /reload saves it.')
+end
+AZPCForeverCrafting.ApplyMaterialCommands=function()
+ for _,command in ipairs(AZPCForeverMaterialCommands or {})do local ok,err=pcall(free,command);if not ok then message('Material classification deferred: '..tostring(err))end end
+end
+local sentItems,sendPending={},nil
+local inbox,incoming,baseline,generation={},{},{},0
+local function sentCatalog()
+ local rows={}
+ for slot=1,12 do local name,id,_,q=call(GetSendMailItem,slot)
+  if id and q and q>0 then local r=rows[id]or{itemId=id,quantity=0,name=name};r.quantity=r.quantity+q;rows[id]=r end
+ end
+ sentItems=rows
+end
+local function inboxCatalog()
+ local rows={};local count=call(GetInboxNumItems)or 0
+ for index=1,count do
+  local invoice=call(GetInboxInvoiceInfo,index)
+  local _,_,sender,subject,money,cod=GetInboxHeaderInfo(index)
+  if not invoice and sender and (money or 0)==0 and (cod or 0)==0 and not expiredSubject(subject) and not sender:lower():find('auction',1,true)then
+   local items={}
+   for slot=1,16 do local name,id,_,q=call(GetInboxItem,index,slot);if id and q and q>0 then items[slot]={itemId=id,quantity=q,name=name}end end
+   rows[index]={sender=counterpart(sender),subject=subject or '',items=items}
+  end
+ end
+ inbox=rows
+end
+local function reconcile(g)
+ if g~=generation or not next(incoming)then return end
+ local expected={};for _,r in pairs(incoming)do expected[r.itemId]=(expected[r.itemId]or 0)+r.quantity end
+ for id,q in pairs(expected)do if held(id)-(baseline[id]or 0)~=q then return end end
+ local grouped={}
+ for _,r in pairs(incoming)do local k=r.sender..'|'..r.subject..'|'..r.itemId;local row=grouped[k];if row then row.quantity=row.quantity+r.quantity else grouped[k]={itemId=r.itemId,quantity=r.quantity,name=r.name,sender=r.sender,subject=r.subject}end end
+ for _,r in pairs(grouped)do record('transfer_in',r.itemId,r.quantity,r.name,{counterparty=r.sender,transferKey='mail:'..r.subject})end
+ incoming={};baseline={};generation=generation+1
+end
+local frame=CreateFrame('Frame')
+for _,event in ipairs({'ADDON_LOADED','PLAYER_LOGIN','MAIL_SEND_INFO_UPDATE','MAIL_SEND_SUCCESS','MAIL_FAILED','MAIL_SHOW','MAIL_INBOX_UPDATE','BAG_UPDATE_DELAYED','MAIL_CLOSED'})do pcall(frame.RegisterEvent,frame,event)end
+frame:SetScript('OnEvent',function(_,event)
+ local ok,err=pcall(function()
+  if event=='ADDON_LOADED'then d()
+  elseif event=='PLAYER_LOGIN'then C_Timer.After(1,function()AZPCForeverCrafting.ApplyMaterialCommands()end)
+  elseif event=='MAIL_SEND_INFO_UPDATE'then sentCatalog()
+  elseif event=='MAIL_SEND_SUCCESS'then if sendPending then for _,r in pairs(sendPending.items)do record('transfer_out',r.itemId,r.quantity,r.name,{counterparty=sendPending.recipient,transferKey='mail:'..sendPending.subject})end end;sendPending=nil;sentItems={}
+  elseif event=='MAIL_FAILED'then sendPending=nil
+  elseif event=='MAIL_SHOW'or event=='MAIL_INBOX_UPDATE'then reconcile(generation);inboxCatalog()
+  elseif event=='BAG_UPDATE_DELAYED'then reconcile(generation)
+  elseif event=='MAIL_CLOSED'then reconcile(generation);incoming={};baseline={};generation=generation+1 end
+ end);if not ok then message('Material capture deferred: '..tostring(err))end
+end)
+if type(hooksecurefunc)=='function'then
+ pcall(hooksecurefunc,'SendMail',function(recipient,subject)
+  if (call(GetSendMailMoney)or 0)>0 or (call(GetSendMailCOD)or 0)>0 then sendPending=nil;return end
+  sendPending={recipient=counterpart(recipient),subject=subject or '',items=sentItems}
+ end)
+ pcall(hooksecurefunc,'TakeInboxItem',function(index,slot)
+  local mail=inbox[index];if not mail then return end
+  for i,r in pairs(mail.items)do if not slot or slot==i then
+   local k=index..':'..i;if not incoming[k]then if baseline[r.itemId]==nil then baseline[r.itemId]=held(r.itemId)end;incoming[k]={itemId=r.itemId,quantity=r.quantity,name=r.name,sender=mail.sender,subject=mail.subject}end
+  end end
+  local g=generation;C_Timer.After(0.25,function()reconcile(g)end)
+ end)
+end
+end
+
 -- Percent-encoded JSON exports keep the desktop reader away from executable Lua.
 do
 local arrays={candidateItemIds=true,reagents=true,reagentSlots=true,options=true,recipeReagents=true,consumedReagents=true,resourcesReturned=true,inputs=true,missing=true}
@@ -949,6 +1072,7 @@ local function exports()
         end
         r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='craft',recordId=r.eventId,data=r}))end
     for _,r in ipairs(d.vendorEvents or {})do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='vendor',recordId=r.eventId,data=r}))end
+    for _,r in ipairs(d.materialEvents or {})do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='material',recordId=r.eventId,data=r}))end
 end
 local old=AZPCForeverCrafting.RebuildCosts
 AZPCForeverCrafting.RebuildCosts=function()

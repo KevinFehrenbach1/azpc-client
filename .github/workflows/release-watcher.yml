@@ -19,6 +19,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
+      - run: lua5.1 watcher/tests/forever-materials.lua
   test-build:
     runs-on: windows-latest
     steps:
