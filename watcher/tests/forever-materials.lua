@@ -19,7 +19,7 @@ function GetInboxItem(_,slot)if slot==1 and attachment then return 'Linen Cloth'
 assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever');emit('ADDON_LOADED','AZPCForever')
 AZPCForeverMaterialCommands={{commandId='material-free:test',itemId=2589,quantity=10,region=90,faction='horde',realm='Realm',character='Wet',name='Linen Cloth',source='farmed'}}
 emit('PLAYER_LOGIN');assert(#AZPCForeverDB.crafting.materialEvents==1);emit('PLAYER_LOGIN');assert(#AZPCForeverDB.crafting.materialEvents==1,'command replay is idempotent')
-emit('MAIL_SEND_INFO_UPDATE');hooks.SendMail('Lu','cloth');clock=clock+1;emit('MAIL_SEND_SUCCESS');assert(#AZPCForeverDB.crafting.materialEvents==2);assert(AZPCForeverDB.crafting.materialEvents[2].kind=='transfer_out')
+emit('MAIL_SEND_INFO_UPDATE');hooks.SendMail('Lu Skunt','cloth');clock=clock+1;emit('MAIL_SEND_SUCCESS');assert(#AZPCForeverDB.crafting.materialEvents==2);assert(AZPCForeverDB.crafting.materialEvents[2].kind=='transfer_out')
 char='Lu';counts[2589]=0;clock=clock+1;emit('MAIL_SHOW');hooks.TakeInboxItem(1,1);assert(#AZPCForeverDB.crafting.materialEvents==2,'take intent alone cannot record a receipt')
 counts[2589]=10;attachment=false;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==3);assert(AZPCForeverDB.crafting.materialEvents[3].kind=='transfer_in')
 emit('MAIL_INBOX_UPDATE');emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==3,'mail receipt records once after bag confirmation')

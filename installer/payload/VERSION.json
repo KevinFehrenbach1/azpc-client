@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.4.87",
+  "packageVersion": "0.4.88",
   "watcherVersion": "0.4.36",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
   "notes": "Explicit farmed/free source declarations, confirmed mail cost transfers and private round-trip sync.",
-  "version": "0.4.87",
-  "foreverAddonVersion": "0.2.8"
+  "version": "0.4.88",
+  "foreverAddonVersion": "0.2.9"
 }

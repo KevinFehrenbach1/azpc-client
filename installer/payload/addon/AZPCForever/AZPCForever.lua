@@ -665,6 +665,16 @@ local function rebuild()
         end
         if #p.lots==0 then p.uncertain=nil end
     end
+    local function normalizedName(n)return (n:match('^%s*(.-)%s*$'):gsub('%s+',' ')):lower()end
+    local function sameCharacter(address,character,e)
+        local a,c=normalizedName(address),normalizedName(character);if a==c then return true end
+        if a:find('-',1,true)then return false end
+        local names={}
+        for _,other in ipairs(events)do if other.realm==e.realm and other.region==e.region and other.faction==e.faction then names[normalizedName(other.character)]=true end end
+        if names[a]then return false end
+        local count,matched=0,nil;for name in pairs(names)do if a:sub(1,#name+1)==name..' 'then count=count+1;matched=name end end
+        return count==1 and matched==c
+    end
     for _,e in ipairs(events) do
         local p=pool(e,e.itemId)
         if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.copper}
@@ -685,7 +695,7 @@ local function rebuild()
         elseif e.kind=='transfer_in' then
             local matches={}
             for _,t in ipairs(transit)do local from=t.event
-                if not t.received and from.itemId==e.itemId and from.quantity==e.quantity and from.realm==e.realm and from.region==e.region and from.faction==e.faction and from.character:lower()==e.counterparty:lower() and from.counterparty:lower()==e.character:lower() and from.transferKey==e.transferKey and from.observedAt<=e.observedAt then matches[#matches+1]=t end
+                if not t.received and from.itemId==e.itemId and from.quantity==e.quantity and from.realm==e.realm and from.region==e.region and from.faction==e.faction and sameCharacter(e.counterparty,from.character,from) and sameCharacter(from.counterparty,e.character,e) and from.transferKey==e.transferKey and from.observedAt<=e.observedAt then matches[#matches+1]=t end
             end
             if #matches==1 then local t=matches[1];t.received=true;p.lots[#p.lots+1]={quantity=e.quantity,copper=t.copper,partialCopper=t.partialCopper}
             else p.lots[#p.lots+1]={quantity=e.quantity,partialCopper=0}end
