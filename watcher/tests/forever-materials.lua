@@ -34,3 +34,19 @@ attachment=true;emit('MAIL_SEND_INFO_UPDATE');hooks.SendMail('Wet','fail');emit(
 print('PASS: real material commands, explicit free stock, confirmed send/receive, failed mail, replay, current quantity guards, cross-character cost transfer and mixed averages')
 
 counts[2589]=100000;emit('PLAYER_LOGIN');assert(#AZPCForeverDB.crafting.materialEvents==before,'rejected requests never apply automatically to later acquisitions')
+-- Normal loot APIs cover corpses and gathering objects, including skinning.
+LOOT_ITEM_SELF='You receive loot: %s.';LOOT_ITEM_SELF_MULTIPLE='You receive loot: %sx%d.'
+local lootId,lootQuantity,lootGuid=2318,3,'Creature-0-1-2-3-4-5'
+function GetNumLootItems()return 1 end
+function GetLootSlotLink()return '|cffffffff|Hitem:'..lootId..'::::::::|h[Light Leather]|h|r' end
+function GetLootSlotInfo()return nil,'Light Leather',lootQuantity end
+function GetLootSourceInfo()return lootGuid,lootQuantity end
+local function lootChat()return 'You receive loot: '..GetLootSlotLink()..'x'..lootQuantity..'.'end
+local n=#AZPCForeverDB.crafting.materialEvents;counts[lootId]=0
+emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);emit('CHAT_MSG_LOOT',lootChat());assert(#AZPCForeverDB.crafting.materialEvents==n,'loot evidence without bags does not add stock')
+counts[lootId]=3;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n+1,'skinning leather is automatically farmed');local e=AZPCForeverDB.crafting.materialEvents[n+1];assert(e.source=='farmed' and e.quantity==3 and e.untrackedQuantity==3)
+emit('BAG_UPDATE_DELAYED');emit('LOOT_SLOT_CLEARED',1);assert(#AZPCForeverDB.crafting.materialEvents==n+1,'repeated notifications do not duplicate loot')
+n=n+1;lootGuid='GameObject-0-1-2-3-4-5';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=6;emit('CHAT_MSG_LOOT',lootChat());assert(#AZPCForeverDB.crafting.materialEvents==n+1,'gathering objects also record free gains');n=n+1
+emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=9;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'another player clearing a slot is insufficient')
+lootGuid='Item-0-1-2-3';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=12;emit('CHAT_MSG_LOOT',lootChat());emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'processing or opening an item cannot erase its paid basis')
+print('PASS: automatic corpse/skinning and gathering loot, self receipt plus bags, duplicate protection and exclusion of item-container sources')

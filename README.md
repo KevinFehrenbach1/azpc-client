@@ -1,3 +1,6 @@
+## Automatic farmed materials (Forever addon 0.2.8)
+New corpse and gathering loot (including skinning, herbs, mining and fishing loot windows) is recorded automatically at zero cash cost when a world loot source, your localized self-loot receipt and exact bag increase match. Repeated notifications cannot add duplicate stock. Item-container sources and unexplained changes remain unknown; purchases retain paid costs. Reload/logout saves events for the watcher. Existing inventory still needs explicit classification because its origin was not observed. Confirmed alt mail retains the original material cost. Manual classification remains a fallback.
+
 # AZPC Client
 
 Official desktop client and addon installer for Azerothian Price Checker.

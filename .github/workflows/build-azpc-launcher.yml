@@ -121,7 +121,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.15-Windows-TEST
+          name: AZPC-Launcher-0.2.16-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -135,11 +135,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.15-Windows-TEST
+          name: AZPC-Launcher-0.2.16-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.15 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.15 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.15 - Forever material sources and alt transfers" --notes "Forever addon 0.2.7 and watcher 0.4.36 add explicit farmed/free material classification and confirmed personal mail transfers. Paid and free stock use remaining weighted average costs; matched transfers carry donor costs without duplicate stock. Unknown origins remain unknown. Classify held materials on the Crafting page, keep the watcher running, reload on the selected character to apply, then reload again to save. Failed quantity checks are durably rejected. Existing accounting and saved craft costs are preserved."
+          if gh release view launcher-v0.2.16 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.16 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.16 - Automatic farmed loot capture" --notes "Forever addon 0.2.8 automatically captures confirmed corpse and gathering loot, including skinning leather and hides. Requires source provenance, self-loot receipt and matching bag gains. Item containers and unexplained gains remain unknown. New free materials blend with paid materials and carry through matched alt mail. Existing saved craft costs remain fixed. Watcher remains 0.4.36."
