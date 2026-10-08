@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.12"
+local addon, VERSION = ..., "0.2.13"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -1147,4 +1147,68 @@ AZPCForeverCrafting.RebuildCosts=function()
     elseif AZPCForeverDB and AZPCForeverDB.crafting then AZPCForeverDB.crafting.syncError=nil end
     return state,err
 end
+end
+
+-- One-time, evidence-bounded migration of the legacy linen ledger.
+-- Append audited checkpoints; do not delete receipts or rewrite frozen craft costs.
+do
+local migration='linen-ledger-20261008'
+local function migrate()
+    local db=AZPCForeverDB;local d=db and db.crafting
+    if not d or not d.materialEvents or not d.crafts then return false end
+    local ids={'material-reconcile:lu-linen-20261008:2589','material-reconcile:lu-linen-20261008:2996'}
+    local found={};for _,e in ipairs(d.materialEvents)do for _,id in ipairs(ids)do if e.eventId==id then found[id]=true end end end
+    if found[ids[1]] or found[ids[2]] then return false end
+    if #d.materialEvents>9998 then return false end
+    local rows={};local latest={};local buys={};local after=false
+    for _,row in ipairs(db.trades or {})do
+        if type(row.tradeExport)=='string' then
+            local f={};for v in (row.tradeExport..'|'):gmatch('(.-)|')do f[#f+1]=v end
+            if (f[2]=='1' or f[2]=='2')and f[10]=='Classic%20Beta%20PvP%202'and f[11]=='horde'and f[12]=='90'and f[13]=='Lu' then
+                local id,q,c,at=tonumber(f[5]),tonumber(f[7]),tonumber(f[8]),tonumber(f[9])
+                if at and f[2]=='1'then at=at*1000 end
+                if (id==2589 or id==2996)and q and c and at then
+                    if f[4]=='inventory_snapshot' then rows[#rows+1]={id=id,q=q,at=at};if not latest[id]or latest[id].at<at then latest[id]={q=q,at=at}end
+                    else
+                        if at>1791447247001 then after=true end
+                        if f[4]=='buy'and id==2589 and at>=1791444677000 and at<=1791447230000 then buys[#buys+1]={q=q,c=c,at=at}end
+                    end
+                end
+            end
+        end
+    end
+    if after or not latest[2589]or latest[2589].q~=0 or not latest[2996]or latest[2996].q~=11 then return false end
+    local times={1791444821000,1791444824000,1791444827000,1791444830000,1791444834000,1791444836000,1791444840000,1791444843000}
+    for i,t in ipairs(times)do
+        local cloth,bolts=0,0
+        for _,r in ipairs(rows)do if math.abs(r.at-t)<=1 then if r.id==2589 and r.q==16-2*i then cloth=cloth+1 elseif r.id==2996 and r.q==i then bolts=bolts+1 end end end
+        if cloth~=1 or bolts~=1 then return false end
+    end
+    local q,c=0,0;for _,r in ipairs(buys)do q=q+r.q;c=c+r.c end
+    if #buys~=3 or q~=14 or c~=14 then return false end
+    for _,records in ipairs({d.crafts,d.materialEvents,d.vendorEvents or {}})do for _,r in ipairs(records)do
+        if r.character=='Lu'and r.realm=='Classic Beta PvP 2'and r.region==90 and r.faction=='horde'and(r.observedAt or 0)>1791447247001 then
+            if r.itemId==2589 or r.itemId==2996 then return false end
+            for _,m in ipairs(r.consumedReagents or {})do if m.itemId==2589 or m.itemId==2996 then return false end end
+        end
+    end end
+    local corrections={}
+    for i,id in ipairs({2589,2996})do
+        local quantity=id==2996 and 11 or 0
+        corrections[#corrections+1]={schema=1,eventId=ids[i],kind='reconcile',itemId=id,quantity=math.max(quantity,1),targetQuantity=quantity,totalCopper=id==2996 and 14 or 0,name=id==2996 and 'Bolt of Linen Cloth'or'Linen Cloth',observedAt=1791447247002,region=90,realm='Classic Beta PvP 2',faction='horde',character='Lu',confirmation='inventory_and_cost_reconciled',sourceQuantities=id==2996 and {crafted=11}or{},reason='Verified legacy linen migration: eight free alt cloth plus fourteen bought cloth costing fourteen copper produced eleven bolts; historical records retained.',evidence={'inventory_snapshot:2996:1791447247000:11','inventory_snapshot:2589:1791447247001:0','paired_recipe_conversions:1791444821000:1791444843000:8','cloth_purchases:8+2+4:14c','confirmed_free_alt_cloth:8'}}
+    end
+    -- Retain the pre-migration pool summary alongside the untouched raw history.
+    d.migrations=d.migrations or {};d.migrations[migration]={schema=1,previousCosting=d.costing,correctionIds=ids,observedAt=observedMillis()}
+    for _,r in ipairs(corrections)do d.materialEvents[#d.materialEvents+1]=r end
+    return true
+end
+local f=CreateFrame('Frame');f:RegisterEvent('ADDON_LOADED')
+f:SetScript('OnEvent',function(_,_,name)
+    if name~=addon then return end
+    local ok,changed=pcall(migrate)
+    if ok and changed then
+        AZPCForeverCrafting.RebuildCosts()
+        message('Historical linen balance corrected: 0 cloth, 11 bolts, 14 copper total material cost. /reload saves the correction for upload.')
+    elseif not ok then message('Historical material migration deferred; original records retained.')end
+end)
 end
