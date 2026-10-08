@@ -142,3 +142,5 @@ try {
  Assert ((Get-Content $file.FullName -Raw | ConvertFrom-Json).metadata.mailIdentity -eq $first.metadata.mailIdentity) 'Enrichment retains stable evidence without changing event ID'
 } finally {Remove-Item $queueRoot -Recurse -Force}
 
+$blank=Convert-ForeverTrade ($receipt.Replace([uri]::EscapeDataString($identity),[uri]::EscapeDataString($identity.Replace(':Buyer:', '::'))))
+Assert ($blank.metadata.mailEnvelope -eq $first.metadata.mailEnvelope -and $blank.metadata.mailBuyerKnown -eq $false -and $first.metadata.mailBuyerKnown -eq $true) 'Blank and hydrated buyer share envelope evidence while keeping distinct receipt IDs'

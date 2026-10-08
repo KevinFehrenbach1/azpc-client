@@ -142,3 +142,13 @@ assert(#AZPCForeverDB.trades==1,'seller identity survives addon reload')
 sellerCount=2;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==2,'two simultaneous identical sales retain occurrence IDs')
 sellerCount=1;sellerDays=sellerDays-1/24;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==3,'different receipt expiry remains a distinct sale')
 print('PASS: seller expiry drift, reload stability and distinct equal sales')
+
+AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={}
+local buyerName=''
+function GetInboxNumItems()return 1 end
+function GetInboxInvoiceInfo()return 'seller','Peacebloom',buyerName,0,1200,40,60,0,0,0,1 end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Peacebloom',1180,0,30 end
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==0,'seller capture waits for invoice buyer name')
+buyerName='Glesmord Hillmont';stamp=stamp+1;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==1,'hydrated invoice records one sale')
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1)
+print('PASS: actual blank-then-named invoice hydration does not duplicate sale')
