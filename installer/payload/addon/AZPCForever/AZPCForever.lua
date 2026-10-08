@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.4"
+local addon, VERSION = ..., "0.2.5"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -181,6 +181,24 @@ captureTrades=function()
                     expiry=expiredExpiry(base,timestamp,daysLeft) or 0
                 end
                 if expiry>0 then
+                    if invoice~="expired" then
+                        -- Mail daysLeft is an estimate, not an immutable receipt ID.
+                        -- Reuse the original minute anchor across small estimate drift.
+                        -- Keep the occurrence suffix below so simultaneous equal sales remain distinct.
+                        local prefix=table.concat({guid,realm,region,invoice,id,quantity,copper},":")..":"
+                        local suffix=":"..table.concat({encode(otherPlayer),encode(sender),encode(subject),subjectEscapes},":")..":"
+                        local best
+                        for seen in pairs(AZPCForeverDB.tradeSeen) do
+                            if seen:sub(1,#prefix)==prefix then
+                                local tail=seen:sub(#prefix+1)
+                                local anchor=tonumber(tail:match("^(%d+):"))
+                                if anchor and math.abs(anchor-expiry)<=2 and tail:sub(#tostring(anchor)+1,#tostring(anchor)+#suffix)==suffix then
+                                    if not best or anchor<best then best=anchor end
+                                end
+                            end
+                        end
+                        expiry=best or expiry
+                    end
                     local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject),subjectEscapes},":")
                     occurrences[fingerprint]=(occurrences[fingerprint] or 0)+1
                     fingerprint=fingerprint..":"..occurrences[fingerprint]
@@ -574,14 +592,26 @@ local function mail(export)
     if not integer(id,10000000) or id<1 or not integer(q,1000000) or q<1 or not integer(c) or not integer(at,4102444800000) or not integer(region,100) or region<1 then return end
     local e={kind=f[4],itemId=id,quantity=q,copper=c,observedAt=f[2]=='1' and at*1000 or at,eventId='mail:'..f[3],realm=decode(f[10]),faction=f[11],region=region,character=decode(f[13]),name=decode(f[6])}
     if e.realm=='' or e.character=='' or (e.faction~='horde' and e.faction~='alliance') then return end
+    local prefix,expiry,suffix=decode(f[3]):match('^(.*:seller:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')
+    if not prefix then prefix,expiry,suffix=decode(f[3]):match('^(.*:buyer:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')end
+    if prefix then e.mailIdentity=prefix..suffix;e.mailExpiry=tonumber(expiry)end
     return e
 end
 local function rebuild()
     local db=AZPCForeverDB.crafting
     if db.vendorCostingBlocked then error('Vendor ledger capacity reached; material costs cannot currently be verified.')end
-    local events,seen={},{}
-    for _,row in ipairs(AZPCForeverDB.trades or {}) do
-        local e=mail(row.tradeExport);if e and not seen[e.eventId] then seen[e.eventId]=true;events[#events+1]=e end
+    local events,seen,mailAnchors={},{},{}
+    local receipts={}
+    for _,row in ipairs(AZPCForeverDB.trades or {})do local e=mail(row.tradeExport);if e then receipts[#receipts+1]=e end end
+    table.sort(receipts,function(a,b)return a.observedAt<b.observedAt or a.observedAt==b.observedAt and a.eventId<b.eventId end)
+    for _,e in ipairs(receipts)do
+        local duplicate=false
+        if e.mailIdentity then
+            local anchors=mailAnchors[e.mailIdentity] or {};mailAnchors[e.mailIdentity]=anchors
+            for _,old in ipairs(anchors)do if math.abs(old.mailExpiry-e.mailExpiry)<=2 and old.copper==e.copper then duplicate=true;break end end
+            if not duplicate then anchors[#anchors+1]=e end
+        end
+        if not duplicate and not seen[e.eventId] then seen[e.eventId]=true;events[#events+1]=e end
     end
     for _,e in ipairs(db.vendorEvents or {})do
         if type(e.eventId)=='string' and not seen[e.eventId] and (e.kind=='buy' or e.kind=='sell' or e.kind=='vendor_unresolved') and integer(e.itemId,10000000) and e.itemId>0 and integer(e.quantity,1000000) and e.quantity>0 and integer(e.copper) then

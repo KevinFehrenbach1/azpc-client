@@ -124,3 +124,21 @@ C_AuctionHouse={HasFullOwnedAuctionResults=function()return complete end,GetOwne
 n=#AZPCForeverDB.trades;callback(nil,'OWNED_AUCTIONS_UPDATED');assert(#AZPCForeverDB.trades==n)
 complete=true;callback(nil,'OWNED_AUCTIONS_UPDATED');f=fields(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport);assert(f[17]=='5')
 print('PASS: complete legacy/modern owner capture, partial-page guards, pending/settled exclusion, net deposit refund, bag availability and dedup')
+
+-- One seller invoice crossing a rounded expiry boundary must stay one sale.
+AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={};AZPCForeverDB.settledOwners={}
+local sellerDays=30
+local sellerCount=1
+function GetInboxNumItems() return sellerCount end
+function GetInboxInvoiceInfo() return 'seller','Peacebloom','Buyer',0,1200,40,60,0,0,0,1 end
+function GetInboxHeaderInfo() return nil,nil,'Auction House','Auction successful: Peacebloom',1180,0,sellerDays end
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1)
+local original=AZPCForeverDB.trades[1].tradeExport
+stamp=stamp+75;sellerDays=sellerDays-75/86400+65/86400
+callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==1,'seller expiry estimate crossing minute boundary cannot duplicate sale')
+assert(AZPCForeverDB.trades[1].tradeExport==original,'repeated sale preserves timestamp and ID')
+frames={};assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever');callback(nil,'ADDON_LOADED','AZPCForever');callback(nil,'MAIL_SHOW')
+assert(#AZPCForeverDB.trades==1,'seller identity survives addon reload')
+sellerCount=2;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==2,'two simultaneous identical sales retain occurrence IDs')
+sellerCount=1;sellerDays=sellerDays-1/24;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==3,'different receipt expiry remains a distinct sale')
+print('PASS: seller expiry drift, reload stability and distinct equal sales')

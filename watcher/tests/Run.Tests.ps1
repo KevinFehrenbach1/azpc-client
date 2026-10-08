@@ -118,3 +118,24 @@ $bag='AZPCFTRADE|2|v2-bags|inventory_snapshot|2447|Peacebloom|0|0|1790830800002|
 $parsed=Convert-ForeverTrade $bag
 Assert ($parsed.quantity -eq 0 -and $parsed.metadata.bagQuantity -eq 0) 'empty bags clear available inventory'
 foreach($bad in @($v2.Replace('|200|','|225|'),$listing.Replace('|6|0|','|7|0|'),$bag.Replace('|inventory_snapshot|','|sell|'))){$rejected=$false;try{Convert-ForeverTrade $bad | Out-Null}catch{$rejected=$true};Assert $rejected 'Reject inconsistent v2 accounting and lifecycle records'}
+
+$identity='Player-test:Forever Test:90:seller:2447:1:1180:30000000:Buyer:Auction%20House:Auction%20successful%3A%20Peacebloom:3:1'
+$receipt=$v2.Replace('v2-sale',[uri]::EscapeDataString($identity))
+$first=Convert-ForeverTrade $receipt
+$repeat=Convert-ForeverTrade ($receipt.Replace([uri]::EscapeDataString($identity),[uri]::EscapeDataString($identity.Replace(':30000000:',':30000001:'))))
+Assert ($first.eventId -ne $repeat.eventId -and $first.metadata.mailIdentity -eq $repeat.metadata.mailIdentity -and $repeat.metadata.mailExpiryMinute -eq 30000001) 'Historical drifting IDs retain stable full mailbox evidence'
+$second=Convert-ForeverTrade ($receipt.Replace([uri]::EscapeDataString($identity),[uri]::EscapeDataString($identity.Substring(0,$identity.Length-1)+'2')))
+Assert ($first.metadata.mailIdentity -ne $second.metadata.mailIdentity) 'Simultaneous identical receipts preserve occurrence ordinal'
+$queueRoot=Join-Path ([IO.Path]::GetTempPath()) ('azpc-receipts-'+[guid]::NewGuid().ToString('N'))
+try {
+ $StateDir=$queueRoot
+ Collect-ForeverTrades ('{ ["tradeExport"]="'+$receipt+'" }')
+ $file=Get-ChildItem (Join-Path $queueRoot 'Forever/trades') -Filter '*.json' | Select-Object -First 1
+ $old=Get-Content $file.FullName -Raw | ConvertFrom-Json
+ $old.metadata.PSObject.Properties.Remove('mailIdentity');$old.metadata.PSObject.Properties.Remove('mailExpiryMinute')
+ $old | ConvertTo-Json -Depth 8 | Set-Content $file.FullName -Encoding UTF8
+ Set-Content ($file.FullName+'.sent') 'sent'
+ Collect-ForeverTrades ('{ ["tradeExport"]="'+$receipt+'" }')
+ Assert (-not (Test-Path ($file.FullName+'.sent'))) 'Previously acknowledged receipt is requeued for evidence enrichment'
+ Assert ((Get-Content $file.FullName -Raw | ConvertFrom-Json).metadata.mailIdentity -eq $first.metadata.mailIdentity) 'Enrichment retains stable evidence without changing event ID'
+} finally {Remove-Item $queueRoot -Recurse -Force}
