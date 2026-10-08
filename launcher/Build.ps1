@@ -1,4 +1,4 @@
-param([string]$ReleaseTag = 'launcher-v0.2.19')
+param([string]$ReleaseTag = 'launcher-v0.2.20')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
@@ -21,7 +21,7 @@ Copy-Item (Join-Path $payload 'watcher'),(Join-Path $payload 'VERSION.json') $co
 Compress-Archive -Path (Join-Path $components '*') -DestinationPath $bundle
 $version = Get-Content (Join-Path $payload 'VERSION.json') -Raw | ConvertFrom-Json
 $manifest = @{
-    schema=1; game='tbc-anniversary'; channel='alpha'; launcherVersion='0.2.19'
+    schema=1; game='tbc-anniversary'; channel='alpha'; launcherVersion='0.2.20'
     addonVersion=$version.addonVersion; watcherVersion=$version.watcherVersion
     bundleUrl=('https://github.com/KevinFehrenbach1/azpc-client/releases/download/'+$ReleaseTag+'/azpc-components.zip')
     bundleSha256=(Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -40,7 +40,7 @@ $foreverVersions=@{game='forever';addonVersion=$version.foreverAddonVersion;watc
 $foreverVersions | ConvertTo-Json | Set-Content (Join-Path $forever 'VERSION.json') -Encoding UTF8
 $foreverBundle=Join-Path $output 'azpc-forever-components.zip'
 Compress-Archive -Path (Join-Path $forever '*') -DestinationPath $foreverBundle -Force
-@{schema=1;game='forever';launcherVersion='0.2.19';addonVersion=$version.foreverAddonVersion;watcherVersion=$version.watcherVersion;bundleUrl=('https://github.com/KevinFehrenbach1/azpc-client/releases/download/'+$ReleaseTag+'/azpc-forever-components.zip');bundleSha256=(Get-FileHash $foreverBundle -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content (Join-Path $output 'azpc-forever-update.json') -Encoding UTF8
+@{schema=1;game='forever';launcherVersion='0.2.20';addonVersion=$version.foreverAddonVersion;watcherVersion=$version.watcherVersion;bundleUrl=('https://github.com/KevinFehrenbach1/azpc-client/releases/download/'+$ReleaseTag+'/azpc-forever-components.zip');bundleSha256=(Get-FileHash $foreverBundle -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content (Join-Path $output 'azpc-forever-update.json') -Encoding UTF8
 Remove-Item $forever -Recurse -Force
 
 

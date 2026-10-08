@@ -58,3 +58,11 @@ purchase(20,29,1791396972);purchase(29,29,1791396973)
 local repaired=position(2319);assert(repaired.quantity==20 and repaired.totalCopper==29,'old quantity/price duplicate cannot inflate materials or copper')
 reset();purchase(29,29,1791396973);assert(position(2319).quantity==29,'unpaired record stays unchanged')
 print('PASS: legacy buyer quantity/price conflicts are repaired conservatively')
+
+reset();trade('buy',2996,43,118,1000)
+AZPCForeverDB.crafting.materialEvents={{eventId='repair',kind='reconcile',itemId=2996,quantity=11,targetQuantity=11,totalCopper=14,observedAt=2000,region=90,realm='Realm',faction='horde',character='Lu',name='Bolts',confirmation='inventory_and_cost_reconciled'}}
+assert(position(2996).quantity==11 and position(2996).totalCopper==14,'audited correction supersedes old pool without changing raw purchases')
+local repairedBag=craft(253664,1,3000,{mat(2996,6)});rebuild()
+assert(repairedBag.costBasis.totalCopper==7 and position(2996).totalCopper==7,'future crafts consume corrected weighted copper exactly')
+assert(#AZPCForeverDB.trades==1,'repair retains original transaction')
+print('PASS: audited reconciliation and subsequent craft copper conservation')

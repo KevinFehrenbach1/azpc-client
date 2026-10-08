@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.11"
+local addon, VERSION = ..., "0.2.12"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -643,7 +643,7 @@ local function rebuild()
             seen[r.eventId]=true;events[#events+1]={kind='craft',itemId=r.itemId,quantity=r.quantity,observedAt=r.observedAt,eventId=r.eventId,realm=r.realm,faction=r.faction,region=r.region,character=r.character,name=r.name,record=r}
         end
     end
-    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5}
+    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
     local pools={};local transit={};local unresolved=0;local updates={}
     local function pool(e,id)
@@ -708,6 +708,9 @@ local function rebuild()
             end
             if #matches==1 then local t=matches[1];t.received=true;p.lots[#p.lots+1]={quantity=e.quantity,copper=t.copper,partialCopper=t.partialCopper}
             else p.lots[#p.lots+1]={quantity=e.quantity,partialCopper=0}end
+        elseif e.kind=='reconcile' then
+            if not integer(e.targetQuantity,1000000) or not integer(e.totalCopper) or e.targetQuantity==0 and e.totalCopper~=0 or e.confirmation~='inventory_and_cost_reconciled' then error('Invalid material reconciliation.') end
+            p.lots=e.targetQuantity>0 and {{quantity=e.targetQuantity,copper=e.totalCopper}} or {};p.uncertain=nil
         elseif e.kind=='sell' then sale(p,e.quantity)
         elseif e.kind=='vendor_unresolved' then p.uncertain=true
         else
