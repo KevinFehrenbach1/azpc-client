@@ -296,12 +296,12 @@ function Stop-Watcher {
         Start-Sleep -Milliseconds 250
     }
 }
-function Repair-ForeverLinen([string]$Root) {
+function Invoke-ForeverDataMigrations([string]$Root, [switch]$Strict) {
     Assert-GameClosed
     $status=Get-InstalledStatus $Root 'forever'
     if ($status.Addon -notmatch '^\d+\.\d+\.\d+$' -or [version]$status.Addon -lt [version]'0.2.12') { throw 'Update the Forever addon to 0.2.12 or newer first.' }
     $accountRoot=Join-Path $Root '_classic_beta_\WTF\Account'
-    if (-not (Test-Path -LiteralPath $accountRoot)) { throw 'No Forever saved account data was found.' }
+    if (-not (Test-Path -LiteralPath $accountRoot)) { return $null }
     $candidates=@()
     foreach ($file in @(Get-ChildItem -LiteralPath $accountRoot -Filter 'AZPCForever.lua' -Recurse -File)) {
         if ($file.Directory.Name -ne 'SavedVariables') { continue }
@@ -323,11 +323,12 @@ function Repair-ForeverLinen([string]$Root) {
             if (@($rows | Where-Object { $_.kind -eq 'inventory_snapshot' -and $_.item -eq 2589 -and $_.quantity -eq (14-2*$i) -and [Math]::Abs($_.at-$times[$i]) -le 1 }).Count -ne 1) { $verified=$false }
         }
         if (-not $verified) { continue }
-        $cloth=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2589} | Sort-Object at -Descending)[0]
-        $bolts=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2996} | Sort-Object at -Descending)[0]
+        $cloth=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2589} | Sort-Object { $_.at } -Descending)[0]
+        $bolts=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2996} | Sort-Object { $_.at } -Descending)[0]
         if ($cloth.quantity -ne 0 -or $bolts.quantity -ne 11) { throw 'Linen inventory has changed since this repair was verified. Refresh your saved data before repairing.' }
         $buys=@($rows | Where-Object {$_.kind -eq 'buy' -and $_.item -eq 2589 -and $_.at -ge 1791444677000L -and $_.at -le 1791447230000L})
-        if ($buys.Count -ne 3 -or ($buys | Measure-Object quantity -Sum).Sum -ne 14 -or ($buys | Measure-Object copper -Sum).Sum -ne 14) { throw 'The verified cloth purchase costs no longer match. No repair was applied.' }
+        $boughtQuantity=0L;$boughtCopper=0L;foreach($buy in $buys){$boughtQuantity+=$buy.quantity;$boughtCopper+=$buy.copper}
+        if ($buys.Count -ne 3 -or $boughtQuantity -ne 14 -or $boughtCopper -ne 14) { throw 'The verified cloth purchase costs no longer match. No repair was applied.' }
         $ids=@('material-reconcile:lu-linen-20261008:2589','material-reconcile:lu-linen-20261008:2996')
         $existing=@($ids | Where-Object {$content.Contains($_)})
         if ($existing.Count -eq 2) { return @{ok=$true;message='Linen repair is already applied. Open Lu, /reload, then refresh Crafting after the watcher uploads.'} }
@@ -335,6 +336,7 @@ function Repair-ForeverLinen([string]$Root) {
         if ([regex]::Matches($content,'\["materialEvents"\]\s*=\s*\{').Count -ne 1) { throw 'The material ledger could not be located safely.' }
         $candidates+=@{file=$file.FullName;content=$content;hash=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash}
     }
+    if ($candidates.Count -eq 0 -and -not $Strict) { return $null }
     if ($candidates.Count -ne 1) { throw 'No unique saved account matched the verified linen repair. Nothing was changed.' }
     $selected=$candidates[0]
     # Data-only Lua literals. Never evaluate a saved file as PowerShell or Lua.
@@ -363,7 +365,6 @@ function Invoke-LauncherAction($Request) {
     if ($Request.action -eq 'check') { return @{ ok = $true; manifest = (Get-RemoteManifest -Game $game) } }
     if ($Request.action -eq 'stop') { Stop-Watcher; return @{ ok = $true; message = 'Watcher stopped. It remains configured to start at Windows sign-in.' } }
     $root = Assert-WowRoot ([string]$Request.wowRoot) $game
-    if ($Request.action -eq 'repair-linen') { if($game -ne 'forever'){throw 'Linen repair is only available for Forever.'}; return (Repair-ForeverLinen $root) }
     if ($Request.action -eq 'start') { Start-Watcher $root; return @{ ok = $true; message = 'Watcher started. It may need a WoW logout or reload before new data is available.' } }
     if ($Request.action -notin @('addon','watcher','all')) { throw 'Unknown launcher action.' }
     Assert-GameClosed
@@ -389,15 +390,15 @@ function Invoke-LauncherAction($Request) {
             throw 'Enter an eight-character setup code before installing the watcher.'
         }
         # Each component is committed separately; a failed second component is reported honestly.
-        $completed = @()
+        $completed = @();$migrationNote=''
         try {
-            if ($Request.action -in @('all','addon')) { Install-Addon $payload $root $game; $completed += 'Addon' }
+            if ($Request.action -in @('all','addon')) { Install-Addon $payload $root $game; $completed += 'Addon';if($game -eq 'forever'){try{$migration=Invoke-ForeverDataMigrations $root;if($migration){$migrationNote=' '+$migration.message}}catch{$migrationNote=' Saved-data migration was not applied: '+$_.Exception.Message}} }
             if ($Request.action -in @('all','watcher')) { Install-Watcher $payload $root ([string]$Request.setupCode); $completed += 'Watcher' }
         } catch {
             $prefix = if ($completed.Count) { ($completed -join ' and ') + ' installed successfully. ' } else { '' }
             throw ($prefix + $_.Exception.Message)
         }
-        return @{ ok = $true; message = ($completed -join ' and ') + ' installed. Existing account credentials, upload caches, and WoW SavedVariables were preserved.' }
+        return @{ ok = $true; message = ($completed -join ' and ') + ' installed. Existing account credentials and upload caches were preserved.' + $(if($migrationNote){$migrationNote}else{' Existing saved data was preserved.'}) }
     } finally { if (Test-Path -LiteralPath $workspace) { Remove-Item -LiteralPath $workspace -Recurse -Force } }
 }
 

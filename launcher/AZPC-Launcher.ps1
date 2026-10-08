@@ -134,8 +134,7 @@ $watcherButton=Button $updateCard 'Install / Update' 612 131 158 { Begin-Action 
 $allButton=Button $updateCard 'Install / Update All' 23 200 240 { Begin-Action 'all' } $true
 $startButton=Button $updateCard 'Start watcher' 418 200 165 { Begin-Action 'start' }
 $stopButton=Button $updateCard 'Stop watcher' 605 200 165 { Begin-Action 'stop' }
-$repairButton=Button $updates 'Repair linen crafting' 0 355 240 { Begin-Action 'repair-linen' }
-$versionNote=Label $updates 'Available versions are bundled until you check online.' 0 410 785 40 11; $versionNote.ForeColor=$muted
+$versionNote=Label $updates 'Available versions are bundled until you check online.' 0 368 785 55 11; $versionNote.ForeColor=$muted
 $null=Label $settingsPage 'Game folder' 0 0 790 35 18 $true
 $folderHint=Label $settingsPage 'Select the main World of Warcraft folder containing _anniversary_.' 0 39 790 28 11
 $rootBox=TextBox $settingsPage 0 77 599
@@ -171,7 +170,7 @@ function Show-Page([string]$Page) {
         $nav.BackColor=if($nav.Text -eq $Page){[Drawing.ColorTranslator]::FromHtml('#293a60')}else{$sidebar.BackColor}
     }
 }
-$script:mutating=@($browse,$game,$rootBox,$codeBox,$addonButton,$watcherButton,$startButton,$stopButton,$checkButton,$allButton,$quickInstall,$repairButton)
+$script:mutating=@($browse,$game,$rootBox,$codeBox,$addonButton,$watcherButton,$startButton,$stopButton,$checkButton,$allButton,$quickInstall)
 function Save-Settings {
     @{ wowRoot=$rootBox.Text; game=(Get-SelectedGame) } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:uiRoot 'settings.json') -Encoding UTF8
 }
@@ -212,7 +211,6 @@ function Refresh-Status {
         $folderDetail.AutoEllipsis=$true
         $startButton.Enabled=(-not $script:job -and -not $state.Running -and $state.Watcher -ne 'Not installed')
         $stopButton.Enabled=(-not $script:job -and $state.Running)
-        $repairButton.Visible=($selected -eq 'forever')
         $quickInstall.Visible=($state.Addon -eq 'Not installed' -or $state.Watcher -eq 'Not installed')
         $versionNote.Text=if($script:remote){'Checked online. Install buttons use these released versions.'}else{'Available versions are bundled until you check online.'}
     } catch { $message.Text=$_.Exception.Message }
