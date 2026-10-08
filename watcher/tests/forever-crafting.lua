@@ -70,6 +70,22 @@ now=now+10;output(10);assert(#db.crafts==4,'late unmatched results are ignored')
 -- Result notifications without an operation ID still require player success.
 now=now+1;start('cast-no-operation',100);success('cast-no-operation',100);output(0);assert(#db.crafts==5)
 output(0);assert(#db.crafts==5,'duplicate zero-operation result has no second successful cast')
+-- Create All: operation zero, one result before each distinct cast succeeds.
+local batchBefore=#db.crafts
+for i=1,8 do
+    now=now+2
+    local guid='cast-batch-zero-'..i
+    start(guid,100);output(0);output(0)
+    assert(#db.crafts==batchBefore+i-1,'early zero-operation results must wait for success')
+    success(guid,100);success(guid,100);output(0)
+    assert(#db.crafts==batchBefore+i,'batch casts record exactly once')
+    assert(db.crafts[#db.crafts].consumedReagents[1].quantity==2)
+end
+now=now+2;start('cast-zero-cancel',100);output(0)
+emit('UNIT_SPELLCAST_INTERRUPTED','player','cast-zero-cancel',100)
+assert(#db.crafts==batchBefore+8,'staged output cannot record an interrupted cast')
+-- Keep existing assertions indexed against their original independent scenario.
+for i=#db.crafts,batchBefore+1,-1 do table.remove(db.crafts,i) end
 -- Optional/alternative materials are preserved as recipe evidence but never guessed as consumed.
 C_TradeSkillUI.GetRecipeSchematic=function(id)local s=schema(id);s.reagentSlotSchematics[1].reagents={{itemID=2589},{itemID=2592}};return s end
 emit('TRADE_SKILL_LIST_UPDATE');assert(not db.recipes['Player-Lu:90:Classic Beta PvP 2:100'].materialsKnown)

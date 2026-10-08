@@ -1,4 +1,4 @@
-#define AppVersion "0.2.18"
+#define AppVersion "0.2.19"
 [Setup]
 AppId={{8AB6090C-0362-450E-A233-2ED2AEC851C8}
 AppName=AZPC Launcher

@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.10"
+local addon, VERSION = ..., "0.2.11"
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -500,8 +500,9 @@ local function result(data)
     for _,guid in ipairs(order) do
         local c=casts[guid]
         if c and not c.result and c.recipe.outputItemId==item then
-            -- With no operation ID, do not associate a late result with an unfinished next cast.
-            if not key and not c.success then return end
+            -- Classic reports operationID=0, including results before spell success.
+            -- Stage one result per cast; finish still requires that cast to succeed.
+            -- Repeated notifications cannot append a second record for this cast.
             c.result={itemID=item,quantity=q,operationID=operation,resourcesReturned=data.resourcesReturned}
             if key then seenOperations[key]=clock() end
             finish(c);return

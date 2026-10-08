@@ -121,7 +121,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.18-Windows-TEST
+          name: AZPC-Launcher-0.2.19-Windows-TEST
           path: launcher/output/*
           if-no-files-found: error
 
@@ -135,11 +135,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AZPC-Launcher-0.2.18-Windows-TEST
+          name: AZPC-Launcher-0.2.19-Windows-TEST
           path: release
       - name: Publish launcher and both game packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view launcher-v0.2.18 >/dev/null 2>&1; then exit 0; fi
-          gh release create launcher-v0.2.18 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.18 - Forever purchase quantity repair" --notes "Forever addon 0.2.10 requires attached item counts for purchases. Addon and watcher 0.4.37 add evidence to repair legacy quantity/price duplicates without deleting raw records. Existing purchases are automatically requeued with that evidence. Material sources are separated into bought, farmed, crafted and received on the site. Original copper costs and frozen craft history remain protected."
+          if gh release view launcher-v0.2.19 >/dev/null 2>&1; then exit 0; fi
+          gh release create launcher-v0.2.19 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Launcher 0.2.19 - Forever batch craft capture" --notes "Forever addon 0.2.11 retains zero-operation craft results arriving before spell success. Each completed batch cast records once; cancelled casts remain excluded. Watcher remains 0.4.37. Historical missing crafts are not reconstructed."

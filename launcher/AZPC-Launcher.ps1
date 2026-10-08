@@ -24,7 +24,7 @@ public static class AzpcStyle {
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Launcher.Core.ps1')
 $script:remote=$null; $script:job=$null; $script:resultPath=''; $script:requestPath=''
-$script:launcherVersion='0.2.18'
+$script:launcherVersion='0.2.19'
 $script:uiRoot=Join-Path $script:ClientRoot 'Launcher'
 $jobs=Join-Path $script:uiRoot 'jobs'
 New-Item -ItemType Directory -Path $jobs -Force | Out-Null
@@ -87,7 +87,7 @@ $navOverview=Button $sidebar 'Overview' 12 115 191 { Show-Page 'Overview' }
 $navUpdates=Button $sidebar 'Updates' 12 168 191 { Show-Page 'Updates' }
 $navSettings=Button $sidebar 'Settings' 12 221 191 { Show-Page 'Settings' }
 $null=Button $sidebar 'Open dashboard' 12 654 191 { Start-Process 'https://azpc.market' }
-$null=Label $sidebar 'Launcher 0.2.18' 25 704 175 20 8
+$null=Label $sidebar 'Launcher 0.2.19' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
 $game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
