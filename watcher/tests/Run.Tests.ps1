@@ -129,6 +129,8 @@ Assert ($first.metadata.mailIdentity -ne $second.metadata.mailIdentity) 'Simulta
 $queueRoot=Join-Path ([IO.Path]::GetTempPath()) ('azpc-receipts-'+[guid]::NewGuid().ToString('N'))
 try {
  $StateDir=$queueRoot
+ New-Item -ItemType Directory -Path $queueRoot -Force | Out-Null
+ $LogFile=Join-Path $queueRoot 'watcher.log'
  Collect-ForeverTrades ('{ ["tradeExport"]="'+$receipt+'" }')
  $file=Get-ChildItem (Join-Path $queueRoot 'Forever/trades') -Filter '*.json' | Select-Object -First 1
  $old=Get-Content $file.FullName -Raw | ConvertFrom-Json
@@ -139,3 +141,4 @@ try {
  Assert (-not (Test-Path ($file.FullName+'.sent'))) 'Previously acknowledged receipt is requeued for evidence enrichment'
  Assert ((Get-Content $file.FullName -Raw | ConvertFrom-Json).metadata.mailIdentity -eq $first.metadata.mailIdentity) 'Enrichment retains stable evidence without changing event ID'
 } finally {Remove-Item $queueRoot -Recurse -Force}
+
