@@ -133,7 +133,7 @@ function Test-Manifest($Manifest) {
 function Get-RemoteManifest {
     param([string]$ApiToken='', [string]$Game='tbc-anniversary')
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.20'; Accept = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'AZPC-Launcher/0.2.21'; Accept = 'application/vnd.github+json' }
     if($ApiToken){ $headers['Authorization']='Bearer '+$ApiToken }
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $manifestName=if($Game -eq 'forever'){'azpc-forever-update.json'}else{'azpc-update.json'}
@@ -154,14 +154,14 @@ function Get-RemoteManifest {
             $files+=@{path=$path;sha256=$digest}
             if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
         }
-        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.20';sourceCommit=[string]$commit.sha;files=$files}
+        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.21';sourceCommit=[string]$commit.sha;files=$files}
         Test-Manifest $manifest
         return $manifest
     }
     if($asset.Count -ne 1){ throw 'The release includes multiple update manifests.' }
     Assert-ReleaseUrl $asset[0].browser_download_url
     if ([long]$asset[0].size -gt 65536) { throw 'Update manifest is too large.' }
-    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.20' } -TimeoutSec 30
+    $manifest = Invoke-RestMethod -Uri $asset[0].browser_download_url -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.21' } -TimeoutSec 30
     if($manifest -is [string]){ $manifest=$manifest.TrimStart([char[]]@(0xFEFF,0xEF,0xBB,0xBF)) | ConvertFrom-Json }
     Test-Manifest $manifest
     if($manifest.game -ne $Game){ throw 'Release game does not match your selection.' }
@@ -175,7 +175,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
             $destination=Join-Path $target ([string]$file.path)
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
             $url='https://raw.githubusercontent.com/'+$script:Repo+'/'+$Manifest.sourceCommit+'/installer/payload/'+$file.path
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.20'}
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination -TimeoutSec 120 -Headers @{'User-Agent'='AZPC-Launcher/0.2.21'}
             if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
         }
         $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
@@ -183,7 +183,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
         return $target
     }
     $archive = Join-Path $Workspace 'bundle.zip' 
-    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.20' }
+    Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.21' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
@@ -296,6 +296,66 @@ function Stop-Watcher {
         Start-Sleep -Milliseconds 250
     }
 }
+function Repair-ForeverLinen([string]$Root) {
+    Assert-GameClosed
+    $status=Get-InstalledStatus $Root 'forever'
+    if ($status.Addon -notmatch '^\d+\.\d+\.\d+$' -or [version]$status.Addon -lt [version]'0.2.12') { throw 'Update the Forever addon to 0.2.12 or newer first.' }
+    $accountRoot=Join-Path $Root '_classic_beta_\WTF\Account'
+    if (-not (Test-Path -LiteralPath $accountRoot)) { throw 'No Forever saved account data was found.' }
+    $candidates=@()
+    foreach ($file in @(Get-ChildItem -LiteralPath $accountRoot -Filter 'AZPCForever.lua' -Recurse -File)) {
+        if ($file.Directory.Name -ne 'SavedVariables') { continue }
+        $content=[IO.File]::ReadAllText($file.FullName,[Text.Encoding]::UTF8)
+        $rows=@()
+        foreach ($match in [regex]::Matches($content,'\["tradeExport"\]\s*=\s*"(AZPCFTRADE\|[^"\r\n]+)"')) {
+            $f=$match.Groups[1].Value.Split('|')
+            if ($f.Length -lt 13 -or $f[1] -notin @('1','2')) { continue }
+            if ($f[12] -ne 'Lu' -or $f[9] -ne 'Classic%20Beta%20PvP%202' -or $f[10] -ne 'horde' -or $f[11] -ne '90') { continue }
+            $at=0L;$item=0L;$quantity=0L;$copper=0L
+            if (-not [long]::TryParse($f[8],[ref]$at) -or -not [long]::TryParse($f[4],[ref]$item) -or -not [long]::TryParse($f[6],[ref]$quantity) -or -not [long]::TryParse($f[7],[ref]$copper)) { continue }
+            if ($f[1] -eq '1') { $at*=1000 }
+            $rows+=@{kind=$f[3];item=$item;quantity=$quantity;copper=$copper;at=$at}
+        }
+        $times=@(1791444821000L,1791444824000L,1791444827000L,1791444830000L,1791444834000L,1791444836000L,1791444840000L,1791444843000L)
+        $verified=$true
+        for($i=0;$i -lt 8;$i++) {
+            if (@($rows | Where-Object { $_.kind -eq 'inventory_snapshot' -and $_.item -eq 2996 -and $_.quantity -eq ($i+1) -and [Math]::Abs($_.at-$times[$i]) -le 1 }).Count -ne 1) { $verified=$false }
+            if (@($rows | Where-Object { $_.kind -eq 'inventory_snapshot' -and $_.item -eq 2589 -and $_.quantity -eq (14-2*$i) -and [Math]::Abs($_.at-$times[$i]) -le 1 }).Count -ne 1) { $verified=$false }
+        }
+        if (-not $verified) { continue }
+        $cloth=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2589} | Sort-Object at -Descending)[0]
+        $bolts=@($rows | Where-Object {$_.kind -eq 'inventory_snapshot' -and $_.item -eq 2996} | Sort-Object at -Descending)[0]
+        if ($cloth.quantity -ne 0 -or $bolts.quantity -ne 11) { throw 'Linen inventory has changed since this repair was verified. Refresh your saved data before repairing.' }
+        $buys=@($rows | Where-Object {$_.kind -eq 'buy' -and $_.item -eq 2589 -and $_.at -ge 1791444677000L -and $_.at -le 1791447230000L})
+        if ($buys.Count -ne 3 -or ($buys | Measure-Object quantity -Sum).Sum -ne 14 -or ($buys | Measure-Object copper -Sum).Sum -ne 14) { throw 'The verified cloth purchase costs no longer match. No repair was applied.' }
+        $ids=@('material-reconcile:lu-linen-20261008:2589','material-reconcile:lu-linen-20261008:2996')
+        $existing=@($ids | Where-Object {$content.Contains($_)})
+        if ($existing.Count -eq 2) { return @{ok=$true;message='Linen repair is already applied. Open Lu, /reload, then refresh Crafting after the watcher uploads.'} }
+        if ($existing.Count -ne 0) { throw 'A partial linen repair exists. No additional changes were made.' }
+        if ([regex]::Matches($content,'\["materialEvents"\]\s*=\s*\{').Count -ne 1) { throw 'The material ledger could not be located safely.' }
+        $candidates+=@{file=$file.FullName;content=$content;hash=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash}
+    }
+    if ($candidates.Count -ne 1) { throw 'No unique saved account matched the verified linen repair. Nothing was changed.' }
+    $selected=$candidates[0]
+    # Data-only Lua literals. Never evaluate a saved file as PowerShell or Lua.
+    $insert=@'
+{["schema"]=1,["eventId"]="material-reconcile:lu-linen-20261008:2589",["kind"]="reconcile",["itemId"]=2589,["quantity"]=1,["targetQuantity"]=0,["totalCopper"]=0,["name"]="Linen Cloth",["observedAt"]=1791447247002,["region"]=90,["realm"]="Classic Beta PvP 2",["faction"]="horde",["character"]="Lu",["confirmation"]="inventory_and_cost_reconciled",["sourceQuantities"]={},["reason"]="Confirmed inventory and eight paired cloth-to-bolt conversions; preserve historical records.",["evidence"]={"inventory_snapshot:2589:1791447247001:0","paired_recipe_conversions:1791444821000:1791444843000:8"}},
+{["schema"]=1,["eventId"]="material-reconcile:lu-linen-20261008:2996",["kind"]="reconcile",["itemId"]=2996,["quantity"]=11,["targetQuantity"]=11,["totalCopper"]=14,["name"]="Bolt of Linen Cloth",["observedAt"]=1791447247002,["region"]=90,["realm"]="Classic Beta PvP 2",["faction"]="horde",["character"]="Lu",["confirmation"]="inventory_and_cost_reconciled",["sourceQuantities"]={["crafted"]=11},["reason"]="Eight free alt cloth plus fourteen bought cloth costing fourteen copper produced eleven bolts; preserve historical records.",["evidence"]={"inventory_snapshot:2996:1791447247000:11","paired_recipe_conversions:1791444821000:1791444843000:8","cloth_purchases:8+2+4:14c","confirmed_free_alt_cloth:8"}},
+'@
+    $match=[regex]::Match($selected.content,'\["materialEvents"\]\s*=\s*\{')
+    $offset=$match.Index+$match.Length
+    $updated=$selected.content.Insert($offset,"`r`n"+$insert+"`r`n")
+    $backup=$selected.file+'.azpc-linen-backup-'+[guid]::NewGuid().ToString('N')
+    $staged=$selected.file+'.azpc-staging-'+[guid]::NewGuid().ToString('N')
+    try {
+        [IO.File]::WriteAllText($staged,$updated,(New-Object Text.UTF8Encoding($false)))
+        Assert-GameClosed
+        if ((Get-FileHash -LiteralPath $selected.file -Algorithm SHA256).Hash -ne $selected.hash) { throw 'The save changed during repair. Nothing was replaced; try again with WoW closed.' }
+        [IO.File]::Replace($staged,$selected.file,$backup)
+    } finally { if(Test-Path -LiteralPath $staged){Remove-Item -LiteralPath $staged -Force} }
+    return @{ok=$true;message='Linen repair applied with an automatic backup: 0 cloth, 11 bolts, 14 copper total material cost. Open Lu, /reload, then refresh Crafting after the watcher uploads.'}
+}
+
 function Invoke-LauncherAction($Request) {
     $game='tbc-anniversary'
     if($Request -is [Collections.IDictionary]){ if($Request.Contains('game')){$game=[string]$Request.game} } elseif($Request.PSObject.Properties['game']){$game=[string]$Request.game}
@@ -303,6 +363,7 @@ function Invoke-LauncherAction($Request) {
     if ($Request.action -eq 'check') { return @{ ok = $true; manifest = (Get-RemoteManifest -Game $game) } }
     if ($Request.action -eq 'stop') { Stop-Watcher; return @{ ok = $true; message = 'Watcher stopped. It remains configured to start at Windows sign-in.' } }
     $root = Assert-WowRoot ([string]$Request.wowRoot) $game
+    if ($Request.action -eq 'repair-linen') { if($game -ne 'forever'){throw 'Linen repair is only available for Forever.'}; return (Repair-ForeverLinen $root) }
     if ($Request.action -eq 'start') { Start-Watcher $root; return @{ ok = $true; message = 'Watcher started. It may need a WoW logout or reload before new data is available.' } }
     if ($Request.action -notin @('addon','watcher','all')) { throw 'Unknown launcher action.' }
     Assert-GameClosed

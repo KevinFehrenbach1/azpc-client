@@ -24,7 +24,7 @@ public static class AzpcStyle {
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Launcher.Core.ps1')
 $script:remote=$null; $script:job=$null; $script:resultPath=''; $script:requestPath=''
-$script:launcherVersion='0.2.20'
+$script:launcherVersion='0.2.21'
 $script:uiRoot=Join-Path $script:ClientRoot 'Launcher'
 $jobs=Join-Path $script:uiRoot 'jobs'
 New-Item -ItemType Directory -Path $jobs -Force | Out-Null
@@ -87,7 +87,7 @@ $navOverview=Button $sidebar 'Overview' 12 115 191 { Show-Page 'Overview' }
 $navUpdates=Button $sidebar 'Updates' 12 168 191 { Show-Page 'Updates' }
 $navSettings=Button $sidebar 'Settings' 12 221 191 { Show-Page 'Settings' }
 $null=Button $sidebar 'Open dashboard' 12 654 191 { Start-Process 'https://azpc.market' }
-$null=Label $sidebar 'Launcher 0.2.20' 25 704 175 20 8
+$null=Label $sidebar 'Launcher 0.2.21' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
 $game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
@@ -134,7 +134,8 @@ $watcherButton=Button $updateCard 'Install / Update' 612 131 158 { Begin-Action 
 $allButton=Button $updateCard 'Install / Update All' 23 200 240 { Begin-Action 'all' } $true
 $startButton=Button $updateCard 'Start watcher' 418 200 165 { Begin-Action 'start' }
 $stopButton=Button $updateCard 'Stop watcher' 605 200 165 { Begin-Action 'stop' }
-$versionNote=Label $updates 'Available versions are bundled until you check online.' 0 368 785 55 11; $versionNote.ForeColor=$muted
+$repairButton=Button $updates 'Repair linen crafting' 0 355 240 { Begin-Action 'repair-linen' }
+$versionNote=Label $updates 'Available versions are bundled until you check online.' 0 410 785 40 11; $versionNote.ForeColor=$muted
 $null=Label $settingsPage 'Game folder' 0 0 790 35 18 $true
 $folderHint=Label $settingsPage 'Select the main World of Warcraft folder containing _anniversary_.' 0 39 790 28 11
 $rootBox=TextBox $settingsPage 0 77 599
@@ -170,7 +171,7 @@ function Show-Page([string]$Page) {
         $nav.BackColor=if($nav.Text -eq $Page){[Drawing.ColorTranslator]::FromHtml('#293a60')}else{$sidebar.BackColor}
     }
 }
-$script:mutating=@($browse,$game,$rootBox,$codeBox,$addonButton,$watcherButton,$startButton,$stopButton,$checkButton,$allButton,$quickInstall)
+$script:mutating=@($browse,$game,$rootBox,$codeBox,$addonButton,$watcherButton,$startButton,$stopButton,$checkButton,$allButton,$quickInstall,$repairButton)
 function Save-Settings {
     @{ wowRoot=$rootBox.Text; game=(Get-SelectedGame) } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:uiRoot 'settings.json') -Encoding UTF8
 }
@@ -211,6 +212,7 @@ function Refresh-Status {
         $folderDetail.AutoEllipsis=$true
         $startButton.Enabled=(-not $script:job -and -not $state.Running -and $state.Watcher -ne 'Not installed')
         $stopButton.Enabled=(-not $script:job -and $state.Running)
+        $repairButton.Visible=($selected -eq 'forever')
         $quickInstall.Visible=($state.Addon -eq 'Not installed' -or $state.Watcher -eq 'Not installed')
         $versionNote.Text=if($script:remote){'Checked online. Install buttons use these released versions.'}else{'Available versions are bundled until you check online.'}
     } catch { $message.Text=$_.Exception.Message }
