@@ -1,4 +1,4 @@
-param([string]$ReleaseTag = 'forever-addon-v0.2.16')
+param([string]$ReleaseTag = 'forever-addon-v0.2.17')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'

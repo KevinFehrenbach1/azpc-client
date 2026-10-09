@@ -47,3 +47,16 @@ emit();AZPCForeverCrafting.RebuildCosts()
 assert(#AZPCForeverDB.crafting.materialEvents==count,'existing correction records are re-exported without duplication')
 for _,r in ipairs(AZPCForeverDB.crafting.materialEvents)do assert(r.syncExport:find('%%22evidence%%22%%3A%%5B'),'existing checkpoints recover their evidence arrays')end
 print('PASS: reconciliation audit arrays and existing-record re-export')
+
+AZPCForeverDB={trades={{tradeExport="AZPCFTRADE|2|Player-4613-008756AB%3AClassic%20Beta%20PvP%202%3A90%3Abuyer%3A2318%3A1%3A1%3A29901904%3ADrox%2520Pvp%3AHorde%2520Auction%2520House%3AAuction%2520won%253A%2520Light%2520Leather%3A4%3A1|buy|2318|Light%20Leather|1|1|1791522259000|Classic%20Beta%20PvP%202|horde|90|Wet||||||||"}},crafting={recipes={},crafts={},seen={},materialEvents={}}}
+local original=AZPCForeverDB.trades[1].tradeExport
+emit();assert(AZPCForeverCrafting.RebuildCosts());local position=AZPCForeverDB.crafting.costing.positions[1]
+assert(position.quantity==1 and position.totalCopper==48 and position.costComplete,'verified invoice restores paid leather cost')
+assert(AZPCForeverDB.trades[1].tradeExport==original,'raw incorrect receipt retained for audit')
+AZPCForeverCrafting.RebuildCosts();assert(AZPCForeverDB.crafting.costing.positions[1].totalCopper==48,'payment correction replay stable')
+AZPCForeverDB.trades[2]={tradeExport="AZPCFTRADE|2|Player-4613-008756AB%3AClassic%20Beta%20PvP%202%3A90%3Abuyer%3A2318%3A1%3A1%3A29901896%3AEvade%2520Dex%3AHorde%2520Auction%2520House%3AAuction%2520won%253A%2520Light%2520Leather%3A4%3A1|buy|2318|Light%20Leather|1|1|1791521790000|Classic%20Beta%20PvP%202|horde|90|Wet||||||||"}
+AZPCForeverCrafting.RebuildCosts();position=AZPCForeverDB.crafting.costing.positions[1]
+assert(position.quantity==2 and position.recordedCopper==48 and not position.costComplete and position.unknownQuantity==1,'deleted unverified invoice never becomes a known one-copper material')
+AZPCForeverDB.trades[1].tradeExport=original:gsub('|Wet','|Other');AZPCForeverDB.trades[2]=nil
+AZPCForeverCrafting.RebuildCosts();assert(AZPCForeverDB.crafting.costing.positions[1].totalCopper==1,'correction cannot match another character')
+print('PASS invoice correction, unresolved legacy purchase, raw audit preservation, replay and scope guards')

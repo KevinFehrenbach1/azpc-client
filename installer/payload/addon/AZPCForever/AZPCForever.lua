@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.16"
+local addon, VERSION = ..., "0.2.17"
 -- Beta builds changed the region API from 90 to 110 without changing realms.
 -- Keep the established Forever beta market; never alias live realms.
 local function canonicalRegion(region, realm)
@@ -607,6 +607,12 @@ local function mail(export)
     if not integer(id,10000000) or id<1 or not integer(q,1000000) or q<1 or not integer(c) or not integer(at,4102444800000) or not integer(region,100) or region<1 then return end
     local e={kind=f[4],itemId=id,quantity=q,copper=c,observedAt=f[2]=='1' and at*1000 or at,eventId='mail:'..f[3],realm=decode(f[10]),faction=f[11],region=region,character=decode(f[13]),name=decode(f[6])}
     if e.realm=='' or e.character=='' or (e.faction~='horde' and e.faction~='alliance') then return end
+    -- Apply verified legacy payment evidence to working costs, retaining raw exports.
+    if e.kind=='buy' and e.itemId==2318 and e.quantity==1 and e.copper==1 and e.character=='Wet' and e.realm=='Classic Beta PvP 2' and e.region==90 and e.faction=='horde' then
+        local receipt=decode(f[3])
+        if receipt=="Player-4613-008756AB:Classic Beta PvP 2:90:buyer:2318:1:1:29901904:Drox%20Pvp:Horde%20Auction%20House:Auction%20won%3A%20Light%20Leather:4:1" and e.observedAt==1791522259000 then e.copper=48;e.purchaseCostKnown=true
+        elseif receipt=="Player-4613-008756AB:Classic Beta PvP 2:90:buyer:2318:1:1:29901896:Evade%20Dex:Horde%20Auction%20House:Auction%20won%3A%20Light%20Leather:4:1" and e.observedAt==1791521790000 then e.purchaseCostKnown=false end
+    end
     local prefix,expiry,suffix=decode(f[3]):match('^(.*:seller:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')
     if not prefix then prefix,expiry,suffix=decode(f[3]):match('^(.*:buyer:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')end
     if prefix then e.mailIdentity=prefix..suffix;e.mailExpiry=tonumber(expiry);if e.kind=='buy'then e.mailPurchaseIdentity=prefix:gsub('(:buyer:%d+:)%d+:(%d+:)$','%1%2')..suffix end end
@@ -704,7 +710,7 @@ local function rebuild()
     end
     for _,e in ipairs(events) do
         local p=pool(e,e.itemId)
-        if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.copper}
+        if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.purchaseCostKnown~=false and e.copper or nil}
         elseif e.kind=='free' then
             local remaining=e.quantity-e.untrackedQuantity
             local new={}
