@@ -8,6 +8,15 @@ try {
  $record.data.realm='Classic Beta PvP 2';$record.data.region=110
  $beta='AZPCFCRAFT|1|'+[uri]::EscapeDataString(($record | ConvertTo-Json -Depth 20 -Compress))
  Assert ((Convert-ForeverCrafting $beta).data.region -eq 90) 'Existing region-110 crafting export recovers into established beta market'
+ $correction=@{schema=1;recordType='material';recordId='material-reconcile:test';data=@{schema=1;eventId='material-reconcile:test';kind='reconcile';itemId=2996;name='Bolt of Linen Cloth';quantity=11;targetQuantity=11;totalCopper=14;character='Lu';realm='Classic Beta PvP 2';region=90;faction='horde';observedAt=1791447247002L;confirmation='inventory_and_cost_reconciled';sourceQuantities=@{crafted=11};reason='Verified inventory and material cost';evidence=@('inventory_snapshot:2996:11','purchases:14c')}}
+ $encodeCorrection={param($r)'AZPCFCRAFT|1|'+[uri]::EscapeDataString(($r | ConvertTo-Json -Depth 20 -Compress))}
+ $validated=Convert-ForeverCrafting (& $encodeCorrection $correction)
+ Assert ($validated.data.targetQuantity -eq 11 -and $validated.data.totalCopper -eq 14) 'Watcher accepts audited reconciliation exports'
+ $correction.data.targetQuantity=0;$correction.data.quantity=1;$correction.data.totalCopper=0;$correction.data.sourceQuantities=@{}
+ Assert ((Convert-ForeverCrafting (& $encodeCorrection $correction)).data.targetQuantity -eq 0) 'Watcher accepts zero-balance cloth checkpoint with empty source object'
+ $correction.data.evidence=@{}
+ $rejected=$false;try {Convert-ForeverCrafting (& $encodeCorrection $correction) | Out-Null}catch{$rejected=$true}
+ Assert $rejected 'Watcher rejects malformed reconciliation evidence'
  $text=($fixture.exports | ForEach-Object {'["syncExport"] = "'+$_+'"'}) -join "`n"
  Collect-ForeverCrafting $text;Collect-ForeverCrafting $text
  $dir=Join-Path $root 'Forever/crafting';$files=@(Get-ChildItem $dir -Filter '*.json')

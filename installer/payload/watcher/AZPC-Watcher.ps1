@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.38"
+        version = "0.4.39"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.38"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.39"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -1049,7 +1049,14 @@ function Convert-ForeverCrafting([string]$Export) {
     }elseif($row.recordId -ne $d.eventId -or $d.itemId -le 0 -or $d.quantity -le 0){throw 'Invalid Forever craft/vendor event.'}
     if($row.recordType -eq 'craft' -and $d.confirmation -ne 'player_spell_success_and_item_result'){throw 'Unconfirmed Forever craft.'}
     if($row.recordType -eq 'vendor' -and ($d.kind -notin @('buy','sell','vendor_unresolved') -or $d.confirmation -ne 'vendor_intent_money_and_bags')){throw 'Unconfirmed Forever vendor event.'}
-    if($row.recordType -eq 'material' -and ($d.kind -notin @('free','request_rejected','transfer_out','transfer_in') -or $d.confirmation -notin @('material_quantity_confirmed','material_request_rejected'))){throw 'Unconfirmed material source.'}
+    if($row.recordType -eq 'material'){
+        if($d.kind -eq 'reconcile'){
+            if($d.confirmation -ne 'inventory_and_cost_reconciled' -or $null -eq $d.targetQuantity -or $d.targetQuantity -lt 0 -or $d.targetQuantity -gt 1000000 -or $d.targetQuantity -ne [math]::Floor($d.targetQuantity) -or $null -eq $d.totalCopper -or $d.totalCopper -lt 0 -or $d.totalCopper -gt 1000000000000 -or $d.totalCopper -ne [math]::Floor($d.totalCopper) -or ($d.targetQuantity -eq 0 -and $d.totalCopper -ne 0) -or -not $d.reason -or $d.evidence -isnot [array] -or $d.evidence.Count -lt 1 -or $d.evidence.Count -gt 100 -or -not $d.sourceQuantities){throw 'Invalid material reconciliation.'}
+            $sum=0L
+            foreach($source in $d.sourceQuantities.PSObject.Properties){if($source.Name -notin @('bought','farmed','crafted','received','unknown') -or $source.Value -lt 0 -or $source.Value -gt 1000000 -or $source.Value -ne [math]::Floor($source.Value)){throw 'Invalid reconciliation sources.'};$sum+=$source.Value}
+            if($sum -ne $d.targetQuantity){throw 'Reconciliation sources do not match quantity.'}
+        }elseif($d.kind -notin @('free','request_rejected','transfer_out','transfer_in') -or $d.confirmation -notin @('material_quantity_confirmed','material_request_rejected')){throw 'Unconfirmed material source.'}
+    }
     return $row
 }
 function Collect-ForeverCrafting([string]$Text) {
@@ -1160,7 +1167,7 @@ function Sync-ForeverMaterialCommands([string]$ClientId,[string]$Token,[string]$
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.38 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.39 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
