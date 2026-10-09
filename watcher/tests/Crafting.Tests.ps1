@@ -4,6 +4,10 @@ function Assert($condition,$message){if(-not $condition){throw $message};Write-H
 try {
  . (Join-Path $PSScriptRoot '../../installer/payload/watcher/AZPC-Watcher.ps1') -DataDir $root -FunctionsOnly
  $fixture=Get-Content (Join-Path $PSScriptRoot 'fixtures/forever-crafting.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+ $beta=$fixture.exports[3].Split('|');$record=[uri]::UnescapeDataString($beta[2]) | ConvertFrom-Json
+ $record.data.realm='Classic Beta PvP 2';$record.data.region=110
+ $beta='AZPCFCRAFT|1|'+[uri]::EscapeDataString(($record | ConvertTo-Json -Depth 20 -Compress))
+ Assert ((Convert-ForeverCrafting $beta).data.region -eq 90) 'Existing region-110 crafting export recovers into established beta market'
  $text=($fixture.exports | ForEach-Object {'["syncExport"] = "'+$_+'"'}) -join "`n"
  Collect-ForeverCrafting $text;Collect-ForeverCrafting $text
  $dir=Join-Path $root 'Forever/crafting';$files=@(Get-ChildItem $dir -Filter '*.json')

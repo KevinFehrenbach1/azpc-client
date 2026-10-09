@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.37"
+        version = "0.4.38"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -177,7 +177,7 @@ function Send-AzpcHeartbeat([string]$ClientId, [string]$Token) {
         }
         $presence = Get-WowGamePresence
         $gameRunning = $presence.running -eq $true
-        $body = @{ clientId = $ClientId; watcherVersion = "0.4.37"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
+        $body = @{ clientId = $ClientId; watcherVersion = "0.4.38"; pid = $PID; gameRunning = $gameRunning; gameProcess = $presence.processName; gameDetector = $presence.detector } | ConvertTo-Json -Depth 3
         $response = Invoke-RestMethod -Uri $HeartbeatEndpoint -Method Post -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 20
         $serverTime = if ($null -ne $response.serverTime) { [Int64]$response.serverTime } else { 0 }
         Write-Log ("HEARTBEAT OK: account watcher is online | WoW=" + $(if ($gameRunning) { "RUNNING" } else { "NOT RUNNING" }) + $(if ($gameRunning) { " | process=" + $presence.processName + " | detector=" + $presence.detector } else { "" }) + $(if ($serverTime -gt 0) { " (serverTime=$serverTime)" } else { "" }))
@@ -897,10 +897,14 @@ function Find-ForeverSavedVariables([string]$Root) {
         }
     }
 }
+function Convert-ForeverRegion([string]$Region, [string]$Realm) {
+    if($Region -eq '110' -and $Realm -cmatch '^Classic Beta '){return '90'}
+    return $Region
+}
 function Convert-ForeverExport([string]$Export) {
     $records=$Export.Split(';'); $header=$records[0].Split('|')
     if($header.Count -ne 6 -or $header[0] -ne 'AZPCFOREVER' -or $header[1] -ne '1' -or $header[3] -notin @('horde','alliance')) { throw 'Invalid Forever scan header.' }
-    $realm=[uri]::UnescapeDataString($header[2]); $region=0; $timestamp=0L
+    $realm=[uri]::UnescapeDataString($header[2]); $header[4]=Convert-ForeverRegion $header[4] $realm; $region=0; $timestamp=0L
     if(-not $realm -or $realm.Length -gt 100 -or -not [int]::TryParse($header[4],[ref]$region) -or $region -notin @(1,2,3,4,5,90) -or -not [long]::TryParse($header[5],[ref]$timestamp) -or $timestamp -le 0 -or $timestamp -gt 4102444800){ throw 'Invalid Forever realm, region, or timestamp.' }
     if($records.Count -lt 2 -or $records.Count -gt 5001){ throw 'Invalid Forever scan size.' }
     $rows=@(); $seen=@{}
@@ -923,6 +927,7 @@ function Convert-ForeverTrade([string]$Export) {
     if($f[1] -eq '1' -and $f[3] -notin @('buy','sell','expired')){throw 'Invalid legacy Forever trade kind.'}
     $minimumQuantity=if($f[3] -in @('listing_snapshot','inventory_snapshot')){0}else{1}
     $minimumStamp=if($f[1] -eq '2'){946684800000L}else{946684800L};$maximumStamp=if($f[1] -eq '2'){4102444800000L}else{4102444800L}
+    $f[11]=Convert-ForeverRegion $f[11] ([uri]::UnescapeDataString($f[9]))
     $id=0L;$qty=0L;$copper=0L;$stamp=0L;$region=0
     if(-not [long]::TryParse($f[4],[ref]$id) -or $id -le 0 -or $id -gt 10000000 -or -not [long]::TryParse($f[6],[ref]$qty) -or $qty -lt $minimumQuantity -or $qty -gt 1000000 -or -not [long]::TryParse($f[7],[ref]$copper) -or $copper -lt 0 -or $copper -gt 1000000000000 -or -not [long]::TryParse($f[8],[ref]$stamp) -or $stamp -lt $minimumStamp -or $stamp -gt $maximumStamp -or -not [int]::TryParse($f[11],[ref]$region) -or $region -notin @(1,2,3,4,5,90)){throw 'Invalid Forever trade values.'}
     if($f[3] -eq 'expired' -and $copper -ne 0){throw 'Expired auction returns cannot have trade proceeds.'}
@@ -1037,6 +1042,7 @@ function Convert-ForeverCrafting([string]$Export) {
     $json=[uri]::UnescapeDataString($f[2]);$row=$json | ConvertFrom-Json
     if($row.schema -ne 1 -or $row.recordType -notin @('recipe','craft','vendor','material') -or -not $row.recordId -or $row.recordId.Length -gt 500 -or -not $row.data){throw 'Invalid Forever crafting identity.'}
     $d=$row.data
+    $d.region=[int](Convert-ForeverRegion ([string]$d.region) ([string]$d.realm))
     if(-not $d.realm -or -not $d.character -or $d.faction -notin @('horde','alliance') -or $d.region -notin @(1,2,3,4,5,90) -or $d.observedAt -lt 946684800000L -or $d.observedAt -gt 4102444800000L){throw 'Invalid Forever crafting market.'}
     if($row.recordType -eq 'recipe'){
         if($row.recordId -ne $d.recipeKey -or $d.recipeId -le 0 -or $d.outputItemId -le 0){throw 'Invalid Forever recipe.'}
@@ -1154,7 +1160,7 @@ function Sync-ForeverMaterialCommands([string]$ClientId,[string]$Token,[string]$
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.37 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.38 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId

@@ -1,5 +1,14 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.13"
+local addon, VERSION = ..., "0.2.14"
+-- Beta builds changed the region API from 90 to 110 without changing realms.
+-- Keep the established Forever beta market; never alias live realms.
+local function canonicalRegion(region, realm)
+    if tonumber(region)==110 and type(realm)=='string' and realm:match('^Classic Beta ') then return 90 end
+    return region
+end
+local function currentRegion()
+    return canonicalRegion(GetCurrentRegion and GetCurrentRegion() or 0, GetRealmName and GetRealmName() or '')
+end
 local frame = CreateFrame("Frame")
 local open, pending = false, false
 local function message(text) print("|cff9cc1ffAZPC Forever:|r " .. text) end
@@ -63,7 +72,7 @@ local function capture()
     local realm = GetRealmName() or ""
     local faction = (UnitFactionGroup("player") or ""):lower()
     if realm == "" or (faction ~= "horde" and faction ~= "alliance") then return 0,"Realm/faction unavailable." end
-    local region = GetCurrentRegion and GetCurrentRegion() or 0
+    local region = currentRegion()
     local timestamp = GetServerTime and GetServerTime() or time()
     local lines = {"AZPCFOREVER|1|"..encode(realm).."|"..faction.."|"..region.."|"..timestamp}
     for _,id in ipairs(ids) do
@@ -142,7 +151,7 @@ captureTrades=function()
     local timestamp = GetServerTime and GetServerTime() or time()
     local realm = GetRealmName() or ""
     local faction = (UnitFactionGroup("player") or ""):lower()
-    local region = GetCurrentRegion and GetCurrentRegion() or 0
+    local region = currentRegion()
     local character = (UnitName and UnitName("player")) or ""
     local guid = (UnitGUID and UnitGUID("player")) or character
     if realm == "" or character == "" or (faction ~= "horde" and faction ~= "alliance") then return end
@@ -258,7 +267,7 @@ local function identity()
     local realm=GetRealmName() or ""
     local faction=(UnitFactionGroup("player") or ""):lower()
     local character=UnitName and UnitName("player") or ""
-    local region=GetCurrentRegion and GetCurrentRegion() or 0
+    local region=currentRegion()
     if realm=="" or character=="" or (faction~="horde" and faction~="alliance") then return end
     return realm,faction,region,character
 end
@@ -389,7 +398,7 @@ local function identity()
     local faction=(UnitFactionGroup('player') or ''):lower()
     local guid=UnitGUID('player')
     if realm=='' or character=='' or not guid or (faction~='horde' and faction~='alliance') then return end
-    return {realm=realm,character=character,faction=faction,region=GetCurrentRegion and GetCurrentRegion() or 0,guid=guid}
+    return {realm=realm,character=character,faction=faction,region=currentRegion(),guid=guid}
 end
 local function api(name,...)
     local fn=C_TradeSkillUI and C_TradeSkillUI[name]
@@ -584,13 +593,13 @@ local function share(total,n,d)
     return value+aq
 end
 local function decode(s) return (s:gsub('%%(%x%x)',function(h)return string.char(tonumber(h,16))end)) end
-local function market(e) return table.concat({e.region,e.realm:lower(),e.faction,e.character:lower()},'|') end
+local function market(e) return table.concat({canonicalRegion(e.region,e.realm),e.realm:lower(),e.faction,e.character:lower()},'|') end
 local function mail(export)
     if type(export)~='string' then return end
     local f={};for s in (export..'|'):gmatch('(.-)|') do f[#f+1]=s end
     if f[1]~='AZPCFTRADE' or (f[2]~='1' and f[2]~='2') or (f[4]~='buy' and f[4]~='sell') then return end
     if not ((f[2]=='1' and (#f==13 or #f==14)) or (f[2]=='2' and #f==21)) then return end
-    local id,q,c,at,region=tonumber(f[5]),tonumber(f[7]),tonumber(f[8]),tonumber(f[9]),tonumber(f[12])
+    local id,q,c,at,region=tonumber(f[5]),tonumber(f[7]),tonumber(f[8]),tonumber(f[9]),canonicalRegion(tonumber(f[12]),decode(f[10]))
     if not integer(id,10000000) or id<1 or not integer(q,1000000) or q<1 or not integer(c) or not integer(at,4102444800000) or not integer(region,100) or region<1 then return end
     local e={kind=f[4],itemId=id,quantity=q,copper=c,observedAt=f[2]=='1' and at*1000 or at,eventId='mail:'..f[3],realm=decode(f[10]),faction=f[11],region=region,character=decode(f[13]),name=decode(f[6])}
     if e.realm=='' or e.character=='' or (e.faction~='horde' and e.faction~='alliance') then return end
@@ -642,6 +651,11 @@ local function rebuild()
         if type(r.eventId)=='string' and not seen[r.eventId] then
             seen[r.eventId]=true;events[#events+1]={kind='craft',itemId=r.itemId,quantity=r.quantity,observedAt=r.observedAt,eventId=r.eventId,realm=r.realm,faction=r.faction,region=r.region,character=r.character,name=r.name,record=r}
         end
+    end
+    -- Canonicalize working copies only; retain original saved region evidence.
+    for i,e in ipairs(events)do
+        local region=canonicalRegion(e.region,e.realm)
+        if region~=e.region then local copy={};for k,v in pairs(e)do copy[k]=v end;copy.region=region;events[i]=copy end
     end
     local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
@@ -861,7 +875,7 @@ end
 local function save(kind,id,q,c,name,at,source)
     local d=db();if #d.vendorEvents>=10000 then d.vendorError='Vendor ledger is full; existing records are preserved.';d.vendorCostingBlocked=true;return false end
     local realm,character,faction=GetRealmName() or '',UnitName('player') or '',(UnitFactionGroup('player') or ''):lower()
-    local region=safe(call(GetCurrentRegion),100)
+    local region=safe(currentRegion(),100)
     if realm=='' or character=='' or not region or region<1 or (faction~='horde' and faction~='alliance') then return false end
     d.vendorSequence=(d.vendorSequence or 0)+1
     d.vendorEvents[#d.vendorEvents+1]={schema=1,eventId=tostring(call(UnitGUID,'player') or character)..':vendor:'..at..':'..d.vendorSequence,
@@ -970,7 +984,7 @@ local function d() local c=AZPCForeverDB.crafting;c.materialEvents=c.materialEve
 local function call(fn,...)if type(fn)=='function'then local ok,a,b,c,e=pcall(fn,...);if ok then return a,b,c,e end end end
 local function held(id)return call(C_Item and C_Item.GetItemCount or GetItemCount,id,false,false)or 0 end
 local function current()
- return {realm=GetRealmName() or '',character=UnitName('player') or '',faction=(UnitFactionGroup('player')or''):lower(),region=GetCurrentRegion and GetCurrentRegion()or 0}
+ return {realm=GetRealmName() or '',character=UnitName('player') or '',faction=(UnitFactionGroup('player')or''):lower(),region=currentRegion()}
 end
 local function counterpart(name)
  if type(name)~='string'then return ''end
@@ -1164,7 +1178,7 @@ local function migrate()
     for _,row in ipairs(db.trades or {})do
         if type(row.tradeExport)=='string' then
             local f={};for v in (row.tradeExport..'|'):gmatch('(.-)|')do f[#f+1]=v end
-            if (f[2]=='1' or f[2]=='2')and f[10]=='Classic%20Beta%20PvP%202'and f[11]=='horde'and f[12]=='90'and f[13]=='Lu' then
+            if (f[2]=='1' or f[2]=='2')and f[10]=='Classic%20Beta%20PvP%202'and f[11]=='horde'and (f[12]=='90'or f[12]=='110')and f[13]=='Lu' then
                 local id,q,c,at=tonumber(f[5]),tonumber(f[7]),tonumber(f[8]),tonumber(f[9])
                 if at and f[2]=='1'then at=at*1000 end
                 if (id==2589 or id==2996)and q and c and at then
@@ -1187,7 +1201,7 @@ local function migrate()
     local q,c=0,0;for _,r in ipairs(buys)do q=q+r.q;c=c+r.c end
     if #buys~=3 or q~=14 or c~=14 then return false end
     for _,records in ipairs({d.crafts,d.materialEvents,d.vendorEvents or {}})do for _,r in ipairs(records)do
-        if r.character=='Lu'and r.realm=='Classic Beta PvP 2'and r.region==90 and r.faction=='horde'and(r.observedAt or 0)>1791447247001 then
+        if r.character=='Lu'and r.realm=='Classic Beta PvP 2'and canonicalRegion(r.region,r.realm)==90 and r.faction=='horde'and(r.observedAt or 0)>1791447247001 then
             if r.itemId==2589 or r.itemId==2996 then return false end
             for _,m in ipairs(r.consumedReagents or {})do if m.itemId==2589 or m.itemId==2996 then return false end end
         end

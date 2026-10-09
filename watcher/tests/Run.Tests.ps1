@@ -10,6 +10,8 @@ try {
     $betaExport=$export.Replace('Forever%20Test|horde|1|1790830800','Classic%20Beta%20PvP%202|horde|90|1790830800')
     $betaScan=Convert-ForeverExport $betaExport
     Assert ($betaScan.region -eq 90 -and $betaScan.realm -eq 'Classic Beta PvP 2') 'Accept real Forever beta region 90 without mapping to live regions'
+    Assert ((Convert-ForeverExport ($betaExport.Replace('|90|','|110|'))).region -eq 90) 'New beta region preserves established scan market'
+    $rejectRegion=$false;try {Convert-ForeverExport ($export.Replace('|horde|1|','|horde|110|')) | Out-Null}catch{$rejectRegion=$true};Assert $rejectRegion 'Region alias is restricted to beta realms'
     $scan=Convert-ForeverExport $export
     Assert ($scan.game -eq 'forever' -and $scan.realm -eq 'Forever Test' -and $scan.observations[0].price -eq 150) 'Parse realm and per-unit copper'
     foreach($bad in @($export.Replace('|horde|','|invalid|'),$export.Replace('|1|179','|0|179'),($export+';2447|duplicate|10|1|1'),$export.Replace('|150|','|-1|'),$export.Replace('1790830800','9223372036854775807'))){
@@ -40,6 +42,7 @@ try {
     Assert ((Get-Item $LogFile).Length -eq $logBefore) 'Unchanged rejected data does not spam the log'
     Assert (@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.json').Count -eq 2) 'Invalid snapshot does not block valid beta snapshot'
     $trade='AZPCFTRADE|1|unique-mail-id|buy|2447|Peacebloom|3|100|1790830800|Classic%20Beta%20PvP%202|horde|90|Tester'
+    Assert ((Convert-ForeverTrade ($trade.Replace('|90|','|110|'))).region -eq 90) 'Existing region-110 trade exports recover into the beta market'
     $event=Convert-ForeverTrade $trade
     Assert ($event.quantity -eq 3 -and $event.copper -eq 100 -and $event.region -eq 90) 'Trade preserves total copper, stack quantity and beta region'
     foreach($kind in @('buy','sell','expired')) {

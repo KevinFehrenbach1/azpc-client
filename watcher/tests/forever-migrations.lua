@@ -22,3 +22,16 @@ AZPCForeverDB=fixture();AZPCForeverDB.trades[1].tradeExport=AZPCForeverDB.trades
 AZPCForeverDB=fixture();AZPCForeverDB.trades[20].tradeExport=AZPCForeverDB.trades[20].tradeExport:gsub('|11|0|','|12|0|');emit();assert(#AZPCForeverDB.crafting.materialEvents==0,'changed inventory blocks historical checkpoint')
 AZPCForeverDB=fixture();AZPCForeverDB.crafting.crafts={{character='Lu',realm='Classic Beta PvP 2',region=90,faction='horde',observedAt=1791448000000,itemId=253664,consumedReagents={{itemId=2996,quantity=6}}}};emit();assert(#AZPCForeverDB.crafting.materialEvents==0,'later relevant crafts block stale migration')
 print('PASS: addon-load migration, original data retention, exported corrections, replay, changed inventory and later crafting guards')
+
+-- Reproduce the post-maintenance save: old region-90 login zero, newest region-110 eleven.
+AZPCForeverDB=fixture()
+local rows=AZPCForeverDB.trades
+rows[#rows+1]={tradeExport='AZPCFTRADE|2|old-login|inventory_snapshot|2996|Bolt|0|0|1791511948000|Classic%20Beta%20PvP%202|horde|90|Lu||||||||'}
+rows[#rows+1]={tradeExport='AZPCFTRADE|2|new-login|inventory_snapshot|2996|Bolt|11|0|1791511949020|Classic%20Beta%20PvP%202|horde|110|Lu||||||||'}
+GetCurrentRegion=function()return 110 end
+emit()
+assert(#AZPCForeverDB.crafting.materialEvents==2,'beta region change does not discard newest inventory evidence')
+assert(AZPCForeverDB.crafting.costing.positions[1].quantity==11,'post-maintenance quantity corrected')
+AZPCForeverDB=fixture();AZPCForeverDB.crafting.crafts={{character='Lu',realm='Classic Beta PvP 2',region=110,faction='horde',observedAt=1791512000000,itemId=253664,consumedReagents={{itemId=2996,quantity=6}}}};emit()
+assert(#AZPCForeverDB.crafting.materialEvents==0,'new-region crafts also block stale correction')
+print('PASS: region-110 inventory and subsequent craft guards')
