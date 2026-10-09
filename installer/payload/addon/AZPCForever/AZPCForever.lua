@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.15"
+local addon, VERSION = ..., "0.2.16"
 -- Beta builds changed the region API from 90 to 110 without changing realms.
 -- Keep the established Forever beta market; never alias live realms.
 local function canonicalRegion(region, realm)
@@ -180,8 +180,9 @@ captureTrades=function()
             id=id or (AZPCForeverDB.itemIds and AZPCForeverDB.itemIds[name])
             -- Purchase quantities must come from the attached stack, never an invoice fallback.
             quantity = number(quantity) or (invoice=="seller" and number(invoiceCount) or nil)
-            local copper = invoice == "expired" and 0 or (invoice == "buyer" and (number(buyout) or number(bid)) or number(money))
-            if invoice == "buyer" and copper == 0 then copper = number(bid) end
+            local copper = invoice == "expired" and 0 or (invoice == "buyer" and number(bid) or number(money))
+            -- Buyer Amount Paid is bid, exactly as displayed by Blizzard MailFrame.
+            -- buyout can be a different field value; never substitute it for actual payment.
             -- Missing item ID/count or delayed seller proceeds stay unresolved; never assume one item.
             if number(id) and id>0 and quantity and quantity>0 and copper and (copper>0 or invoice=="expired") and name and not (number(delay) and delay>0) and (invoice~="seller" or type(otherPlayer)=="string" and otherPlayer~="") then
                 local expiry=0
@@ -234,7 +235,10 @@ captureTrades=function()
                                 for field=17,21 do fields[field]="" end
                             end
                             local export=table.concat(fields,"|")
-                            if existing then existing.tradeExport=export else AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=export} end
+                            local receipt=existing or {tradeExport=export}
+                            receipt.tradeExport=export
+                            receipt.invoiceEvidence={schema=1,invoiceType=invoice,bid=number(bid),buyout=number(buyout),invoiceCount=number(invoiceCount),attachmentQuantity=quantity,amountSource=invoice=='buyer' and 'invoice_bid' or 'mail_money',observedAt=timestamp*1000}
+                            if not existing then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]=receipt end
                             local fresh=not AZPCForeverDB.tradeSeen[fingerprint]
                             AZPCForeverDB.tradeSeen[fingerprint]=true
                             if fresh then

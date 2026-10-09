@@ -28,7 +28,7 @@ print('PASS: modern/legacy exports, aggregation, percent encoding, duplicate/cap
 function UnitName() return 'Tester' end
 function UnitGUID() return 'Player-test' end
 function GetInboxNumItems() return 2 end
-function GetInboxInvoiceInfo(i) if i==1 then return 'buyer','Peacebloom','Seller',0,100,0,0,0,0,0,3 else return 'seller','Peacebloom','Buyer',0,210,0,10,0,0,0,3 end end
+function GetInboxInvoiceInfo(i) if i==1 then return 'buyer','Peacebloom','Seller',100,100,0,0,0,0,0,3 else return 'seller','Peacebloom','Buyer',0,210,0,10,0,0,0,3 end end
 function GetInboxHeaderInfo(i) return nil,nil,'Auction House','Auction invoice',i==2 and 200 or 0,0,30 end
 function GetInboxItem() return 'Peacebloom',2447,nil,3 end
 AZPCForeverDB.itemIds.Peacebloom=2447
@@ -159,3 +159,17 @@ function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction won: Peaceb
 function GetInboxItem()return 'Peacebloom',2447,nil,nil end
 callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==oldTrades,'missing purchase attachment count never falls back to invoice quantity/price')
 print('PASS: buyer attachment count is mandatory, invoice fallback cannot create phantom stock')
+
+AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={}
+function GetInboxItem()return 'Light Leather',2318,nil,1 end
+function GetInboxInvoiceInfo()return 'buyer','Light Leather','Drox Pvp',48,1,0,0,0,0,0,1 end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction won: Light Leather',0,0,30 end
+callback(nil,'MAIL_SHOW')
+local receipt=AZPCForeverDB.trades[1]
+assert(receipt and receipt.tradeExport:find('|buy|2318|Light%%20Leather|1|48|'),'48c invoice payment must not use 1c buyout field')
+assert(receipt.invoiceEvidence.bid==48 and receipt.invoiceEvidence.buyout==1 and receipt.invoiceEvidence.amountSource=='invoice_bid','retain raw numeric invoice evidence for later auditing')
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1,'repeated invoice remains one purchase')
+AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={}
+function GetInboxInvoiceInfo()return 'buyer','Light Leather','Drox Pvp',nil,48,0,0,0,0,0,1 end
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==0,'missing paid amount never falls back to unrelated buyout')
+print('PASS: actual paid amount, differing invoice fields, raw evidence and missing amount guard')

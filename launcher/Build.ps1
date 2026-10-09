@@ -1,4 +1,4 @@
-param([string]$ReleaseTag = 'forever-watcher-v0.4.39')
+param([string]$ReleaseTag = 'forever-addon-v0.2.16')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
