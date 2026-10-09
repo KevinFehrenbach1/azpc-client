@@ -35,3 +35,15 @@ assert(AZPCForeverDB.crafting.costing.positions[1].quantity==11,'post-maintenanc
 AZPCForeverDB=fixture();AZPCForeverDB.crafting.crafts={{character='Lu',realm='Classic Beta PvP 2',region=110,faction='horde',observedAt=1791512000000,itemId=253664,consumedReagents={{itemId=2996,quantity=6}}}};emit()
 assert(#AZPCForeverDB.crafting.materialEvents==0,'new-region crafts also block stale correction')
 print('PASS: region-110 inventory and subsequent craft guards')
+
+AZPCForeverDB=fixture();emit()
+for _,r in ipairs(AZPCForeverDB.crafting.materialEvents)do
+ local decoded=r.syncExport:gsub('%%(%x%x)',function(h)return string.char(tonumber(h,16))end)
+ assert(decoded:find('"evidence":["inventory_snapshot:',1,true),'audit evidence must export as a nonempty JSON array')
+ r.syncExport='legacy-broken-export'
+end
+local count=#AZPCForeverDB.crafting.materialEvents
+emit();AZPCForeverCrafting.RebuildCosts()
+assert(#AZPCForeverDB.crafting.materialEvents==count,'existing correction records are re-exported without duplication')
+for _,r in ipairs(AZPCForeverDB.crafting.materialEvents)do assert(r.syncExport:find('%%22evidence%%22%%3A%%5B'),'existing checkpoints recover their evidence arrays')end
+print('PASS: reconciliation audit arrays and existing-record re-export')

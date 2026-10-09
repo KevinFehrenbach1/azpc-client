@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.14"
+local addon, VERSION = ..., "0.2.15"
 -- Beta builds changed the region API from 90 to 110 without changing realms.
 -- Keep the established Forever beta market; never alias live realms.
 local function canonicalRegion(region, realm)
@@ -1123,7 +1123,7 @@ end
 
 -- Percent-encoded JSON exports keep the desktop reader away from executable Lua.
 do
-local arrays={candidateItemIds=true,reagents=true,reagentSlots=true,options=true,recipeReagents=true,consumedReagents=true,resourcesReturned=true,inputs=true,missing=true}
+local arrays={candidateItemIds=true,reagents=true,reagentSlots=true,options=true,recipeReagents=true,consumedReagents=true,resourcesReturned=true,inputs=true,missing=true,evidence=true}
 local function json(value,key,depth)
     depth=depth or 0;if depth>12 then error('Crafting export exceeds nesting limit.')end
     local kind=type(value)
