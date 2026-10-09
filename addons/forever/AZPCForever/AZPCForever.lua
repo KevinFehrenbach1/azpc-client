@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.17"
+local addon, VERSION = ..., "0.2.18"
 -- Beta builds changed the region API from 90 to 110 without changing realms.
 -- Keep the established Forever beta market; never alias live realms.
 local function canonicalRegion(region, realm)
@@ -346,7 +346,7 @@ local function captureBags()
     local slots=C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots
     if type(slots)~="function" or (type(info)~="function" and type(GetContainerItemInfo)~="function") then return end
     local rows={}
-    for bag=0,(NUM_BAG_SLOTS or 4) do
+    for bag=0,(NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4) do
         local count=slots(bag);if type(count)~="number" then return end
         for slot=1,count do
             local id,q,link
@@ -613,6 +613,7 @@ local function mail(export)
         if receipt=="Player-4613-008756AB:Classic Beta PvP 2:90:buyer:2318:1:1:29901904:Drox%20Pvp:Horde%20Auction%20House:Auction%20won%3A%20Light%20Leather:4:1" and e.observedAt==1791522259000 then e.copper=48;e.purchaseCostKnown=true
         elseif receipt=="Player-4613-008756AB:Classic Beta PvP 2:90:buyer:2318:1:1:29901896:Evade%20Dex:Horde%20Auction%20House:Auction%20won%3A%20Light%20Leather:4:1" and e.observedAt==1791521790000 then e.purchaseCostKnown=false end
     end
+    if e.kind=='buy' and e.itemId==2318 and e.quantity==20 and e.copper==40 and e.observedAt==1791301099000 and e.character=='Wet' and e.region==90 and e.realm=='Classic Beta PvP 2' and e.faction=='horde' and decode(f[3])=="Player-4613-008756AB:Classic Beta PvP 2:90:buyer:2318:20:40:29898218::Horde%20Auction%20House:Auction%20won%3A%20Light%20Leather%20%2840%29:7:1" then e.purchaseCostKnown=false end
     local prefix,expiry,suffix=decode(f[3]):match('^(.*:seller:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')
     if not prefix then prefix,expiry,suffix=decode(f[3]):match('^(.*:buyer:%d+:%d+:%d+:)(%d+)(:[^:]*:[^:]*:[^:]*:%d+:%d+)$')end
     if prefix then e.mailIdentity=prefix..suffix;e.mailExpiry=tonumber(expiry);if e.kind=='buy'then e.mailPurchaseIdentity=prefix:gsub('(:buyer:%d+:)%d+:(%d+:)$','%1%2')..suffix end end
@@ -667,7 +668,7 @@ local function rebuild()
         local region=canonicalRegion(e.region,e.realm)
         if region~=e.region then local copy={};for k,v in pairs(e)do copy[k]=v end;copy.region=region;events[i]=copy end
     end
-    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6}
+    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6,inventory_observation=7}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
     local pools={};local transit={};local unresolved=0;local updates={}
     local function pool(e,id)
@@ -732,6 +733,13 @@ local function rebuild()
             end
             if #matches==1 then local t=matches[1];t.received=true;p.lots[#p.lots+1]={quantity=e.quantity,copper=t.copper,partialCopper=t.partialCopper}
             else p.lots[#p.lots+1]={quantity=e.quantity,partialCopper=0}end
+        elseif e.kind=='inventory_observation' then
+            if e.confirmation~='bags_and_character_bank_observed' or not integer(e.bagQuantity,1000000) or not integer(e.bankQuantity,1000000) or not integer(e.reservedQuantity,1000000) or e.ownedQuantity~=e.bagQuantity+e.bankQuantity then error('Invalid bank observation.')end
+            local q=totals(p);local expected=e.ownedQuantity+e.reservedQuantity
+            if expected>q then p.lots[#p.lots+1]={quantity=expected-q,partialCopper=0}end
+            p.bankQuantity=e.bankQuantity;p.bagQuantity=e.bagQuantity;p.bankObservedAt=e.observedAt
+            p.inventoryMismatch=q>expected and {recorded=q,observed=expected,at=e.observedAt} or nil
+            if p.inventoryMismatch then p.uncertain=true end
         elseif e.kind=='reconcile' then
             if not integer(e.targetQuantity,1000000) or not integer(e.totalCopper) or e.targetQuantity==0 and e.totalCopper~=0 or e.confirmation~='inventory_and_cost_reconciled' then error('Invalid material reconciliation.') end
             p.lots=e.targetQuantity>0 and {{quantity=e.targetQuantity,copper=e.totalCopper}} or {};p.uncertain=nil
@@ -776,7 +784,7 @@ local function rebuild()
     local positions={}
     for _,p in pairs(pools) do
         local q,c,known=totals(p)
-        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
+        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,bagQuantity=p.bagQuantity,bankQuantity=p.bankQuantity,bankObservedAt=p.bankObservedAt,inventoryMismatch=p.inventoryMismatch,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
     end
     table.sort(positions,function(a,b)return a.key<b.key end)
     local state={schema=1,method='remaining_material_weighted_average',positions=positions,unresolvedCrafts=unresolved}
@@ -1234,5 +1242,85 @@ f:SetScript('OnEvent',function(_,_,name)
         AZPCForeverCrafting.RebuildCosts()
         message('Historical linen balance corrected: 0 cloth, 11 bolts, 14 copper total material cost. /reload saves the correction for upload.')
     elseif not ok then message('Historical material migration deferred; original records retained.')end
+end)
+end
+
+
+-- Capture the character bank only while it is actually open. Never read Bagnon caches.
+do
+local open=false;local generation=0;local last={}
+local function readContainers(ids)
+ local rows={};local slotAPI=C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots
+ local infoAPI=C_Container and C_Container.GetContainerItemInfo
+ if type(slotAPI)~='function' or type(infoAPI)~='function' and type(GetContainerItemInfo)~='function' then return end
+ local capacity=0
+ for _,bag in ipairs(ids)do
+  local ok,n=pcall(slotAPI,bag);if not ok or type(n)~='number' or n<0 then return end;capacity=capacity+n
+  for slot=1,n do
+   local id,q,link
+   if infoAPI then local ok,v=pcall(infoAPI,bag,slot);if not ok then return end;if v then id,q,link=v.itemID,v.stackCount,v.hyperlink;if v.isLocked then return end end
+   else local _,count,locked,_,_,_,l=GetContainerItemInfo(bag,slot);if locked then return end;q=count;link=l;id=type(l)=='string' and tonumber(l:match('item:(%d+)'))end
+   if id then
+    if type(q)~='number' or q<1 or q~=math.floor(q) then return end
+    local name=(C_Item and C_Item.GetItemInfo or GetItemInfo);name=type(name)=='function' and name(id)
+    if not name then return end
+    local r=rows[id]or{name=name,quantity=0};r.quantity=r.quantity+q;rows[id]=r
+   elseif link then return end
+  end
+ end
+ return rows,capacity
+end
+local function capture()
+ if not open then return end;setup()
+ if C_Bank and type(C_Bank.CanViewBank)=='function' and Enum and Enum.BankType then local ok,visible=pcall(C_Bank.CanViewBank,Enum.BankType.Character);if not ok or not visible then return end end
+ local bags={};local count=NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+ for i=0,count do bags[#bags+1]=i end
+ local bank={};local enum=Enum and Enum.BagIndex
+ if C_Bank and type(C_Bank.FetchPurchasedBankTabIDs)=='function' and Enum and Enum.BankType and Enum.BankType.Character then
+  local ok,ids=pcall(C_Bank.FetchPurchasedBankTabIDs,Enum.BankType.Character);if not ok or type(ids)~='table' then return end
+  for _,id in ipairs(ids)do if type(id)~='number' then return end;bank[#bank+1]=id end
+ else
+  bank[1]=BANK_CONTAINER or enum and enum.Bank or -1
+  for i=1,(NUM_BANKBAGSLOTS or 7)do bank[#bank+1]=enum and enum['BankBag_'..i] or count+i end
+  local reagent=enum and enum.Reagentbank or REAGENTBANK_CONTAINER
+  if reagent then bank[#bank+1]=reagent end
+ end
+ local bagRows=readContainers(bags);local bankRows,capacity=readContainers(bank)
+ if not bagRows or not bankRows or capacity==0 and #bank>0 then return end
+ local k=ownerKey();if not k then return end
+ local previous=last[k]or{};local ids={};for id in pairs(bagRows)do ids[id]=true end;for id in pairs(bankRows)do ids[id]=true end;for id in pairs(previous)do ids[id]=true end
+ local pending={};local at=observedMillis();local states=AZPCForeverDB.owners and AZPCForeverDB.owners[k]or{}
+ for id in pairs(ids)do
+  local bag,bank=bagRows[id],bankRows[id];local b,n=bag and bag.quantity or 0,bank and bank.quantity or 0
+  local getter=C_Item and C_Item.GetItemCount or GetItemCount
+  local verified=true
+  if type(getter)=='function' then local ok,total=pcall(getter,id,true,false,false);verified=ok and type(total)=='number' and total==b+n end
+  -- Equipped copies can differ from bag+bank counts; do not block other materials.
+  if verified then
+  local old=previous[id];local owner=states[id];local reserved=owner and ((owner.listed or 0)+(owner.pending or 0)+(owner.unresolved or 0))or 0
+  local name=bag and bag.name or bank and bank.name or old and old.name
+  if not old or old.bag~=b or old.bank~=n or old.reserved~=reserved or at-old.at>1800000 then
+   pending[#pending+1]={id=id,name=name,bag=b,bank=n,reserved=reserved}
+  end
+  end
+ end
+ local d=AZPCForeverDB.crafting;if not d then return end;d.materialEvents=d.materialEvents or{}
+ if #d.materialEvents+#pending>10000 then message('Material ledger full; bank observation deferred.');return end
+ for _,r in ipairs(pending)do
+  d.materialSequence=(d.materialSequence or 0)+1
+  local e={schema=1,kind='inventory_observation',confirmation='bags_and_character_bank_observed',itemId=r.id,name=r.name,quantity=math.max(1,r.bag+r.bank),ownedQuantity=r.bag+r.bank,bagQuantity=r.bag,bankQuantity=r.bank,reservedQuantity=r.reserved,observedAt=at,realm=GetRealmName(),character=UnitName('player'),faction=UnitFactionGroup('player'):lower(),region=currentRegion(),eventId=tostring(UnitGUID('player'))..':bank:'..at..':'..d.materialSequence}
+  d.materialEvents[#d.materialEvents+1]=e;previous[r.id]={name=r.name,bag=r.bag,bank=r.bank,reserved=r.reserved,at=at}
+ end
+ last[k]=previous
+ if #pending>0 then AZPCForeverCrafting.RebuildCosts()end
+end
+local frame=CreateFrame('Frame')
+for _,event in ipairs({'BANKFRAME_OPENED','BANKFRAME_CLOSED','PLAYERBANKSLOTS_CHANGED','BAG_UPDATE_DELAYED','PLAYER_LOGOUT'})do pcall(frame.RegisterEvent,frame,event)end
+frame:SetScript('OnEvent',function(_,event)
+ if event=='BANKFRAME_CLOSED' then open=false;generation=generation+1;return end
+ if event=='BANKFRAME_OPENED' then open=true;generation=generation+1 end
+ if not open then return end
+ if event=='PLAYER_LOGOUT' then pcall(capture);return end
+ local g=generation;C_Timer.After(1,function()if open and generation==g then local ok,err=pcall(capture);if not ok then message('Bank capture deferred: '..tostring(err))end end end)
 end)
 end

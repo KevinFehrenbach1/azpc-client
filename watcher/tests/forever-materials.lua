@@ -50,3 +50,34 @@ n=n+1;lootGuid='GameObject-0-1-2-3-4-5';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEA
 emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=9;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'another player clearing a slot is insufficient')
 lootGuid='Item-0-1-2-3';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=12;emit('CHAT_MSG_LOOT',lootChat());emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'processing or opening an item cannot erase its paid basis')
 print('PASS: automatic corpse/skinning and gathering loot, self receipt plus bags, duplicate protection and exclusion of item-container sources')
+
+-- Actual bank events use live containers; cached addon totals never enter costs.
+AZPCForeverDB={trades={},crafting={recipes={},crafts={},seen={},materialEvents={}}};emit('ADDON_LOADED','AZPCForever')
+char='Wet';clock=clock+100;local bagLeather,bankLeather=2,20
+NUM_BAG_SLOTS=4;NUM_BANKBAGSLOTS=7
+C_Container={GetContainerNumSlots=function(bag)if bag==0 or bag==-1 then return 1 else return 0 end end,GetContainerItemInfo=function(bag,slot)local n=bag==0 and bagLeather or bag==-1 and bankLeather or 0;if n>0 then return {itemID=2318,stackCount=n,hyperlink='item:2318'}end end}
+C_Item.GetItemInfo=function(id)return id==2318 and 'Light Leather' or 'Item'end
+C_Item.GetItemCount=function(id,includeBank)if id==2318 then return bagLeather+(includeBank and bankLeather or 0)end;return 0 end
+Bagnon={total=35};trade(2318,21,97,clock*1000-1000,'Wet')
+emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==0,'closed bank is not authoritative')
+emit('BANKFRAME_OPENED');local rows=AZPCForeverDB.crafting.materialEvents;assert(#rows==1 and rows[1].bagQuantity==2 and rows[1].bankQuantity==20 and rows[1].ownedQuantity==22,'bags and live bank counted separately without Bagnon cached 13')
+local state=AZPCForeverCrafting.RebuildCosts();local p=state.positions[1];assert(p.quantity==22 and p.recordedCopper==97 and not p.costComplete and p.unknownQuantity==1,'surplus adds unknown acquisition without inventing free cost')
+local raw=rows[1].syncExport;assert(raw:find('inventory_observation',1,true),'bank observations use durable material exports')
+emit('BAG_UPDATE_DELAYED');assert(#rows==1,'unchanged bank observations do not duplicate stock')
+clock=clock+1;bagLeather=3;bankLeather=19;emit('BAG_UPDATE_DELAYED');state=AZPCForeverCrafting.RebuildCosts();assert(state.positions[1].quantity==22 and state.positions[1].recordedCopper==97,'bank withdrawal conserves quantity and copper')
+emit('BANKFRAME_CLOSED');bankLeather=100;clock=clock+1;emit('BAG_UPDATE_DELAYED');assert(#rows==2,'closed bank never interprets stale counts as gains')
+bankLeather=18;emit('BANKFRAME_OPENED');state=AZPCForeverCrafting.RebuildCosts();p=state.positions[1];assert(p.quantity==22 and p.recordedCopper==97 and p.inventoryMismatch.observed==21,'deficits flag mismatch without deleting paid stock')
+emit('BANKFRAME_CLOSED');clock=clock+1
+C_Container.GetContainerItemInfo=function()return {hyperlink='item:2318'}end
+local n=#rows;emit('BANKFRAME_OPENED');assert(#rows==n,'unloaded bank items cannot masquerade as zero stock')
+print('PASS bank observations: live bags/bank, closed-cache exclusion, surplus unknowns, withdrawals, replay, deficits and incomplete data')
+
+-- Modern character-bank tabs exclude the account-wide bank entirely.
+emit('BANKFRAME_CLOSED');clock=clock+1;bagLeather=2;bankLeather=20
+Enum={BankType={Character=2,Account=1}}
+local canView=false;C_Bank={CanViewBank=function(kind)assert(kind==2);return canView end,FetchPurchasedBankTabIDs=function(kind)assert(kind==2,'only character bank queried');return {13}end}
+C_Container.GetContainerNumSlots=function(bag)if bag==0 or bag==13 or bag==26 then return 1 else return 0 end end
+C_Container.GetContainerItemInfo=function(bag)local q=bag==0 and bagLeather or bag==13 and bankLeather or bag==26 and 99 or 0;if q>0 then return {itemID=2318,stackCount=q,hyperlink='item:2318'}end end
+local beforeModern=#rows;emit('BANKFRAME_OPENED');assert(#rows==beforeModern,'account-only access cannot capture closed character bank')
+canView=true;emit('BAG_UPDATE_DELAYED');assert(rows[#rows].ownedQuantity==22 and rows[#rows].bankQuantity==20,'modern character tab capture excludes account bank 99')
+print('PASS modern bank tabs and account-bank isolation')

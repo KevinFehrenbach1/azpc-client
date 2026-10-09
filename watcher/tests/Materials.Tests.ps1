@@ -30,4 +30,8 @@ try {
  $old=$first.Clone();$old.metadata=$first.metadata.Clone();$old.metadata.Remove('mailPurchaseIdentity');$old|ConvertTo-Json -Depth 5|Set-Content $target -Encoding UTF8;Set-Content ($target+'.sent') 'ack'
  Collect-ForeverTrades ('["tradeExport"] = "'+$trade+'"')
  Assert (-not (Test-Path ($target+'.sent')) -and (Get-Content $target -Raw|ConvertFrom-Json).metadata.mailPurchaseIdentity) 'Old sent purchases are requeued once with repair evidence'
+ $row=@{schema=1;recordType='material';recordId='bank-test';data=@{eventId='bank-test';kind='inventory_observation';itemId=2318;quantity=22;bagQuantity=2;bankQuantity=20;ownedQuantity=22;reservedQuantity=0;realm='Realm';character='Wet';region=90;faction='horde';observedAt=1791524000000L;name='Light Leather';confirmation='bags_and_character_bank_observed'}}
+ $export='AZPCFCRAFT|1|'+[uri]::EscapeDataString(($row | ConvertTo-Json -Depth 8 -Compress));$parsed=Convert-ForeverCrafting $export
+ Assert ($parsed.data.bankQuantity -eq 20 -and $parsed.data.bagQuantity -eq 2) 'Confirmed bank quantities survive the existing upload queue'
+ foreach($change in @(-1,19)){$row.data.bankQuantity=$change;$bad='AZPCFCRAFT|1|'+[uri]::EscapeDataString(($row | ConvertTo-Json -Depth 8 -Compress));$rejected=$false;try{Convert-ForeverCrafting $bad | Out-Null}catch{$rejected=$true};Assert $rejected 'Invalid bank counts and mismatched totals are rejected'}
 } finally {Remove-Item $root -Recurse -Force}
