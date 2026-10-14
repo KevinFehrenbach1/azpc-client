@@ -51,6 +51,22 @@ emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=9;emit('BAG_UPDAT
 lootGuid='Item-0-1-2-3';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=12;emit('CHAT_MSG_LOOT',lootChat());emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'processing or opening an item cannot erase its paid basis')
 print('PASS: automatic corpse/skinning and gathering loot, self receipt plus bags, duplicate protection and exclusion of item-container sources')
 
+-- Auto-loot can omit/reorder slot-cleared events; source + self receipt + bags is sufficient.
+lootGuid='Creature-0-1-2-3-4-5';counts[lootId]=12;lootQuantity=1
+local autoBefore=#AZPCForeverDB.crafting.materialEvents
+emit('LOOT_OPENED');counts[lootId]=13;emit('CHAT_MSG_LOOT',lootChat());emit('BAG_UPDATE_DELAYED')
+assert(#AZPCForeverDB.crafting.materialEvents==autoBefore+1,'auto-loot must capture without a slot-cleared notification')
+-- A new loot window must not discard the previous pending self receipt.
+local timers={};C_Timer.After=function(delay,fn)timers[#timers+1]={delay=delay,fn=fn}end
+counts[lootId]=13;lootQuantity=2;emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);emit('CHAT_MSG_LOOT',lootChat());emit('LOOT_CLOSED')
+lootId=1210;counts[lootId]=0;lootQuantity=3;emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);emit('CHAT_MSG_LOOT',lootChat());emit('LOOT_CLOSED')
+counts[2318]=15;counts[1210]=3;emit('BAG_UPDATE_DELAYED')
+assert(#AZPCForeverDB.crafting.materialEvents==autoBefore+3,'consecutive windows retain both pending acquisitions')
+emit('BAG_UPDATE_DELAYED');for _,timer in ipairs(timers)do if timer.delay<=2 then timer.fn()end end
+assert(#AZPCForeverDB.crafting.materialEvents==autoBefore+3,'delayed callbacks never duplicate confirmed loot')
+C_Timer.After=function(_,fn)fn()end
+print('PASS: auto-loot without slot-cleared events and delayed bags across consecutive loot windows')
+
 -- Actual bank events use live containers; cached addon totals never enter costs.
 AZPCForeverDB={trades={},crafting={recipes={},crafts={},seen={},materialEvents={}}};emit('ADDON_LOADED','AZPCForever')
 char='Wet';clock=clock+100;local bagLeather,bankLeather=2,20
