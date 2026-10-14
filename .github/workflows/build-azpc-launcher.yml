@@ -148,5 +148,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.24 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.24 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.24 - Reliable mailbox sync reminder" --notes "Offer the reload reminder after closing the mailbox with newly recorded auction sales or expirations, including fast collection. Keep one reminder per mailbox visit and combat deferral. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.25 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.25 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.25 - Prevent snapshot history blocking receipts" --notes "Remove the shared 10000-record cutoff that silently blocked sale and expiration capture after snapshot history filled the ledger. Preserve all existing records and reminder behavior. Watcher stays 0.4.40."

@@ -35,3 +35,20 @@ function GetInboxItem()return 'Light Leather',2318,nil,2 end
 emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==3);emit('MAIL_CLOSED');flush();assert(popups==3,'expiration-only mailbox must remind after capture')
 emit('MAIL_SHOW');flush();emit('MAIL_CLOSED');flush();assert(popups==3,'previously captured expiration must not nag')
 print('PASS: fast-close sale and expiration-only mailbox fallback')
+
+-- Existing snapshot history must not prevent new financial receipts or reminders.
+while #AZPCForeverDB.trades<10000 do
+ AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport='AZPCFTRADE|2|old-snapshot-'..#AZPCForeverDB.trades..'|inventory_snapshot|2318|Light Leather|0|0|1791000000000|Classic Beta PvP 2|horde|90|Old'}
+end
+local oldFirst=AZPCForeverDB.trades[1]
+function UnitGUID()return 'Player-after-cap'end
+function GetInboxInvoiceInfo()return 'seller','Light Leather','Buyer',0,210,0,10,0,0,0,2 end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Light Leather',200,0,30 end
+emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==10001,'sale must save beyond former shared history limit')
+emit('MAIL_CLOSED');flush();assert(popups==4,'new receipt beyond former cap must trigger reminder')
+assert(AZPCForeverDB.trades[1]==oldFirst,'existing history must remain untouched')
+function GetInboxInvoiceInfo()return nil end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction expired: Light Leather',0,0,30 end
+emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==10002,'expiration must save beyond former shared history limit')
+emit('MAIL_CLOSED');flush();assert(popups==5)
+print('PASS: sales, expirations and reminders beyond 10000 existing records without clearing history')
