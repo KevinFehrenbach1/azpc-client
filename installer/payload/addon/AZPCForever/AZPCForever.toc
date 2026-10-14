@@ -4,7 +4,6 @@
 ## Author: Kevin Fehrenbach
 ## Version: 0.2.21
 ## SavedVariables: AZPCForeverDB
-AZPCForeverSyncPrompt.lua
 AZPCForever.lua
 
 
