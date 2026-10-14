@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.25"
+local addon, VERSION = ..., "0.2.26"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -190,6 +190,7 @@ SLASH_AZPCFOREVER1="/azpcf"
 local captureTrades
 SlashCmdList.AZPCFOREVER=function(command)
     if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
+    elseif command == "materials" then AZPCForeverProfession.Show()
     elseif command == "crafts" then AZPCForeverCrafting.Status()
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
@@ -640,7 +641,7 @@ local function installHook()
     end)
     hooked=true
 end
-AZPCForeverCrafting={Status=function()
+AZPCForeverCrafting={ReadRecipe=recipe,Status=function()
     local db=setup();installHook();local n=captureRecipes();local total=0;for _ in pairs(db.recipes) do total=total+1 end
     local last=db.crafts[#db.crafts]
     message('Craft capture: '..total..' recipes | '..#db.crafts..' completed crafts | '..n..' recipes read now. '..(C_TradeSkillUI and type(C_TradeSkillUI.GetRecipeSchematic)=='function' and 'Open your profession and craft normally; /reload saves records.' or 'Recipe API unavailable in this build.'))
@@ -1513,3 +1514,186 @@ do
     end
 end
 -- END AZPC ITEM TOOLTIPS
+
+-- BEGIN AZPC PROFESSION PANEL
+do
+    local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
+    local function notify(text)print('|cff4cddd4AZPC:|r '..text)end
+    local function api(object,name,...)
+        if object and type(object[name])=='function' then local ok,value=pcall(object[name],...);if ok then return value end end
+    end
+    local function itemName(id)
+        return (GetItemInfo and GetItemInfo(id)) or (C_Item and api(C_Item,'GetItemNameByID',id)) or ('Item '..id)
+    end
+    local function money(copper)
+        if copper==nil then return 'No data' end
+        local sign=copper<0 and '-' or '';copper=math.abs(copper)
+        if GetCoinTextureString then return sign..GetCoinTextureString(copper) end
+        return sign..math.floor(copper/10000)..'g '..math.floor(copper%10000/100)..'s '..(copper%100)..'c'
+    end
+    local function count(id)
+        local value
+        if C_Item and type(C_Item.GetItemCount)=='function' then value=api(C_Item,'GetItemCount',id,false,false,false)
+        elseif type(GetItemCount)=='function' then value=GetItemCount(id,false,false,false) end
+        return number(value)
+    end
+    local function position(id)
+        local db=AZPCForeverDB and AZPCForeverDB.crafting
+        if not db or db.costingError or db.vendorCostingBlocked then return end
+        for _,p in ipairs(db.costing and db.costing.positions or {})do
+            if p.itemId==id and p.character==UnitName('player') and p.realm==GetRealmName() and p.faction==(UnitFactionGroup('player') or ''):lower() and p.region==currentRegion() then
+                if p.costComplete==true and not p.inventoryMismatch and number(p.quantity) and p.quantity>0 and number(p.totalCopper) then return p end
+            end
+        end
+    end
+    local function price(id)
+        local db=AZPCForeverDB or {}
+        local key=table.concat({currentRegion(),(GetRealmName() or ''):lower(),(UnitFactionGroup('player') or ''):lower()},'|')
+        local p=db.tooltipPrices and db.tooltipPrices[key] and db.tooltipPrices[key][id]
+        local now=GetServerTime and GetServerTime() or time()
+        if p and number(p.unitCopper) and p.unitCopper>0 and number(p.observedAt) and p.observedAt<=now and now-p.observedAt<=21600 then return p.unitCopper end
+    end
+    local function model(recipe,batch)
+        batch=math.max(1,math.min(999,number(batch) or 1))
+        local out={rows={},cost=0,complete=recipe and recipe.materialsKnown==true,batch=batch}
+        if not recipe then out.complete=false;return out end
+        for _,m in ipairs(recipe.reagents or {})do
+            local needed=m.quantity*batch
+            local held=count(m.itemId)
+            local p=position(m.itemId)
+            local cost=p and held and held>=needed and p.quantity>=needed and math.ceil(p.totalCopper/p.quantity*needed) or nil
+            out.rows[#out.rows+1]={itemId=m.itemId,name=itemName(m.itemId),needed=needed,held=held,missing=held and math.max(0,needed-held) or nil,cost=cost}
+            if cost==nil then out.complete=false else out.cost=out.cost+cost end
+        end
+        if #out.rows==0 then out.complete=false end
+        if not out.complete then out.cost=nil end
+        local unit=price(recipe.outputItemId)
+        if out.complete and unit and recipe.outputMin==recipe.outputMax then
+            out.profit=(math.floor(unit*95/100)*recipe.outputMin*batch)-out.cost
+        end
+        return out
+    end
+    local function readSelection()
+        local modern=ProfessionsFrame and ProfessionsFrame.CraftingPage
+        local form=modern and modern.SchematicForm
+        local details=TradeSkillFrame and TradeSkillFrame.DetailsFrame
+        local id=form and ((form.recipeInfo and form.recipeInfo.recipeID) or form.recipeID) or details and details.selectedRecipeID
+        if not id and modern and modern.RecipeList and type(modern.RecipeList.GetSelectedRecipeID)=='function' then id=modern.RecipeList:GetSelectedRecipeID() end
+        if id and AZPCForeverCrafting and AZPCForeverCrafting.ReadRecipe then
+            local recipe=AZPCForeverCrafting.ReadRecipe(id);if recipe then return recipe end
+        end
+        -- Older profession windows expose an index and fixed reagent rows.
+        if type(GetTradeSkillSelectionIndex)=='function' and type(GetTradeSkillNumReagents)=='function' and type(GetTradeSkillReagentInfo)=='function' and type(GetTradeSkillReagentItemLink)=='function' then
+            local index=GetTradeSkillSelectionIndex();if not index or index<1 then return end
+            local name,kind=GetTradeSkillInfo(index);if kind=='header' then return end
+            local link=GetTradeSkillItemLink and GetTradeSkillItemLink(index)
+            local output=type(link)=='string' and tonumber(link:match('item:(%d+)'))
+            local lo,hi=1,1;if GetTradeSkillNumMade then lo,hi=GetTradeSkillNumMade(index)end
+            local recipe={recipeId=index,name=name,outputItemId=output,outputMin=lo,outputMax=hi,reagents={},materialsKnown=true}
+            for i=1,GetTradeSkillNumReagents(index)do
+                local _,_,q=GetTradeSkillReagentInfo(index,i)
+                local reagent=GetTradeSkillReagentItemLink(index,i)
+                local item=type(reagent)=='string' and tonumber(reagent:match('item:(%d+)'))
+                if item and number(q) then recipe.reagents[#recipe.reagents+1]={itemId=item,quantity=q} else recipe.materialsKnown=false end
+            end
+            return recipe
+        end
+    end
+    local function search(row)
+        if not row then notify('No missing material selected.');return false end
+        if not auctionOpen then notify('Open the Auction House, then click Search beside a material.');return false end
+        if type(InCombatLockdown)=='function' and InCombatLockdown() then notify('Search after combat.');return false end
+        local name=itemName(row.itemId)
+        if name=='Item '..row.itemId then notify('Item name is loading. Try again.');return false end
+        local bar=AuctionHouseFrame and AuctionHouseFrame.SearchBar
+        if bar and type(bar.SetSearchText)=='function' and type(bar.StartSearch)=='function' then
+            if C_AuctionHouse and type(C_AuctionHouse.IsThrottledMessageSystemReady)=='function' and not C_AuctionHouse.IsThrottledMessageSystemReady() then notify('The AH is busy. Try again shortly.');return false end
+            if AuctionHouseFrame.SetDisplayMode and AuctionHouseFrameDisplayMode then AuctionHouseFrame:SetDisplayMode(AuctionHouseFrameDisplayMode.Buy)end
+            bar:SetSearchText(name);bar:StartSearch();return true
+        end
+        if BrowseName and type(BrowseName.SetText)=='function' and type(AuctionFrameBrowse_Search)=='function' then
+            BrowseName:SetText(name);AuctionFrameBrowse_Search();return true
+        end
+        notify('AH search is unavailable in this build. Search for '..name..'.');return false
+    end
+    local render
+    local function create()
+        if panel then return panel end
+        if not UIParent then return end
+        panel=CreateFrame('Frame','AZPCForeverProfessionPanel',UIParent,'BackdropTemplate')
+        panel:SetSize(410,410);panel:SetPoint('CENTER',UIParent,'CENTER',310,0);panel:SetFrameStrata('DIALOG')
+        panel:SetBackdrop({bgFile='Interface/Tooltips/UI-Tooltip-Background',edgeFile='Interface/Tooltips/UI-Tooltip-Border',tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
+        panel:SetBackdropColor(0.035,0.055,0.06,0.97);panel:SetBackdropBorderColor(0.25,0.65,0.62)
+        panel:SetMovable(true);panel:EnableMouse(true);panel:RegisterForDrag('LeftButton')
+        panel:SetScript('OnDragStart',panel.StartMoving);panel:SetScript('OnDragStop',panel.StopMovingOrSizing)
+        local function text(parent,font,x,y,width)
+            local t=parent:CreateFontString(nil,'OVERLAY',font);t:SetPoint('TOPLEFT',x,y);t:SetWidth(width);t:SetJustifyH('LEFT');return t
+        end
+        text(panel,'GameFontNormalLarge',16,-16,350):SetText('AZPC • Crafting materials')
+        local close=CreateFrame('Button',nil,panel,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-3,-3)
+        panel.name=text(panel,'GameFontHighlight',16,-45,375)
+        panel.batch=text(panel,'GameFontNormal',16,-70,240)
+        local function button(label,x,fn)
+            local b=CreateFrame('Button',nil,panel,'UIPanelButtonTemplate');b:SetSize(34,22);b:SetPoint('TOPRIGHT',x,-65);b:SetText(label);b:SetScript('OnClick',fn)
+        end
+        button('-',-57,function()quantity=math.max(1,quantity-1);render()end)
+        button('+',-18,function()quantity=math.min(999,quantity+1);render()end)
+        text(panel,'GameFontDisableSmall',16,-98,375):SetText('Material                 Need / Bags / Missing')
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',16,-120);scroll:SetPoint('BOTTOMRIGHT',-34,110)
+        local child=CreateFrame('Frame',nil,scroll);child:SetSize(350,1);scroll:SetScrollChild(child);panel.child=child;panel.rows={}
+        panel.cost=text(panel,'GameFontHighlight',16,-308,375)
+        panel.profit=text(panel,'GameFontHighlight',16,-330,375)
+        panel.note=text(panel,'GameFontDisableSmall',16,-355,375);panel.note:SetText('Costs use recorded stock. Profit: 5% cut; deposit excluded.\nKeep this list open at the AH. One search per click.')
+        panel.status=text(panel,'GameFontNormalSmall',16,-388,375)
+        if UISpecialFrames then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverProfessionPanel' end
+        return panel
+    end
+    render=function()
+        local p=create();if not p then return end
+        local data=model(selected,quantity)
+        p.name:SetText(selected and selected.name or 'Select a recipe in your profession window.')
+        p.batch:SetText('Crafts: '..quantity)
+        for _,row in ipairs(p.rows)do row:Hide()end
+        for i,m in ipairs(data.rows)do
+            local row=p.rows[i]
+            if not row then
+                row=CreateFrame('Frame',nil,p.child);row:SetSize(350,42);row:SetPoint('TOPLEFT',0,-(i-1)*44)
+                row.label=row:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall');row.label:SetPoint('TOPLEFT',0,0);row.label:SetWidth(270);row.label:SetJustifyH('LEFT')
+                row.amount=row:CreateFontString(nil,'OVERLAY','GameFontDisableSmall');row.amount:SetPoint('TOPLEFT',0,-19)
+                row.button=CreateFrame('Button',nil,row,'UIPanelButtonTemplate');row.button:SetSize(66,22);row.button:SetPoint('TOPRIGHT',0,-5);row.button:SetText('Search')
+                row.button:SetScript('OnClick',function()search(row.material)end);p.rows[i]=row
+            end
+            row.material=m;row.label:SetText(m.name)
+            row.amount:SetText(m.needed..' / '..(m.held or 'No data')..' / '..(m.missing or 'No data'))
+            row.button:SetEnabled(m.missing~=nil and m.missing>0 and auctionOpen);row:Show()
+        end
+        p.child:SetHeight(math.max(1,#data.rows*44))
+        p.cost:SetText('Recorded material cost: '..money(data.cost))
+        p.profit:SetText('Est. profit for batch: '..money(data.profit))
+        p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved: No data' or (auctionOpen and 'AH open • Search missing materials' or 'Open the AH to search missing materials'))
+    end
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Show=function()render();if panel then panel:Show()end end}
+    local events=CreateFrame('Frame')
+    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED'})do pcall(events.RegisterEvent,events,event)end
+    local professionOpen=false
+    events:SetScript('OnEvent',function(_,event)
+        local ok=pcall(function()
+            if event=='TRADE_SKILL_SHOW' then professionOpen=true
+            elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
+            elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true
+            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false end
+            if professionOpen then selected=readSelection() end
+            if professionOpen or (panel and panel:IsShown())then render();if event=='TRADE_SKILL_SHOW' and panel then panel:Show()end end
+        end)
+        if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end
+    end)
+    if UIParent then events:SetScript('OnUpdate',function(_,delta)
+        if not professionOpen then return end
+        elapsed=elapsed+delta;if elapsed<0.4 then return end;elapsed=0
+        pcall(function()
+            local recipe=readSelection()
+            selected=recipe;if panel and panel:IsShown()then render()end
+        end)
+    end) end
+end
+-- END AZPC PROFESSION PANEL

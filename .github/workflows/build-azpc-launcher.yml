@@ -24,6 +24,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: lua5.1 watcher/tests/forever-addon.lua
       - run: lua5.1 watcher/tests/forever-tooltips.lua
+      - run: lua5.1 watcher/tests/forever-profession.lua
       - run: lua5.1 watcher/tests/forever-reload-prompt.lua
       - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
@@ -148,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.25 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.25 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.25 - Prevent snapshot history blocking receipts" --notes "Remove the shared 10000-record cutoff that silently blocked sale and expiration capture after snapshot history filled the ledger. Preserve all existing records and reminder behavior. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.26 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.26 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.26 - Profession material planner" --notes "Add a profession material planner with batch quantities, bags and missing counts, recorded stock cost, estimated profit and explicit AH material searches. Open with /azpcf materials. Watcher stays 0.4.40."
