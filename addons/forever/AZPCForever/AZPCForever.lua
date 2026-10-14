@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.22"
+local addon, VERSION = ..., "0.2.23"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1433,13 +1433,15 @@ end
 do
     local function money(value)
         local sign=value<0 and '-' or '';value=math.abs(value)
-        return sign..math.floor(value/10000)..'g '..math.floor(value%10000/100)..'s '..(value%100)..'c'
-    end
-    local function ageText(seconds)
-        if seconds<60 then return 'just now' end
-        if seconds<3600 then return math.floor(seconds/60)..'m ago' end
-        if seconds<86400 then return math.floor(seconds/3600)..'h ago' end
-        return math.floor(seconds/86400)..'d ago'
+        if type(GetCoinTextureString)=='function' then return sign..GetCoinTextureString(value) end
+        local parts={}
+        for _,coin in ipairs({{10000,'Gold'},{100,'Silver'},{1,'Copper'}}) do
+            local amount=math.floor(value/coin[1]);value=value%coin[1]
+            if amount>0 or (coin[1]==1 and #parts==0) then
+                parts[#parts+1]=amount..'|TInterface\\MoneyFrame\\UI-'..coin[2]..'Icon:0:0:2:0|t'
+            end
+        end
+        return sign..table.concat(parts,' ')
     end
     local function scope()
         local realm=GetRealmName and GetRealmName() or ''
@@ -1448,7 +1450,7 @@ do
         return table.concat({currentRegion(),realm:lower(),faction},'|'),realm,faction,character
     end
     local function add(tooltip,label,value,r,g,b)
-        if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,0.65,0.74,0.78,r or 0.9,g or 0.95,b or 0.95)
+        if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,1,0.82,0,r or 0.9,g or 0.95,b or 0.95)
         else tooltip:AddLine(label..': '..value,r or 0.9,g or 0.95,b or 0.95,true) end
     end
     local function append(tooltip,itemId)
@@ -1461,34 +1463,26 @@ do
         local price=db.tooltipPrices and db.tooltipPrices[key] and db.tooltipPrices[key][itemId]
         local now=GetServerTime and GetServerTime() or time()
         local valid=price and number(price.unitCopper) and price.unitCopper>0 and number(price.observedAt) and price.observedAt<=now
-        tooltip:AddLine(' ')
-        tooltip:AddLine('AZPC Forever',0.3,0.87,0.83)
         local age
         if valid then
             age=now-price.observedAt
-            add(tooltip,'Observed AH / unit',money(price.unitCopper))
-            add(tooltip,'Price captured',ageText(age)..(age>3600 and ' (stale)' or ''),age>3600 and 0.95 or 0.65,age>3600 and 0.75 or 0.74,0.6)
-        else add(tooltip,'AH price','Not captured — browse this item at the AH',0.9,0.77,0.5) end
-        local materials=db.crafting;local cost,free
+            add(tooltip,'AZPC Auction / each'..(age>3600 and ' (stale)' or ''),money(price.unitCopper))
+        else add(tooltip,'AZPC Auction / each','No data',0.65,0.65,0.65) end
+        local materials=db.crafting;local cost
         if materials and not materials.costingError and not materials.vendorCostingBlocked then
             for _,p in ipairs(materials.costing and materials.costing.positions or {}) do
                 if p.itemId==itemId and p.region==currentRegion() and p.realm==realm and p.faction==faction and p.character==character and p.quantity and p.quantity>0 then
-                    if p.costComplete==true and not p.inventoryMismatch and number(p.totalCopper) then cost=math.ceil(p.totalCopper/p.quantity);free=p.totalCopper==0 end
+                    if p.costComplete==true and not p.inventoryMismatch and number(p.totalCopper) then cost=math.ceil(p.totalCopper/p.quantity) end
                     break
                 end
             end
         end
-        if cost~=nil then
-            add(tooltip,'Your recorded avg / unit',money(cost))
-            if free then add(tooltip,'Acquisition cost','Confirmed free / zero cost',0.65,0.86,0.65) end
-        else add(tooltip,'Your acquisition cost','Unknown / incomplete',0.9,0.77,0.5) end
+        add(tooltip,'AZPC Cost / each',cost~=nil and money(cost) or 'No data')
         if valid and cost~=nil and age<=21600 then
             local profit=math.floor(price.unitCopper*95/100)-cost
-            add(tooltip,'Est. profit / unit (5% cut)',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
-            tooltip:AddLine('Observed results only. Listing deposit not included.',0.55,0.63,0.68,true)
-        elseif valid and age>21600 then
-            tooltip:AddLine('Price too old for a profit estimate. Browse this item again.',0.9,0.77,0.5,true)
-        end
+            add(tooltip,'AZPC Est. profit / each*',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
+            tooltip:AddLine('*After 5% AH cut; excludes deposit.',0.55,0.55,0.55)
+        else add(tooltip,'AZPC Est. profit / each','No data',0.65,0.65,0.65) end
         if type(tooltip.Show)=='function' then tooltip:Show() end
     end
     local function clear(tooltip)tooltip.azpcForeverItem=nil end

@@ -148,5 +148,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.22 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.22 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.22 - Item prices and personal costs in tooltips" --notes "Add item tooltip information: observed local AH unit prices and capture age, your complete recorded weighted-average unit cost, and estimated per-unit profit after a labeled 5% AH cut. Unknown costs remain unknown; stale prices suppress profit estimates. The collected-sale reload reminder remains included. Update the Forever addon through the launcher. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.23 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.23 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.23 - Compact coin tooltips" --notes "Compact Auctionator-style tooltip rows with coin icons, unit prices, cost and estimated profit. Missing values display No data. Update the Forever addon through the launcher. Watcher stays 0.4.40."
