@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.21"
+local addon, VERSION = ..., "0.2.22"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -146,6 +146,10 @@ local function capture()
     local region = currentRegion()
     local timestamp = GetServerTime and GetServerTime() or time()
     local lines = {"AZPCFOREVER|1|"..encode(realm).."|"..faction.."|"..region.."|"..timestamp}
+    AZPCForeverDB.tooltipPrices=AZPCForeverDB.tooltipPrices or {}
+    local tooltipScope=table.concat({region,realm:lower(),faction},'|')
+    AZPCForeverDB.tooltipPrices[tooltipScope]=AZPCForeverDB.tooltipPrices[tooltipScope] or {}
+    for id,r in pairs(rows) do AZPCForeverDB.tooltipPrices[tooltipScope][id]={unitCopper=r.price,observedAt=timestamp,scope='loaded_browse_results'} end
     for _,id in ipairs(ids) do
         local r=rows[id]
         if #lines <= 5000 then lines[#lines+1]=table.concat({r.id,encode(r.name),r.price,r.quantity,r.auctions},"|") end
@@ -1423,3 +1427,91 @@ frame:SetScript('OnEvent',function(_,event)
  local g=generation;C_Timer.After(1,function()if open and generation==g then local ok,err=pcall(capture);if not ok then message('Bank capture deferred: '..tostring(err))end end end)
 end)
 end
+
+-- BEGIN AZPC ITEM TOOLTIPS
+-- Add information through supported tooltip hooks; never replace another addon's scripts.
+do
+    local function money(value)
+        local sign=value<0 and '-' or '';value=math.abs(value)
+        return sign..math.floor(value/10000)..'g '..math.floor(value%10000/100)..'s '..(value%100)..'c'
+    end
+    local function ageText(seconds)
+        if seconds<60 then return 'just now' end
+        if seconds<3600 then return math.floor(seconds/60)..'m ago' end
+        if seconds<86400 then return math.floor(seconds/3600)..'h ago' end
+        return math.floor(seconds/86400)..'d ago'
+    end
+    local function scope()
+        local realm=GetRealmName and GetRealmName() or ''
+        local faction=UnitFactionGroup and (UnitFactionGroup('player') or ''):lower() or ''
+        local character=UnitName and UnitName('player') or ''
+        return table.concat({currentRegion(),realm:lower(),faction},'|'),realm,faction,character
+    end
+    local function add(tooltip,label,value,r,g,b)
+        if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,0.65,0.74,0.78,r or 0.9,g or 0.95,b or 0.95)
+        else tooltip:AddLine(label..': '..value,r or 0.9,g or 0.95,b or 0.95,true) end
+    end
+    local function append(tooltip,itemId)
+        itemId=number(itemId)
+        if not itemId or itemId<=0 or not tooltip or type(tooltip.AddLine)~='function' then return end
+        if tooltip.azpcForeverItem==itemId then return end
+        tooltip.azpcForeverItem=itemId
+        local db=AZPCForeverDB or {}
+        local key,realm,faction,character=scope()
+        local price=db.tooltipPrices and db.tooltipPrices[key] and db.tooltipPrices[key][itemId]
+        local now=GetServerTime and GetServerTime() or time()
+        local valid=price and number(price.unitCopper) and price.unitCopper>0 and number(price.observedAt) and price.observedAt<=now
+        tooltip:AddLine(' ')
+        tooltip:AddLine('AZPC Forever',0.3,0.87,0.83)
+        local age
+        if valid then
+            age=now-price.observedAt
+            add(tooltip,'Observed AH / unit',money(price.unitCopper))
+            add(tooltip,'Price captured',ageText(age)..(age>3600 and ' (stale)' or ''),age>3600 and 0.95 or 0.65,age>3600 and 0.75 or 0.74,0.6)
+        else add(tooltip,'AH price','Not captured — browse this item at the AH',0.9,0.77,0.5) end
+        local materials=db.crafting;local cost,free
+        if materials and not materials.costingError and not materials.vendorCostingBlocked then
+            for _,p in ipairs(materials.costing and materials.costing.positions or {}) do
+                if p.itemId==itemId and p.region==currentRegion() and p.realm==realm and p.faction==faction and p.character==character and p.quantity and p.quantity>0 then
+                    if p.costComplete==true and not p.inventoryMismatch and number(p.totalCopper) then cost=math.ceil(p.totalCopper/p.quantity);free=p.totalCopper==0 end
+                    break
+                end
+            end
+        end
+        if cost~=nil then
+            add(tooltip,'Your recorded avg / unit',money(cost))
+            if free then add(tooltip,'Acquisition cost','Confirmed free / zero cost',0.65,0.86,0.65) end
+        else add(tooltip,'Your acquisition cost','Unknown / incomplete',0.9,0.77,0.5) end
+        if valid and cost~=nil and age<=21600 then
+            local profit=math.floor(price.unitCopper*95/100)-cost
+            add(tooltip,'Est. profit / unit (5% cut)',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
+            tooltip:AddLine('Observed results only. Listing deposit not included.',0.55,0.63,0.68,true)
+        elseif valid and age>21600 then
+            tooltip:AddLine('Price too old for a profit estimate. Browse this item again.',0.9,0.77,0.5,true)
+        end
+        if type(tooltip.Show)=='function' then tooltip:Show() end
+    end
+    local function clear(tooltip)tooltip.azpcForeverItem=nil end
+    local function legacy(tooltip)
+        if type(tooltip.GetItem)~='function' then return end
+        local _,link=tooltip:GetItem()
+        if type(issecretvalue)=='function' and issecretvalue(link) then return end
+        if type(link)=='string' then append(tooltip,link:match('item:(%d+)')) end
+    end
+    for _,tooltip in ipairs({GameTooltip,ItemRefTooltip,ShoppingTooltip1,ShoppingTooltip2}) do
+        if type(tooltip.HookScript)=='function' then pcall(tooltip.HookScript,tooltip,'OnTooltipCleared',clear) end
+    end
+    local modern=false
+    if TooltipDataProcessor and type(TooltipDataProcessor.AddTooltipPostCall)=='function' and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item then
+        modern=pcall(TooltipDataProcessor.AddTooltipPostCall,Enum.TooltipDataType.Item,function(tooltip,data)
+            local ok,err=pcall(append,tooltip,data and data.id)
+            if not ok then clear(tooltip) end
+        end)
+    end
+    if not modern then
+        for _,tooltip in ipairs({GameTooltip,ItemRefTooltip,ShoppingTooltip1,ShoppingTooltip2}) do
+            if type(tooltip.HookScript)=='function' then pcall(tooltip.HookScript,tooltip,'OnTooltipSetItem',function(t)local ok=pcall(legacy,t);if not ok then clear(t) end end) end
+        end
+    end
+end
+-- END AZPC ITEM TOOLTIPS

@@ -16,6 +16,8 @@ SlashCmdList.AZPCFOREVER('capture')
 local snapshot=AZPCForeverDB.snapshots[1].export
 assert(snapshot=='AZPCFOREVER|1|Forever%20Test|horde|1|1790830800;2447|Peace%3B%20bloom%7C%25|100|25|0',snapshot)
 SlashCmdList.AZPCFOREVER('capture');assert(#AZPCForeverDB.snapshots==1)
+assert(AZPCForeverDB.tooltipPrices['1|forever test|horde'][2447].unitCopper==100,'tooltip cache uses the lowest observed unit price')
+assert(AZPCForeverDB.tooltipPrices['1|forever test|horde'][2447].observedAt==stamp,'tooltip cache records capture age')
 C_AuctionHouse=nil
 function GetNumAuctionItems() return 1 end
 function GetAuctionItemInfo() return 'Peacebloom',nil,5,nil,nil,nil,nil,nil,nil,500,nil,nil,nil,nil,nil,nil,2447 end
