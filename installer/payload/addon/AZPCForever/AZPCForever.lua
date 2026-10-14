@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.26"
+local addon, VERSION = ..., "0.2.27"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1556,7 +1556,7 @@ do
     local function model(recipe,batch)
         batch=math.max(1,math.min(999,number(batch) or 1))
         local out={rows={},cost=0,complete=recipe and recipe.materialsKnown==true,batch=batch}
-        if not recipe then out.complete=false;return out end
+        if not recipe then out.complete=false;out.cost=nil;return out end
         for _,m in ipairs(recipe.reagents or {})do
             local needed=m.quantity*batch
             local held=count(m.itemId)
@@ -1577,7 +1577,9 @@ do
         local modern=ProfessionsFrame and ProfessionsFrame.CraftingPage
         local form=modern and modern.SchematicForm
         local details=TradeSkillFrame and TradeSkillFrame.DetailsFrame
-        local id=form and ((form.recipeInfo and form.recipeInfo.recipeID) or form.recipeID) or details and details.selectedRecipeID
+        -- Forever's schematic stores currentRecipeInfo and exposes GetRecipeInfo().
+        local info=form and (api(form,'GetRecipeInfo') or form.currentRecipeInfo or form.recipeInfo)
+        local id=info and info.recipeID or form and form.recipeID or details and details.selectedRecipeID
         if not id and modern and modern.RecipeList and type(modern.RecipeList.GetSelectedRecipeID)=='function' then id=modern.RecipeList:GetSelectedRecipeID() end
         if id and AZPCForeverCrafting and AZPCForeverCrafting.ReadRecipe then
             local recipe=AZPCForeverCrafting.ReadRecipe(id);if recipe then return recipe end

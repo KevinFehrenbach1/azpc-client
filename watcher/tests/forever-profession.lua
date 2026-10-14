@@ -17,6 +17,7 @@ local f=assert(io.open('addons/forever/AZPCForever/AZPCForever.lua'));local sour
 local block=assert(source:match('%-%- BEGIN AZPC PROFESSION PANEL\n(.-)%-%- END AZPC PROFESSION PANEL'))
 assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
 local p=AZPCForeverProfession
+assert(p.Model(nil,1).cost==nil,'no recipe must display No data, never zero cost')
 local recipe={name='Test',recipeId=1,materialsKnown=true,outputItemId=2996,outputMin=1,outputMax=1,reagents={{itemId=2589,quantity=2},{itemId=2320,quantity=1}}}
 local m=p.Model(recipe,1);assert(m.cost==50 and m.profit==45);assert(m.rows[1].missing==0)
 m=p.Model(recipe,3);assert(m.rows[1].needed==6 and m.rows[1].missing==1 and m.rows[2].missing==1);assert(m.cost==nil and m.profit==nil,'missing stock has no recorded purchase cost')
@@ -40,6 +41,10 @@ AZPCForeverCrafting={ReadRecipe=function(id)called=id;return recipe end}
 assert(p.ReadSelection()==recipe and called==123)
 TradeSkillFrame=nil;ProfessionsFrame={CraftingPage={SchematicForm={recipeInfo={recipeID=456}}}}
 assert(p.ReadSelection()==recipe and called==456)
+ProfessionsFrame.CraftingPage.SchematicForm={currentRecipeInfo={recipeID=789}}
+assert(p.ReadSelection()==recipe and called==789,'Forever uses currentRecipeInfo')
+ProfessionsFrame.CraftingPage.SchematicForm={GetRecipeInfo=function()return {recipeID=790}end}
+assert(p.ReadSelection()==recipe and called==790,'prefer the schematic public getter')
 print('PASS: batch math, missing quantities, unknown/stale profit, character isolation, recipe selection and explicit guarded AH searches')
 -- Exercise the real panel construction and controls, not just its calculations.
 UIParent={}
