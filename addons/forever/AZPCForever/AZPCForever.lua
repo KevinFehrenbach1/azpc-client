@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.24"
+local addon, VERSION = ..., "0.2.25"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -194,7 +194,7 @@ SlashCmdList.AZPCFOREVER=function(command)
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
         message(ok and "Mailbox checked. /reload saves records for My Trades." or tostring(err))
-    else setup(); message("v"..VERSION.." | "..#AZPCForeverDB.snapshots.." saved captures | "..#(AZPCForeverDB.trades or {}).." mailbox records. /azpcf mail checks mail; /reload writes records to disk.") end
+    else setup(); message("v"..VERSION.." | "..#AZPCForeverDB.snapshots.." saved captures | "..#(AZPCForeverDB.trades or {}).." trade/history records. /azpcf mail checks mail; /reload writes records to disk.") end
 end
 
 -- Confirmed mailbox invoice ledger. No purchase intent or price scan is a trade.
@@ -305,7 +305,7 @@ captureTrades=function()
                         end
                     end
                     if not AZPCForeverDB.tradeSeen[fingerprint] or existing then
-                        if existing or #AZPCForeverDB.trades < 10000 then
+                        -- Receipts must never be blocked by the shared snapshot history count.
                             local kind=invoice=="expired" and "expired" or (invoice=="buyer" and "buy" or "sell")
                             local refundable=invoice=="seller" and number(deposit) or nil
                             -- If the invoice does not expose a refund, preserve v1 rather than guessing net proceeds.
@@ -339,7 +339,6 @@ captureTrades=function()
                                 if state and invoice~="buyer" then local remaining=quantity;for _,field in ipairs({"pending","unresolved","listed"}) do local used=math.min(remaining,state[field] or 0);state[field]=(state[field] or 0)-used;remaining=remaining-used;if remaining==0 then break end end end
                             end
                             if fresh then message("Recorded mailbox "..kind..": "..name.." x"..quantity..". /reload saves it for My Trading.") end
-                        else message("Trade ledger is full. Existing records are preserved; contact AZPC before clearing it.") end
                     end
                 end
             end
@@ -368,7 +367,7 @@ local function statusRecord(kind,id,name,q,listed,pending,unresolved,bag)
     local at=observedMillis()
     local event=table.concat({UnitGUID and UnitGUID("player") or character,realm,region,kind,id,at},":")
     local fields={"AZPCFTRADE","2",encode(event),kind,id,encode(name),q,0,at,encode(realm),faction,region,encode(character),"","","",listed or "",pending or "",unresolved or "",bag or "",""}
-    if #AZPCForeverDB.trades<10000 then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")} end
+    AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")}
 end
 local function ownerKey()
     local realm,faction,region,character=identity();if not realm then return end
