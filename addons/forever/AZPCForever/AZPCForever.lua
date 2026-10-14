@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.18"
+local addon, VERSION = ..., "0.2.21"
 -- Beta builds changed the region API from 90 to 110 without changing realms.
 -- Keep the established Forever beta market; never alias live realms.
 local function canonicalRegion(region, realm)
@@ -155,6 +155,7 @@ captureTrades=function()
     local character = (UnitName and UnitName("player")) or ""
     local guid = (UnitGUID and UnitGUID("player")) or character
     if realm == "" or character == "" or (faction ~= "horde" and faction ~= "alliance") then return end
+    if AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.BeginCapture() end
     local occurrences = {}
     local count = GetInboxNumItems() or 0
     for index=1,count do
@@ -245,6 +246,7 @@ captureTrades=function()
                             if not existing then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]=receipt end
                             local fresh=not AZPCForeverDB.tradeSeen[fingerprint]
                             AZPCForeverDB.tradeSeen[fingerprint]=true
+                            if invoice=='seller' and AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.ObserveSale(index,fingerprint,copper) end
                             if fresh then
                                 -- A terminal mail record closes one pending, unresolved or active owner quantity.
                                 local k=table.concat({region,realm,faction,character},"|")
@@ -263,6 +265,7 @@ captureTrades=function()
             end
         end
     end
+    if AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.EndCapture() end
 end
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
 tradeFrame:SetScript("OnEvent",function()

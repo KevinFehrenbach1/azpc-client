@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: lua5.1 watcher/tests/forever-addon.lua
+      - run: lua5.1 watcher/tests/forever-reload-prompt.lua
+      - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
@@ -145,5 +147,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.20 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.20 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.20 - Capture payouts before collection" --notes "Capture complete seller invoices immediately, including receipts without buyer names. Remember farmed item IDs for uncached mailbox items and preserve receipt identity when buyer names hydrate. Update the Forever addon through the launcher. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.21 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.21 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.21 - Remind after collecting auction sales" --notes "After a recorded auction payout is collected, offer Reload now or Later so the watcher can sync saved data to the AZPC account dashboard. Batch reminders, defer during combat, and never reload automatically. Update the Forever addon through the launcher. Watcher stays 0.4.40."
