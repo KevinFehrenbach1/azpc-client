@@ -1,5 +1,5 @@
--- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.27"
+-- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
+local addon, VERSION = ..., "0.2.28"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1518,6 +1518,8 @@ end
 -- BEGIN AZPC PROFESSION PANEL
 do
     local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
+    local scan,render,ownQuery
+    local tab='materials'
     local function notify(text)print('|cff4cddd4AZPC:|r '..text)end
     local function api(object,name,...)
         if object and type(object[name])=='function' then local ok,value=pcall(object[name],...);if ok then return value end end
@@ -1618,12 +1620,102 @@ do
         end
         notify('AH search is unavailable in this build. Search for '..name..'.');return false
     end
-    local render
+    local function recipeKey(recipe)
+        if not recipe then return '' end
+        local parts={currentRegion(),GetRealmName() or '',UnitName('player') or '',(UnitFactionGroup('player') or ''):lower(),recipe.recipeId or '',recipe.outputItemId or ''}
+        for _,m in ipairs(recipe.reagents or {})do parts[#parts+1]=m.itemId..':'..m.quantity end
+        return table.concat(parts,'|')
+    end
+    local function stopScan(reason)
+        if scan and scan.waiting then scan.waiting=false;scan.status=reason or 'Search cancelled' end
+    end
+    local function quote(recipe,batch)
+        local data=model(recipe,batch)
+        local complete=recipe and recipe.materialsKnown==true and #data.rows>0
+        local missingKnown=true;local total,missing=0,0
+        local now=GetServerTime and GetServerTime() or time()
+        local valid=scan and scan.complete and scan.at and now>=scan.at and now-scan.at<=21600 and scan.key==recipeKey(recipe)
+        for _,row in ipairs(data.rows)do
+            local unit=valid and scan.prices[row.itemId]
+            row.unit=unit;row.available=valid and scan.available[row.itemId]
+            row.lineCost=unit and unit*row.needed
+            if not unit or not row.available or row.available<row.needed then complete=false else total=total+row.lineCost end
+            if row.missing==nil then missingKnown=false
+            elseif row.missing>0 then
+                if not unit or not row.available or row.available<row.missing then missingKnown=false else missing=missing+row.missing*unit end
+            end
+        end
+        data.ahCost=complete and total or nil
+        data.missingCost=recipe and recipe.materialsKnown and missingKnown and missing or nil
+        local output=valid and scan.prices[recipe.outputItemId]
+        if complete and output and recipe.outputMin==recipe.outputMax then data.ahProfit=math.floor(output*95/100)*recipe.outputMin*data.batch-total end
+        return data
+    end
+    local function readResults()
+        if not scan or not scan.waiting then return end
+        local rows=api(C_AuctionHouse,'GetBrowseResults')
+        if type(rows)~='table' then return end
+        -- Reject results from an unrelated manual/addon search.
+        for _,r in ipairs(rows)do if not r.itemKey or not scan.ids[r.itemKey.itemID]then stopScan('Another AH search interrupted this one. Search All again.');return end end
+        scan.prices={};scan.available={}
+        for _,r in ipairs(rows)do
+            local id=r.itemKey.itemID;local unit=number(r.minPrice);local amount=number(r.totalQuantity)
+            if unit and unit>0 and amount then
+                scan.prices[id]=math.min(scan.prices[id] or unit,unit)
+                scan.available[id]=amount
+            end
+        end
+        if api(C_AuctionHouse,'HasFullBrowseResults')==true then
+            scan.waiting=false;scan.complete=true;scan.at=GetServerTime and GetServerTime() or time()
+            local found,total=0,0;for id in pairs(scan.ids)do total=total+1;if scan.prices[id]then found=found+1 end end
+            scan.status='Search complete • '..found..'/'..total..' items priced'
+        else scan.more=true;scan.status='Loading remaining results…' end
+        if render then render()end
+    end
+    local function searchAll(recipe)
+        recipe=recipe or selected
+        if not recipe or not recipe.materialsKnown or #(recipe.reagents or {})==0 then notify('Select a recipe with fixed materials first.');return false end
+        if not auctionOpen then notify('Open the Auction House to Search All.');return false end
+        if type(InCombatLockdown)=='function' and InCombatLockdown()then notify('Search after combat.');return false end
+        if not C_AuctionHouse or type(C_AuctionHouse.SearchForItemKeys)~='function' or type(C_AuctionHouse.GetBrowseResults)~='function' then notify('Grouped AH search is unavailable in this build.');return false end
+        if type(C_AuctionHouse.IsThrottledMessageSystemReady)=='function' and not C_AuctionHouse.IsThrottledMessageSystemReady()then notify('The AH is busy. Try again shortly.');return false end
+        local ids,keys={},{}
+        local function add(id)
+            if number(id) and id>0 and not ids[id]then
+                ids[id]=true;keys[#keys+1]=api(C_AuctionHouse,'MakeItemKey',id) or {itemID=id,itemLevel=0,itemSuffix=0,battlePetSpeciesID=0}
+            end
+        end
+        for _,m in ipairs(recipe.reagents)do add(m.itemId)end;add(recipe.outputItemId)
+        stopScan()
+        scan={key=recipeKey(recipe),ids=ids,prices={},available={},waiting=true,status='Searching all materials and output…'}
+        local current=scan
+        local sorts={{sortOrder=Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0,reverseSort=false}}
+        ownQuery=true
+        local ok=pcall(C_AuctionHouse.SearchForItemKeys,keys,sorts)
+        ownQuery=false
+        if not ok then stopScan('Search unavailable. Try again.');return false end
+        tab='ah'
+        if C_Timer and C_Timer.After then C_Timer.After(20,function()
+            if scan==current and scan.waiting then stopScan('Search timed out. Search All again.');if render then render()end end
+        end)end
+        if render then render()end
+        return true
+    end
+    local hookedQueries=false
+    local function installQueryHooks()
+        if hookedQueries or type(hooksecurefunc)~='function' or not C_AuctionHouse then return end
+        hookedQueries=true
+        for _,name in ipairs({'SendBrowseQuery','SearchForItemKeys','SendSearchQuery'})do
+            if type(C_AuctionHouse[name])=='function'then pcall(hooksecurefunc,C_AuctionHouse,name,function()
+                if not ownQuery then stopScan('Another AH search interrupted this one. Search All again.')end
+            end)end
+        end
+    end
     local function create()
         if panel then return panel end
         if not UIParent then return end
         panel=CreateFrame('Frame','AZPCForeverProfessionPanel',UIParent,'BackdropTemplate')
-        panel:SetSize(410,410);panel:SetPoint('CENTER',UIParent,'CENTER',310,0);panel:SetFrameStrata('DIALOG')
+        panel:SetSize(450,470);panel:SetPoint('CENTER',UIParent,'CENTER',310,0);panel:SetFrameStrata('DIALOG')
         panel:SetBackdrop({bgFile='Interface/Tooltips/UI-Tooltip-Background',edgeFile='Interface/Tooltips/UI-Tooltip-Border',tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
         panel:SetBackdropColor(0.035,0.055,0.06,0.97);panel:SetBackdropBorderColor(0.25,0.65,0.62)
         panel:SetMovable(true);panel:EnableMouse(true);panel:RegisterForDrag('LeftButton')
@@ -1640,50 +1732,76 @@ do
         end
         button('-',-57,function()quantity=math.max(1,quantity-1);render()end)
         button('+',-18,function()quantity=math.min(999,quantity+1);render()end)
-        text(panel,'GameFontDisableSmall',16,-98,375):SetText('Material                 Need / Bags / Missing')
-        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',16,-120);scroll:SetPoint('BOTTOMRIGHT',-34,110)
-        local child=CreateFrame('Frame',nil,scroll);child:SetSize(350,1);scroll:SetScrollChild(child);panel.child=child;panel.rows={}
-        panel.cost=text(panel,'GameFontHighlight',16,-308,375)
-        panel.profit=text(panel,'GameFontHighlight',16,-330,375)
-        panel.note=text(panel,'GameFontDisableSmall',16,-355,375);panel.note:SetText('Costs use recorded stock. Profit: 5% cut; deposit excluded.\nKeep this list open at the AH. One search per click.')
-        panel.status=text(panel,'GameFontNormalSmall',16,-388,375)
+        local function tabButton(label,x,fn)
+            local b=CreateFrame('Button',nil,panel,'UIPanelButtonTemplate');b:SetSize(120,24);b:SetPoint('TOPLEFT',x,-97);b:SetText(label);b:SetScript('OnClick',fn);return b
+        end
+        panel.materialsTab=tabButton('Materials',16,function()tab='materials';render()end)
+        panel.ahTab=tabButton('AH Cost',140,function()tab='ah';render()end)
+        panel.searchAll=tabButton('Search All',282,function()installQueryHooks();searchAll()end)
+        panel.heading=text(panel,'GameFontDisableSmall',16,-132,410)
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',16,-155);scroll:SetPoint('BOTTOMRIGHT',-34,135)
+        local child=CreateFrame('Frame',nil,scroll);child:SetSize(390,1);scroll:SetScrollChild(child);panel.child=child;panel.rows={}
+        panel.cost=text(panel,'GameFontHighlight',16,-343,410)
+        panel.missing=text(panel,'GameFontHighlight',16,-365,410)
+        panel.profit=text(panel,'GameFontHighlight',16,-387,410)
+        panel.note=text(panel,'GameFontDisableSmall',16,-411,410)
+        panel.status=text(panel,'GameFontNormalSmall',16,-449,410)
         if UISpecialFrames then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverProfessionPanel' end
         return panel
     end
     render=function()
         local p=create();if not p then return end
-        local data=model(selected,quantity)
+        if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Search All again.');scan=nil end
+        local data=tab=='ah' and quote(selected,quantity) or model(selected,quantity)
         p.name:SetText(selected and selected.name or 'Select a recipe in your profession window.')
         p.batch:SetText('Crafts: '..quantity)
+        p.heading:SetText(tab=='ah' and 'Material • quantity • unit price • subtotal' or 'Material                 Need / Bags / Missing')
+        p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
+        p.searchAll:SetText(scan and scan.waiting and 'Searching…' or 'Search All')
         for _,row in ipairs(p.rows)do row:Hide()end
         for i,m in ipairs(data.rows)do
             local row=p.rows[i]
             if not row then
-                row=CreateFrame('Frame',nil,p.child);row:SetSize(350,42);row:SetPoint('TOPLEFT',0,-(i-1)*44)
+                row=CreateFrame('Frame',nil,p.child);row:SetSize(390,42);row:SetPoint('TOPLEFT',0,-(i-1)*44)
                 row.label=row:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall');row.label:SetPoint('TOPLEFT',0,0);row.label:SetWidth(270);row.label:SetJustifyH('LEFT')
                 row.amount=row:CreateFontString(nil,'OVERLAY','GameFontDisableSmall');row.amount:SetPoint('TOPLEFT',0,-19)
                 row.button=CreateFrame('Button',nil,row,'UIPanelButtonTemplate');row.button:SetSize(66,22);row.button:SetPoint('TOPRIGHT',0,-5);row.button:SetText('Search')
-                row.button:SetScript('OnClick',function()search(row.material)end);p.rows[i]=row
+                row.button:SetScript('OnClick',function()stopScan();search(row.material)end);p.rows[i]=row
             end
             row.material=m;row.label:SetText(m.name)
-            row.amount:SetText(m.needed..' / '..(m.held or 'No data')..' / '..(m.missing or 'No data'))
-            row.button:SetEnabled(m.missing~=nil and m.missing>0 and auctionOpen);row:Show()
+            if tab=='ah' then
+                row.amount:SetText('x'..m.needed..' • '..money(m.unit)..' each • '..money(m.lineCost)..(m.available and m.available<m.needed and ' (short stock)' or ''))
+            else row.amount:SetText(m.needed..' / '..(m.held or 'No data')..' / '..(m.missing or 'No data'))end
+            row.button:SetEnabled(auctionOpen and (tab=='ah' or (m.missing~=nil and m.missing>0)) and not(scan and scan.waiting));row:Show()
         end
         p.child:SetHeight(math.max(1,#data.rows*44))
-        p.cost:SetText('Recorded material cost: '..money(data.cost))
-        p.profit:SetText('Est. profit for batch: '..money(data.profit))
-        p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved: No data' or (auctionOpen and 'AH open • Search missing materials' or 'Open the AH to search missing materials'))
+        if tab=='ah' then
+            p.cost:SetText('Est. full material AH cost: '..money(data.ahCost))
+            p.missing:SetText('Est. missing material AH cost: '..money(data.missingCost))
+            p.profit:SetText('Est. AH profit for batch: '..money(data.ahProfit))
+            p.note:SetText('Lowest unit prices × quantities; price depth not included.\nProfit: 5% cut; deposit excluded. Vendor prices may be lower.')
+            p.status:SetText(scan and scan.status or 'Open the AH, then click Search All.')
+        else
+            p.cost:SetText('Recorded material cost: '..money(data.cost));p.missing:SetText('')
+            p.profit:SetText('Est. profit for batch: '..money(data.profit))
+            p.note:SetText('Recorded stock cost. Profit: 5% cut; deposit excluded.\nUse AH Cost → Search All for market material costs.')
+            p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved: No data' or (auctionOpen and 'AH open • Search missing materials' or 'Open the AH to search missing materials'))
+        end
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Show=function()render();if panel then panel:Show()end end}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=function()render();if panel then panel:Show()end end}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED'})do pcall(events.RegisterEvent,events,event)end
+    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY'})do pcall(events.RegisterEvent,events,event)end
     local professionOpen=false
     events:SetScript('OnEvent',function(_,event)
         local ok=pcall(function()
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true
-            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false end
+            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Search All again.')
+            elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults() end
+            if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
+                scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
+            end
             if professionOpen then selected=readSelection() end
             if professionOpen or (panel and panel:IsShown())then render();if event=='TRADE_SKILL_SHOW' and panel then panel:Show()end end
         end)

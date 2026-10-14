@@ -73,3 +73,50 @@ assert(panel.rows[1].button.enabled==true,'missing material becomes searchable a
 panel.rows[1].button.scripts.OnClick();assert(calls==2 and name=='Linen Cloth')
 assert(panel.cost.text:find('No data',1,true)and panel.profit.text:find('No data',1,true))
 print('PASS: panel construction, selected recipe rendering, missing-stock UI and search button action')
+-- Grouped recipe shopping uses exact item IDs and complete, fresh search results.
+local grouped,results,full,more,ready=0,{},true,0,true
+local timeouts={}
+C_Timer={After=function(_,fn)timeouts[#timeouts+1]=fn end}
+C_AuctionHouse={
+ MakeItemKey=function(id)return {itemID=id,itemLevel=0,itemSuffix=0,battlePetSpeciesID=0}end,
+ IsThrottledMessageSystemReady=function()return ready end,
+ SearchForItemKeys=function(keys,sorts)
+  grouped=grouped+1;assert(#keys==3 and sorts[1].sortOrder==0)
+  local ids={};for _,key in ipairs(keys)do ids[key.itemID]=true end
+  assert(ids[2589]and ids[2320]and ids[2996],'search all materials plus crafted output')
+ end,
+ GetBrowseResults=function()return results end,
+ HasFullBrowseResults=function()return full end,
+ RequestMoreBrowseResults=function()more=more+1 end,
+}
+assert(p.SearchAll() and grouped==1)
+assert(p.Quote(recipe,1).ahCost==nil,'no estimate from stale cache while search pending')
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100}}
+full=false;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(more==1 and p.Quote(recipe,1).ahCost==nil,'wait for complete browse results')
+results[#results+1]={itemKey={itemID=2996},minPrice=600,totalQuantity=10};full=true
+emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
+local q=p.Quote(recipe,1)
+assert(q.ahCost==410 and q.missingCost==400 and q.ahProfit==160,'full recipe cost and only-missing cost are distinct')
+assert(p.Quote(recipe,3).ahCost==1230,'batch cost updates without another query')
+assert(panel.cost.text:find('Est. full material AH cost:',1,true))
+assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'missing material price cannot become zero')
+assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1},{itemKey={itemID=2320},minPrice=10,totalQuantity=100}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'insufficient listings must not produce a full cost')
+assert(p.SearchAll());results={{itemKey={itemID=999},minPrice=1,totalQuantity=100}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'unrelated results rejected')
+assert(p.SearchAll());for _,fn in ipairs(timeouts)do fn()end;assert(p.Quote(recipe,1).ahCost==nil,'timeout cannot reuse prior scan')
+ready=false;assert(not p.SearchAll());ready=true
+emit('AUCTION_HOUSE_CLOSED');assert(not p.SearchAll())
+print('PASS: grouped exact-ID search, complete result paging, full/missing/batch AH cost, output margin, unavailable/short/unrelated/timeout/throttle/closed guards')
+emit('AUCTION_HOUSE_SHOW')
+local queryHooks={}
+function hooksecurefunc(_,method,fn)queryHooks[method]=fn end
+C_AuctionHouse.SendBrowseQuery=function()end
+assert(p.SearchAll());queryHooks.SendBrowseQuery()
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'external queries invalidate pending scan even when item IDs overlap')
+assert(p.SearchAll());emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==410)
+moneyNow=moneyNow+21601;assert(p.Quote(recipe,1).ahCost==nil,'old completed quote cannot stay current forever')
+print('PASS: external query interruption and quote age guard')

@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.27 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.27 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.27 - Fix Forever selected recipe detection" --notes "Read the selected recipe through the Forever schematic GetRecipeInfo method and currentRecipeInfo field. Empty selection shows No data for cost instead of zero. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.28 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.28 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.28 - Recipe AH Cost shopping tab" --notes "Add an AH Cost tab with Search All for recipe materials and output, per-material unit prices and subtotals, estimated full and missing-material cost, and market profit estimates. Unknown prices remain No data. Watcher stays 0.4.40."
