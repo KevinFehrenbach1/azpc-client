@@ -44,7 +44,7 @@ function GetLootSourceInfo()return lootGuid,lootQuantity end
 local function lootChat()return 'You receive loot: '..GetLootSlotLink()..'x'..lootQuantity..'.'end
 local n=#AZPCForeverDB.crafting.materialEvents;counts[lootId]=0
 emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);emit('CHAT_MSG_LOOT',lootChat());assert(#AZPCForeverDB.crafting.materialEvents==n,'loot evidence without bags does not add stock')
-counts[lootId]=3;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n+1,'skinning leather is automatically farmed');local e=AZPCForeverDB.crafting.materialEvents[n+1];assert(e.source=='farmed' and e.quantity==3 and e.untrackedQuantity==3)
+counts[lootId]=3;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n+1,'skinning leather is automatically farmed');local e=AZPCForeverDB.crafting.materialEvents[n+1];assert(e.source=='farmed' and e.quantity==3 and e.untrackedQuantity==3);assert(AZPCForeverDB.itemIds['Light Leather']==2318,'loot remembers sale item identity before mailbox cache loads')
 emit('BAG_UPDATE_DELAYED');emit('LOOT_SLOT_CLEARED',1);assert(#AZPCForeverDB.crafting.materialEvents==n+1,'repeated notifications do not duplicate loot')
 n=n+1;lootGuid='GameObject-0-1-2-3-4-5';emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=6;emit('CHAT_MSG_LOOT',lootChat());assert(#AZPCForeverDB.crafting.materialEvents==n+1,'gathering objects also record free gains');n=n+1
 emit('LOOT_OPENED');emit('LOOT_SLOT_CLEARED',1);counts[lootId]=9;emit('BAG_UPDATE_DELAYED');assert(#AZPCForeverDB.crafting.materialEvents==n,'another player clearing a slot is insufficient')

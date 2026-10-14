@@ -148,7 +148,7 @@ local buyerName=''
 function GetInboxNumItems()return 1 end
 function GetInboxInvoiceInfo()return 'seller','Peacebloom',buyerName,0,1200,40,60,0,0,0,1 end
 function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Peacebloom',1180,0,30 end
-callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==0,'seller capture waits for invoice buyer name')
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1,'complete payout captures even before buyer name hydrates')
 buyerName='Glesmord Hillmont';stamp=stamp+1;callback(nil,'MAIL_INBOX_UPDATE');assert(#AZPCForeverDB.trades==1,'hydrated invoice records one sale')
 callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==1)
 print('PASS: actual blank-then-named invoice hydration does not duplicate sale')
@@ -173,3 +173,17 @@ AZPCForeverDB.trades={};AZPCForeverDB.tradeSeen={}
 function GetInboxInvoiceInfo()return 'buyer','Light Leather','Drox Pvp',nil,48,0,0,0,0,0,1 end
 callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==0,'missing paid amount never falls back to unrelated buyout')
 print('PASS: actual paid amount, differing invoice fields, raw evidence and missing amount guard')
+
+local queued={};C_Timer.After=function(_,fn)queued[#queued+1]=fn end
+function GetInboxNumItems()return 1 end
+function GetInboxInvoiceInfo()return 'seller','Ruined Leather Scraps',nil,0,50,100,2,0,0,0,1 end
+function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Ruined Leather Scraps',148,0,30 end
+function GetItemInfo()return nil end
+AZPCForeverDB.itemIds['Ruined Leather Scraps']=2934
+local beforeFast=#AZPCForeverDB.trades;stamp=stamp+100
+callback(nil,'MAIL_SHOW');assert(#AZPCForeverDB.trades==beforeFast+1,'seller mail captured immediately even without buyer name')
+assert(AZPCForeverDB.trades[#AZPCForeverDB.trades].tradeExport:find('|sell|2934|Ruined%%20Leather%%20Scraps|1|48|'))
+function GetInboxNumItems()return 0 end
+for _,fn in ipairs(queued)do fn()end
+assert(#AZPCForeverDB.trades==beforeFast+1,'fast gold collection and delayed callbacks do not lose or duplicate sale')
+print('PASS: gold-only sale, unavailable buyer name, immediate capture and fast collection')

@@ -184,7 +184,7 @@ captureTrades=function()
             -- Buyer Amount Paid is bid, exactly as displayed by Blizzard MailFrame.
             -- buyout can be a different field value; never substitute it for actual payment.
             -- Missing item ID/count or delayed seller proceeds stay unresolved; never assume one item.
-            if number(id) and id>0 and quantity and quantity>0 and copper and (copper>0 or invoice=="expired") and name and not (number(delay) and delay>0) and (invoice~="seller" or type(otherPlayer)=="string" and otherPlayer~="") then
+            if number(id) and id>0 and quantity and quantity>0 and copper and (copper>0 or invoice=="expired") and name and not (number(delay) and delay>0) then
                 local expiry=0
                 if type(daysLeft)=="number" and daysLeft>0 then expiry=math.floor((timestamp+daysLeft*86400+30)/60) end
                 if invoice=="expired" then
@@ -213,6 +213,10 @@ captureTrades=function()
                     local fingerprint=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,encode(otherPlayer),encode(sender),encode(subject),subjectEscapes},":")
                     occurrences[fingerprint]=(occurrences[fingerprint] or 0)+1
                     fingerprint=fingerprint..":"..occurrences[fingerprint]
+                    if invoice=='seller' and otherPlayer and otherPlayer~='' then
+                        local unnamed=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,'',encode(sender),encode(subject),subjectEscapes},':')..':'..occurrences[fingerprint:match('^(.*):%d+$')]
+                        if AZPCForeverDB.tradeSeen[unnamed]then fingerprint=unnamed end
+                    end
                     local oldExport=encode(fingerprint)
                     local existing
                     if AZPCForeverDB.tradeSeen[fingerprint] then
@@ -262,6 +266,7 @@ captureTrades=function()
 end
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
 tradeFrame:SetScript("OnEvent",function()
+    local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err))end
     C_Timer.After(0.5,function() local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err)) end end)
 end)
 
@@ -1014,6 +1019,7 @@ local function record(kind,id,q,name,extra,eventId)
  local c=d();if #c.materialEvents>=10000 then message('Material ledger full; existing data preserved.');return end
  for _,e in ipairs(c.materialEvents)do if eventId and e.eventId==eventId then return end end
  c.materialSequence=(c.materialSequence or 0)+1
+ AZPCForeverDB.itemIds=AZPCForeverDB.itemIds or {};if type(name)=='string' and id then AZPCForeverDB.itemIds[name]=id end
  local e=current();e.kind=kind;e.itemId=id;e.quantity=q;e.name=name or ('Item '..id);e.observedAt=observedMillis();e.eventId=eventId or tostring(UnitGUID('player'))..':material:'..e.observedAt..':'..c.materialSequence;e.confirmation='material_quantity_confirmed'
  for k,v in pairs(extra or {})do e[k]=v end;c.materialEvents[#c.materialEvents+1]=e
  AZPCForeverCrafting.RebuildCosts();return e
