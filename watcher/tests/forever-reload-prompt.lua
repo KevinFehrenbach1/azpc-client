@@ -11,7 +11,7 @@ C_Timer={After=function(_,fn)timers[#timers+1]=fn end}
 function CreateFrame()local f={events={}};frames[#frames+1]=f;function f:RegisterEvent(e)self.events[e]=true end;function f:SetScript(_,fn)self.handler=fn end;return f end
 local function emit(event)for _,f in ipairs(frames)do if f.events[event]then f.handler(f,event)end end end
 local function flush()local current=timers;timers={};for _,fn in ipairs(current)do fn()end end
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverSyncPrompt.lua'))()
+local file=assert(io.open('addons/forever/AZPCForever/AZPCForever.lua','r'));local source=file:read('*a');file:close();local reminder=assert(source:match('%-%- BEGIN AZPC SALE SYNC REMINDER\n(.-)%-%- END AZPC SALE SYNC REMINDER'));assert((loadstring or load)(reminder))()
 local p=AZPCForeverSyncPrompt
 local function observe(sales)p.BeginCapture();for i,sale in ipairs(sales)do p.ObserveSale(i,sale[1],sale[2])end;p.EndCapture()end
 emit('MAIL_SHOW');observe({{'sale1',200},{'sale2',300}});flush();assert(#shown==0,'opening captured sales must not prompt')

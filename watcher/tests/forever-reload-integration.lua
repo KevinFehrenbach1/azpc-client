@@ -19,7 +19,6 @@ function GetInboxNumItems()return visible and 1 or 0 end
 function GetInboxInvoiceInfo()return 'seller','Light Leather','Buyer',0,210,0,10,0,0,0,2 end
 function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Light Leather',200,0,30 end
 function GetItemInfo(name)return name,'|Hitem:2318|h[Light Leather]|h'end
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverSyncPrompt.lua'))()
 assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
 emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==1);assert(popups==0,'saved sale visible in mailbox must not prompt')
 hooks.TakeInboxMoney(1);visible=false;money=1200;emit('PLAYER_MONEY');emit('MAIL_INBOX_UPDATE');flush();assert(popups==1,'real receipt capture must reach the collected-payout prompt');assert(#AZPCForeverDB.trades==1,'prompt must not duplicate or delete sale records')
