@@ -1,5 +1,5 @@
 -- AZPC Forever: read-only AH collector. Does not buy, sell, or issue auction queries.
-local addon, VERSION = ..., "0.2.23"
+local addon, VERSION = ..., "0.2.24"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -7,6 +7,7 @@ AZPCForeverSyncPrompt = {}
 local prompt = AZPCForeverSyncPrompt
 local visible, capturing, pending = {}, {}, {}
 local mailboxOpen, reminded, queued, timerPending = false, false, false, false
+local dirty=false
 local popupKey = 'AZPC_FOREVER_SYNC_SALES'
 local function inCombat() return type(InCombatLockdown)=='function' and InCombatLockdown() end
 local function showReminder()
@@ -14,12 +15,12 @@ local function showReminder()
     if not queued then return end
     if inCombat() then return end
     if type(StaticPopup_Show)~='function' or type(StaticPopupDialogs)~='table' then return end
-    queued=false
+    queued=false;dirty=false
     StaticPopup_Show(popupKey)
 end
 if type(StaticPopupDialogs)=='table' then
     StaticPopupDialogs[popupKey]={
-        text='Auction sale collected!\n\nReloading saves your latest data so the AZPC Watcher can sync it to your account dashboard at azpc.market.\n\nYour watcher must be running and connected. Reload now?',
+        text='Auction data recorded!\n\nReloading saves your latest data so the AZPC Watcher can sync it to your account dashboard at azpc.market.\n\nYour watcher must be running and connected. Reload now?',
         button1='Reload now',button2='Later',timeout=0,whileDead=true,hideOnEscape=true,preferredIndex=3,
         OnAccept=function()
             if inCombat() then queued=true;return end
@@ -47,6 +48,7 @@ local function confirmCollected()
         end
     end
 end
+function prompt.MarkDirty() dirty=true end
 function prompt.BeginCapture() capturing={} end
 function prompt.ObserveSale(index,fingerprint,amount)
     if not mailboxOpen or type(GetMoney)~='function' or not amount or amount<=0 then return end
@@ -57,7 +59,9 @@ local events=CreateFrame('Frame')
 for _,event in ipairs({'MAIL_SHOW','MAIL_CLOSED','PLAYER_MONEY','PLAYER_REGEN_ENABLED'}) do pcall(events.RegisterEvent,events,event) end
 events:SetScript('OnEvent',function(_,event)
     if event=='MAIL_SHOW' then mailboxOpen=true;reminded=false;visible={};pending={}
-    elseif event=='MAIL_CLOSED' then mailboxOpen=false;visible={};pending={}
+    elseif event=='MAIL_CLOSED' then
+        mailboxOpen=false;visible={};pending={}
+        if dirty then queueReminder() end
     elseif event=='PLAYER_MONEY' then confirmCollected()
     elseif event=='PLAYER_REGEN_ENABLED' then showReminder() end
 end)
@@ -323,6 +327,7 @@ captureTrades=function()
                             AZPCForeverDB.tradeSeen[fingerprint]=true
                             if invoice=='seller' and AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.ObserveSale(index,fingerprint,copper) end
                             if fresh then
+                                if AZPCForeverSyncPrompt and (invoice=="seller" or invoice=="expired") then AZPCForeverSyncPrompt.MarkDirty() end
                                 -- A terminal mail record closes one pending, unresolved or active owner quantity.
                                 local k=table.concat({region,realm,faction,character},"|")
                                 AZPCForeverDB.settledOwners=AZPCForeverDB.settledOwners or {}

@@ -26,3 +26,8 @@ observe({{'sale4',100}});hooks.TakeInboxMoney(1);observe({});flush();assert(#sho
 combat=true;money=1800;emit('PLAYER_MONEY');flush();assert(#shown==1,'defer the popup during combat');combat=false;emit('PLAYER_REGEN_ENABLED');assert(#shown==2,'show deferred reminder after combat')
 combat=true;dialog.OnAccept();assert(reloads==1,'do not reload if combat began while popup was open');combat=false;emit('PLAYER_REGEN_ENABLED');assert(#shown==3);dialog.OnAccept();assert(reloads==2)
 print('PASS: confirmed collection only, batch debounce, Later without nagging, combat deferral and explicit reload')
+
+emit('MAIL_CLOSED');emit('MAIL_SHOW');p.MarkDirty();flush();assert(#shown==3,'new records should not interrupt mailbox browsing')
+emit('MAIL_CLOSED');flush();assert(#shown==4,'new expiration data must prompt when closing mailbox')
+emit('MAIL_SHOW');emit('MAIL_CLOSED');flush();assert(#shown==4,'already acknowledged records must not nag again')
+emit('MAIL_SHOW');p.MarkDirty();combat=true;emit('MAIL_CLOSED');flush();assert(#shown==4);combat=false;emit('PLAYER_REGEN_ENABLED');assert(#shown==5,'mailbox-close fallback must defer during combat')
