@@ -1036,8 +1036,7 @@ AZPCForeverCrafting.ApplyMaterialCommands=function()
  for _,command in ipairs(AZPCForeverMaterialCommands or {})do local ok,err=pcall(free,command);if not ok then message('Material classification deferred: '..tostring(err))end end
 end
 -- Loot provenance plus self-loot text and bag confirmation; never infer from bags alone.
-local lootSlots,lootBase,lootCleared,lootSelf={},{},{},{}
-local lootGeneration=0
+local lootWindows,currentLoot={},nil
 local function lootPattern(format)
  if type(format)~='string'then return nil end
  local p=format:gsub('([%^%$%(%)%%%.%[%]%*%+%-%?])','%%%1')
@@ -1045,16 +1044,30 @@ local function lootPattern(format)
  return '^'..p..'$'
 end
 local function confirmLoot()
- for id,r in pairs(lootCleared)do
-  local q=r.quantity
-  if q>0 and (lootSelf[id]or 0)>=q and held(id)-(lootBase[id]or held(id))==q then
-   record('free',id,q,r.name,{source='farmed',untrackedQuantity=q,heldQuantity=held(id)})
-   lootBase[id]=held(id);lootSelf[id]=(lootSelf[id]or 0)-q;lootCleared[id]=nil
+ local now=GetServerTime and GetServerTime()or time()
+ for index,window in ipairs(lootWindows)do
+  for id,r in pairs(window.items)do
+   local q=r.received-r.recorded
+   if q>0 and held(id)-r.base>=q then
+    record('free',id,q,r.name,{source='farmed',untrackedQuantity=q,heldQuantity=held(id)})
+    r.recorded=r.recorded+q;r.base=r.base+q
+    -- Later windows may have opened before the bags reflected this receipt.
+    for later=index+1,#lootWindows do local other=lootWindows[later].items[id];if other then other.base=math.max(other.base,r.base)end end
+   end
+  end
+ end
+ for i=#lootWindows,1,-1 do
+  local window=lootWindows[i]
+  if window.closed and now-window.closed>=30 then
+   for _,r in pairs(window.items)do if r.received>r.recorded then message('Loot capture unresolved: '..r.name..' (bag confirmation missing).')end end
+   table.remove(lootWindows,i)
   end
  end
 end
 local function openLoot()
- confirmLoot();lootSlots={};lootBase={};lootCleared={};lootSelf={};lootGeneration=lootGeneration+1
+ confirmLoot()
+ if currentLoot and not currentLoot.closed then currentLoot.closed=GetServerTime and GetServerTime()or time()end
+ currentLoot={items={}};lootWindows[#lootWindows+1]=currentLoot
  for slot=1,(call(GetNumLootItems)or 0)do
   local link=call(GetLootSlotLink,slot);local id=type(link)=='string'and tonumber(link:match('item:(%d+)'))
   local _,name,q=call(GetLootSlotInfo,slot)
@@ -1063,17 +1076,21 @@ local function openLoot()
    local sources={GetLootSourceInfo(slot)};safe=#sources>0
    for i=1,#sources,2 do local guid=sources[i];if type(guid)~='string'or not(guid:match('^Creature%-')or guid:match('^Vehicle%-')or guid:match('^GameObject%-'))then safe=false end end
   end
-  if safe and id and q and q>0 then lootSlots[slot]={itemId=id,name=name,quantity=q};if lootBase[id]==nil then lootBase[id]=held(id)end end
+  if safe and id and q and q>0 then
+   local r=currentLoot.items[id]
+   if r then r.available=r.available+q else currentLoot.items[id]={name=name,available=q,received=0,recorded=0,base=held(id)}end
+  end
  end
 end
 local function selfLoot(text)
- if type(text)~='string'then return end
+ if type(text)~='string'or not currentLoot then return end
  local link,q
  local multi=lootPattern(LOOT_ITEM_SELF_MULTIPLE);local single=lootPattern(LOOT_ITEM_SELF)
  if multi then link,q=text:match(multi)end
  if not link and single then link=text:match(single);q=1 end
  local id=link and tonumber(link:match('item:(%d+)'));q=tonumber(q)
- if id and lootBase[id]~=nil and q and q>0 then lootSelf[id]=(lootSelf[id]or 0)+q;confirmLoot()end
+ local r=id and currentLoot.items[id]
+ if r and q and q>0 then r.received=math.min(r.available,r.received+q);confirmLoot()end
 end
 local sentItems,sendPending={},nil
 local inbox,incoming,baseline,generation={},{},{},0
@@ -1117,9 +1134,11 @@ frame:SetScript('OnEvent',function(_,event,arg)
   elseif event=='MAIL_FAILED'then sendPending=nil
   elseif event=='MAIL_SHOW'or event=='MAIL_INBOX_UPDATE'then reconcile(generation);inboxCatalog()
   elseif event=='LOOT_OPENED'then openLoot()
-  elseif event=='LOOT_SLOT_CLEARED'then local r=lootSlots[arg];if r then local prev=lootCleared[r.itemId];if prev then prev.quantity=prev.quantity+r.quantity else lootCleared[r.itemId]={quantity=r.quantity,name=r.name}end;lootSlots[arg]=nil;confirmLoot()end
+  elseif event=='LOOT_SLOT_CLEARED'then confirmLoot()
   elseif event=='CHAT_MSG_LOOT'then selfLoot(arg)
-  elseif event=='LOOT_CLOSED'then confirmLoot();local g=lootGeneration;C_Timer.After(2,function()if g==lootGeneration then confirmLoot();lootSlots={};lootCleared={};lootSelf={};lootBase={}end end)
+  elseif event=='LOOT_CLOSED'then
+   if currentLoot then currentLoot.closed=GetServerTime and GetServerTime()or time()end
+   confirmLoot();C_Timer.After(2,confirmLoot);C_Timer.After(30,confirmLoot)
   elseif event=='BAG_UPDATE_DELAYED'then reconcile(generation);confirmLoot()
   elseif event=='MAIL_CLOSED'then reconcile(generation);incoming={};baseline={};generation=generation+1 end
  end);if not ok then message('Material capture deferred: '..tostring(err))end
