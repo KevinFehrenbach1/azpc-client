@@ -16,6 +16,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: lua5.1 watcher/tests/forever-addon.lua
       - run: lua5.1 watcher/tests/forever-tooltips.lua
+      - run: lua5.1 watcher/tests/forever-profession.lua
       - run: lua5.1 watcher/tests/forever-reload-prompt.lua
       - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
