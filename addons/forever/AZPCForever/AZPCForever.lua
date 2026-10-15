@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.33"
+local addon, VERSION = ..., "0.2.34"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1530,14 +1530,14 @@ do
     local function itemName(id)
         return (GetItemInfo and GetItemInfo(id)) or (C_Item and api(C_Item,'GetItemNameByID',id)) or ('Item '..id)
     end
-    local function money(copper)
+    local function money(copper,iconSize)
         if copper==nil then return 'No data' end
         local sign=copper<0 and '-' or '';copper=math.abs(copper)
         local parts={}
         for _,coin in ipairs({{10000,'Gold'},{100,'Silver'},{1,'Copper'}})do
             local amount=math.floor(copper/coin[1]);copper=copper%coin[1]
             if amount>0 or (coin[1]==1 and #parts==0)then
-                parts[#parts+1]=amount..'|TInterface\\MoneyFrame\\UI-'..coin[2]..'Icon:11:11:1:0|t'
+                parts[#parts+1]=amount..'|TInterface\\MoneyFrame\\UI-'..coin[2]..'Icon:'..(iconSize or 12)..':'..(iconSize or 12)..':1:0|t'
             end
         end
         return sign..table.concat(parts,' ')
@@ -1769,7 +1769,7 @@ do
     end
     local function typography(text,style,size)
         local heading=style=='GameFontNormalLarge' or style=='GameFontNormalSmall'
-        if type(text.SetFont)=='function'then text:SetFont(heading and 'Fonts/FRIZQT__.TTF' or 'Fonts/ARIALN.TTF',size or (style=='GameFontNormalLarge' and 18 or (style=='GameFontDisableSmall' and 11 or 12)),'')end
+        if type(text.SetFont)=='function'then text:SetFont('Fonts/FRIZQT__.TTF',size or (style=='GameFontNormalLarge' and 18 or (style=='GameFontDisableSmall' and 10 or 12)),'')end
         if style=='GameFontDisableSmall'then text:SetTextColor(0.65,0.69,0.68)
         elseif heading then text:SetTextColor(0.94,0.79,0.42)else text:SetTextColor(0.92,0.94,0.91)end
         if type(text.SetShadowColor)=='function'then text:SetShadowColor(0,0,0,0.8);text:SetShadowOffset(1,-1)end
@@ -1806,13 +1806,13 @@ do
         if panel then return panel end
         if not page or not page.ready then return end
         panel=CreateFrame('Frame','AZPCForeverProfessionPanel',page,'BackdropTemplate')
-        panel:SetPoint('TOPLEFT',page,'TOPLEFT',224,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
+        panel:SetPoint('TOPLEFT',page,'TOPLEFT',236,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
         surface(panel,0.025,0.037,0.04)
         panel:EnableMouse(true)
-        panel.icon=panel:CreateTexture(nil,'ARTWORK');panel.icon:SetSize(44,44);panel.icon:SetPoint('TOPLEFT',16,-16)
-        panel.iconBorder=panel:CreateTexture(nil,'OVERLAY');panel.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');panel.iconBorder:SetSize(66,66);panel.iconBorder:SetPoint('CENTER',panel.icon,'CENTER')
-        panel.name=uiText(panel,'GameFontNormalLarge',66,-18,320);panel.name:SetTextColor(0.95,0.94,0.87);typography(panel.name,'GameFontHighlight',20)
-        panel.subtitle=uiText(panel,'GameFontDisableSmall',66,-43,320)
+        panel.icon=panel:CreateTexture(nil,'ARTWORK');panel.icon:SetSize(58,58);panel.icon:SetPoint('TOPLEFT',16,-16)
+        panel.iconBorder=panel:CreateTexture(nil,'OVERLAY');panel.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');panel.iconBorder:SetSize(85,85);panel.iconBorder:SetPoint('CENTER',panel.icon,'CENTER')
+        panel.name=uiText(panel,'GameFontNormalLarge',86,-20,290);panel.name:SetTextColor(0.95,0.94,0.87);typography(panel.name,'GameFontHighlight',22)
+        panel.subtitle=uiText(panel,'GameFontDisableSmall',86,-53,290)
         local crafts=uiText(panel,'GameFontNormalSmall',0,0,90)
         crafts:ClearAllPoints();crafts:SetPoint('TOPRIGHT',-12,-15);crafts:SetJustifyH('RIGHT');crafts:SetText('Crafts')
         panel.minus=uiButton(panel,'-',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
@@ -1826,20 +1826,27 @@ do
         panel.batch:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
         panel.minus:SetScript('OnClick',function()quantity=math.max(1,quantity-1);render()end)
         panel.plus:SetScript('OnClick',function()quantity=math.min(999,quantity+1);render()end)
-        panel.market=uiText(panel,'GameFontHighlightSmall',16,-91,330)
-        panel.searchAll=uiButton(panel,'Scan prices',126,30,true);panel.searchAll:SetPoint('TOPRIGHT',-14,-78)
+        panel.headerRule=panel:CreateTexture(nil,'BORDER');panel.headerRule:SetTexture('Interface/Buttons/WHITE8X8');panel.headerRule:SetVertexColor(0.45,0.36,0.20,0.65);panel.headerRule:SetHeight(1);panel.headerRule:SetPoint('TOPLEFT',14,-82);panel.headerRule:SetPoint('TOPRIGHT',-14,-82)
+        panel.market=uiText(panel,'GameFontHighlightSmall',16,-104,330)
+        panel.searchAll=uiButton(panel,'Scan prices',138,32,true);panel.searchAll:SetPoint('TOPRIGHT',-14,-91)
         panel.searchAll:SetScript('OnClick',function()installQueryHooks();searchAll()end)
-        local headings={{'Material',0,126},{'Need',130,28},{'Bags',163,28},{'Missing',194,44},{'Unit price',244,78},{'Total',330,78}}
-        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-124);panel.tableHeader:SetPoint('TOPRIGHT',-14,-124);panel.tableHeader:SetHeight(26)
+        local headings={{'Material',0,126},{'Need',128,34},{'Bags',166,34},{'Missing',204,52},{'Unit price',264,70},{'Total',338,70}}
+        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-137);panel.tableHeader:SetPoint('TOPRIGHT',-14,-137);panel.tableHeader:SetHeight(26)
         surface(panel.tableHeader,0.065,0.065,0.055,{0.25,0.23,0.17})
-        for _,h in ipairs(headings)do uiText(panel.tableHeader,'GameFontNormalSmall',h[2]+4,-7,h[3],h[2]>0 and 'RIGHT' or 'LEFT'):SetText(h[1])end
-        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-153);scroll:SetPoint('BOTTOMRIGHT',-30,166)
-        panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(506,1);scroll:SetScrollChild(panel.child);panel.rows={}
+        panel.columnHeaders={}
+        for _,h in ipairs(headings)do
+            local text=uiText(panel.tableHeader,h[2]==0 and 'GameFontNormalSmall' or 'GameFontHighlightSmall',h[2]+(h[2]==0 and 4 or 0),-7,h[3],h[2]==0 and 'LEFT' or (h[2]<264 and 'CENTER' or 'RIGHT'))
+            typography(text,h[2]==0 and 'GameFontNormalSmall' or 'GameFontHighlightSmall',11)
+            if h[1]=='Missing'then text:SetTextColor(1,0.79,0.3)end
+            text:SetText(h[1]);panel.columnHeaders[h[1]]=text
+        end
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-166);scroll:SetPoint('BOTTOMRIGHT',-30,166)
+        panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(498,1);scroll:SetScrollChild(panel.child);panel.rows={}
         local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy opens AH listings. You choose quantity and confirm.')
         panel.cards={}
         for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
-            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(164,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*170,47)
-            surface(card,0.04,0.045,0.043,{0.30,0.26,0.18})
+            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(160,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*166,47)
+            surface(card,0.04,0.045,0.043,{0.45,0.36,0.20})
             card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
             card.title:SetText(label)
             card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',22)
@@ -1870,16 +1877,16 @@ do
         for i,m in ipairs(data.rows)do
             local row=p.rows[i]
             if not row then
-                row=CreateFrame('Frame',nil,p.child,'BackdropTemplate');row:SetSize(506,46);row:SetPoint('TOPLEFT',0,-(i-1)*48)
+                row=CreateFrame('Frame',nil,p.child,'BackdropTemplate');row:SetSize(498,46);row:SetPoint('TOPLEFT',0,-(i-1)*48)
                 surface(row,0.035,0.047,0.049,{0.11,0.14,0.14})
                 row.icon=row:CreateTexture(nil,'ARTWORK');row.icon:SetSize(22,22);row.icon:SetPoint('LEFT',4,0)
                 row.label=uiText(row,'GameFontHighlightSmall',31,-15,94)
-                row.need=uiText(row,'GameFontHighlightSmall',130,-16,28,'RIGHT')
-                row.bags=uiText(row,'GameFontHighlightSmall',163,-16,28,'RIGHT')
-                row.missing=uiText(row,'GameFontHighlightSmall',194,-16,44,'RIGHT')
-                row.unit=uiText(row,'GameFontHighlightSmall',244,-16,78,'RIGHT')
-                row.total=uiText(row,'GameFontHighlightSmall',330,-16,78,'RIGHT')
-                row.button=uiButton(row,'Buy',62,26,true);row.button:SetPoint('TOPLEFT',438,-10)
+                row.need=uiText(row,'GameFontHighlightSmall',128,-16,34,'CENTER')
+                row.bags=uiText(row,'GameFontHighlightSmall',166,-16,34,'CENTER')
+                row.missing=uiText(row,'GameFontHighlightSmall',204,-16,52,'CENTER')
+                row.unit=uiText(row,'GameFontHighlightSmall',264,-16,70,'RIGHT')
+                row.total=uiText(row,'GameFontHighlightSmall',338,-16,70,'RIGHT')
+                row.button=uiButton(row,'Buy',62,26,true);row.button:SetPoint('TOPLEFT',430,-10)
                 row.button:SetScript('OnClick',function()buyMaterial(row.material)end);p.rows[i]=row
             end
             row.material=m;row.icon:SetTexture(itemIcon(m.itemId));row.label:SetText(m.name)
@@ -1889,10 +1896,10 @@ do
             row.button:SetEnabled(auctionOpen and m.missing~=nil and m.missing>0 and not(scan and scan.waiting));row:Show()
         end
         p.child:SetHeight(math.max(1,#data.rows*48))
-        p.cost:SetText(money(data.ahCost));p.missing:SetText('To buy missing: '..money(data.missingCost))
-        p.sale:SetText(money(data.salePrice))
+        p.cost:SetText(money(data.ahCost,18));p.missing:SetText('To buy missing: '..money(data.missingCost))
+        p.sale:SetText(money(data.salePrice,18))
         p.cards[3].title:SetText(quantity==1 and 'Est. profit / craft' or 'Est. profit / batch')
-        p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit))
+        p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit,18))
         if data.ahProfit==nil then p.profit:SetTextColor(0.65,0.67,0.67)
         elseif data.ahProfit<0 then p.profit:SetTextColor(1,0.4,0.4)else p.profit:SetTextColor(0.48,0.9,0.48)end
         p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved • No data' or (scan and scan.complete and not data.quoteFresh and 'Prices are stale. Scan prices again.' or (scan and scan.status or 'Choose a recipe, then Scan prices.')))
@@ -1964,11 +1971,11 @@ do
         for i,recipe in ipairs(rows)do
             local button=page.recipeRows[i]
             if not button then
-                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(192,36);button:SetPoint('TOPLEFT',0,-(i-1)*38)
+                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(204,38);button:SetPoint('TOPLEFT',0,-(i-1)*40)
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
                 button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',7,0)
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
-                button.name=font(button,'GameFontHighlightSmall',35,-12,151)
+                button.name=font(button,'GameFontHighlightSmall',37,-12,161)
                 button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
                 page.recipeRows[i]=button
             end
@@ -1979,7 +1986,7 @@ do
             local icon=recipe.outputItemId and ((C_Item and api(C_Item,'GetItemIconByID',recipe.outputItemId)) or (GetItemIcon and GetItemIcon(recipe.outputItemId)))
             button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
         end
-        page.listChild:SetHeight(math.max(1,#rows*38))
+        page.listChild:SetHeight(math.max(1,#rows*40))
         page.empty:SetText(#rows==0 and (filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
         for _,button in ipairs(page.menuRows)do button:Hide()end
         local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
@@ -2022,19 +2029,19 @@ do
         end)
         page.tabButton=button
         font(page,'GameFontNormalLarge',12,-13,200):SetText('RECIPES')
-        page.profession=uiButton(page,'All professions',200,27);page.profession:SetPoint('TOPLEFT',12,-40)
+        page.profession=uiButton(page,'All professions',212,29);page.profession:SetPoint('TOPLEFT',12,-40)
         page.professionArrow=page.profession:CreateTexture(nil,'OVERLAY');page.professionArrow:SetTexture('Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up');page.professionArrow:SetSize(18,18);page.professionArrow:SetPoint('RIGHT',-5,0)
         page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
-        page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(200,27);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
+        page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(212,29);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);if page.search.SetFont then page.search:SetFont('Fonts/FRIZQT__.TTF',12,'')end;page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
         page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';refreshBrowser()end)
         page.search:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
         page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
         page.placeholder=font(page.search,'GameFontDisableSmall',8,-8,182);page.placeholder:SetText('Search recipes…')
         page.search:HookScript('OnTextChanged',function(self)if self:GetText()==''then page.placeholder:Show()else page.placeholder:Hide()end end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-134);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(192)
-        page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(192,1);scroll:SetScrollChild(page.listChild)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-134);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={}
-        page.empty=font(page,'GameFontHighlightSmall',18,-155,182)
+        page.empty=font(page,'GameFontHighlightSmall',18,-155,194)
         page.count=font(page,'GameFontDisableSmall',12,-114,200)
         local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
