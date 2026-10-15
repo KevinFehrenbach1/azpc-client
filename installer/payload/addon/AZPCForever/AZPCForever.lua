@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.32"
+local addon, VERSION = ..., "0.2.33"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1533,11 +1533,12 @@ do
     local function money(copper)
         if copper==nil then return 'No data' end
         local sign=copper<0 and '-' or '';copper=math.abs(copper)
-        if GetCoinTextureString then return sign..GetCoinTextureString(copper) end
         local parts={}
-        for _,coin in ipairs({{10000,'g'},{100,'s'},{1,'c'}})do
+        for _,coin in ipairs({{10000,'Gold'},{100,'Silver'},{1,'Copper'}})do
             local amount=math.floor(copper/coin[1]);copper=copper%coin[1]
-            if amount>0 or (coin[1]==1 and #parts==0)then parts[#parts+1]=amount..coin[2]end
+            if amount>0 or (coin[1]==1 and #parts==0)then
+                parts[#parts+1]=amount..'|TInterface\\MoneyFrame\\UI-'..coin[2]..'Icon:11:11:1:0|t'
+            end
         end
         return sign..table.concat(parts,' ')
     end
@@ -1766,19 +1767,30 @@ do
         buyTarget=nil
         return false
     end
+    local function typography(text,style,size)
+        local heading=style=='GameFontNormalLarge' or style=='GameFontNormalSmall'
+        if type(text.SetFont)=='function'then text:SetFont(heading and 'Fonts/FRIZQT__.TTF' or 'Fonts/ARIALN.TTF',size or (style=='GameFontNormalLarge' and 18 or (style=='GameFontDisableSmall' and 11 or 12)),'')end
+        if style=='GameFontDisableSmall'then text:SetTextColor(0.65,0.69,0.68)
+        elseif heading then text:SetTextColor(0.94,0.79,0.42)else text:SetTextColor(0.92,0.94,0.91)end
+        if type(text.SetShadowColor)=='function'then text:SetShadowColor(0,0,0,0.8);text:SetShadowOffset(1,-1)end
+    end
     local function uiText(parent,style,x,y,width,align)
         local text=parent:CreateFontString(nil,'OVERLAY',style)
-        text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH(align or 'LEFT')
+        text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH(align or 'LEFT');typography(text,style)
         return text
     end
     local function surface(frame,r,g,b,border)
-        frame:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8',edgeFile='Interface/Buttons/WHITE8X8',edgeSize=1})
-        frame:SetBackdropColor(r,g,b,1);frame:SetBackdropBorderColor(unpack(border or {0.19,0.20,0.19}))
+        frame:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8',edgeFile='Interface/Tooltips/UI-Tooltip-Border',edgeSize=10,insets={left=3,right=3,top=3,bottom=3}})
+        if not frame.azpcSheen then
+            frame.azpcSheen=frame:CreateTexture(nil,'BORDER');frame.azpcSheen:SetTexture('Interface/Buttons/WHITE8X8')
+            frame.azpcSheen:SetPoint('TOPLEFT',4,-4);frame.azpcSheen:SetPoint('TOPRIGHT',-4,-4);frame.azpcSheen:SetHeight(12);frame.azpcSheen:SetVertexColor(0.65,0.75,0.75,0.045)
+        end
+        frame:SetBackdropColor(r,g,b,1);frame:SetBackdropBorderColor(unpack(border or {0.38,0.32,0.21}))
     end
     local function uiButton(parent,label,width,height,teal)
         local button=CreateFrame('Button',nil,parent,'BackdropTemplate');button:SetSize(width,height)
         local text=button:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall')
-        text:SetPoint('CENTER');button:SetFontString(text);button:SetText(label)
+        text:SetPoint('CENTER');typography(text,'GameFontHighlightSmall',12);button:SetFontString(text);button:SetText(label)
         local function rest()surface(button,teal and 0.025 or 0.065,teal and 0.18 or 0.075,teal and 0.18 or 0.075,teal and {0.12,0.63,0.60} or {0.34,0.31,0.24})end
         rest()
         button:SetScript('OnEnter',function()surface(button,0.08,0.23,0.23,{0.23,0.76,0.71})end)
@@ -1797,12 +1809,13 @@ do
         panel:SetPoint('TOPLEFT',page,'TOPLEFT',224,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
         surface(panel,0.025,0.037,0.04)
         panel:EnableMouse(true)
-        panel.icon=panel:CreateTexture(nil,'ARTWORK');panel.icon:SetSize(42,42);panel.icon:SetPoint('TOPLEFT',14,-16)
-        panel.name=uiText(panel,'GameFontNormalLarge',66,-18,320);panel.name:SetTextColor(0.95,0.94,0.87)
+        panel.icon=panel:CreateTexture(nil,'ARTWORK');panel.icon:SetSize(44,44);panel.icon:SetPoint('TOPLEFT',16,-16)
+        panel.iconBorder=panel:CreateTexture(nil,'OVERLAY');panel.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');panel.iconBorder:SetSize(66,66);panel.iconBorder:SetPoint('CENTER',panel.icon,'CENTER')
+        panel.name=uiText(panel,'GameFontNormalLarge',66,-18,320);panel.name:SetTextColor(0.95,0.94,0.87);typography(panel.name,'GameFontHighlight',20)
         panel.subtitle=uiText(panel,'GameFontDisableSmall',66,-43,320)
         local crafts=uiText(panel,'GameFontNormalSmall',0,0,90)
         crafts:ClearAllPoints();crafts:SetPoint('TOPRIGHT',-12,-15);crafts:SetJustifyH('RIGHT');crafts:SetText('Crafts')
-        panel.minus=uiButton(panel,'−',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
+        panel.minus=uiButton(panel,'-',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
         panel.plus=uiButton(panel,'+',24,25);panel.plus:SetPoint('TOPRIGHT',-12,-34)
         panel.batch=CreateFrame('EditBox',nil,panel,'BackdropTemplate');panel.batch:SetSize(49,25);panel.batch:SetPoint('TOPRIGHT',-39,-34)
         surface(panel.batch,0.035,0.045,0.045,{0.34,0.31,0.24})
@@ -1829,7 +1842,7 @@ do
             surface(card,0.04,0.045,0.043,{0.30,0.26,0.18})
             card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
             card.title:SetText(label)
-            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91)
+            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',22)
             card.helper=uiText(card,'GameFontDisableSmall',10,-66,144)
             panel.cards[i]=card
         end
@@ -1860,7 +1873,7 @@ do
                 row=CreateFrame('Frame',nil,p.child,'BackdropTemplate');row:SetSize(506,46);row:SetPoint('TOPLEFT',0,-(i-1)*48)
                 surface(row,0.035,0.047,0.049,{0.11,0.14,0.14})
                 row.icon=row:CreateTexture(nil,'ARTWORK');row.icon:SetSize(22,22);row.icon:SetPoint('LEFT',4,0)
-                row.label=uiText(row,'GameFontHighlightSmall',31,-16,94)
+                row.label=uiText(row,'GameFontHighlightSmall',31,-15,94)
                 row.need=uiText(row,'GameFontHighlightSmall',130,-16,28,'RIGHT')
                 row.bags=uiText(row,'GameFontHighlightSmall',163,-16,28,'RIGHT')
                 row.missing=uiText(row,'GameFontHighlightSmall',194,-16,44,'RIGHT')
@@ -1940,12 +1953,12 @@ do
         if render then render()end
     end
     local function font(parent,style,x,y,width)
-        local text=parent:CreateFontString(nil,'OVERLAY',style);text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH('LEFT');return text
+        return uiText(parent,style,x,y,width)
     end
     refreshBrowser=function()
         if not page or not page.ready then return end
         local rows,professions=catalog(filterProfession,filterText)
-        page.profession:SetText((filterProfession or 'All professions')..'  ▾')
+        page.profession:SetText(filterProfession or 'All professions')
         page.count:SetText(#rows..' learned recipes')
         for _,button in ipairs(page.recipeRows)do button:Hide()end
         for i,recipe in ipairs(rows)do
@@ -1953,7 +1966,8 @@ do
             if not button then
                 button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(192,36);button:SetPoint('TOPLEFT',0,-(i-1)*38)
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
-                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',5,0)
+                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',7,0)
+                button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
                 button.name=font(button,'GameFontHighlightSmall',35,-12,151)
                 button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
                 page.recipeRows[i]=button
@@ -2009,6 +2023,7 @@ do
         page.tabButton=button
         font(page,'GameFontNormalLarge',12,-13,200):SetText('RECIPES')
         page.profession=uiButton(page,'All professions',200,27);page.profession:SetPoint('TOPLEFT',12,-40)
+        page.professionArrow=page.profession:CreateTexture(nil,'OVERLAY');page.professionArrow:SetTexture('Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up');page.professionArrow:SetSize(18,18);page.professionArrow:SetPoint('RIGHT',-5,0)
         page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
         page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(200,27);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
         page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';refreshBrowser()end)

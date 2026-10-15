@@ -50,7 +50,7 @@ print('PASS: batch math, missing quantities, unknown/stale profit, character iso
 UIParent={}
 local function widget()
  local w={scripts={},shown=true}
- for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints'})do w[method]=function()end end
+ for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints','SetFont','SetShadowColor','SetShadowOffset'})do w[method]=function()end end
  function w:SetPoint(point,relative)assert(relative~=self,'a frame must never anchor to itself')end
  function w:SetText(value)self.text=value end
  function w:GetText()return self.text or ''end
@@ -141,7 +141,7 @@ emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
 local q=p.Quote(recipe,1)
 assert(q.ahCost==410 and q.missingCost==400 and q.ahProfit==160,'full recipe cost and only-missing cost are distinct')
 assert(p.Quote(recipe,3).ahCost==1230,'batch cost updates without another query')
-assert(panel.cost.text=='4s 10c'and panel.sale.text=='6s','summary cards show material cost and output unit price')
+assert(panel.cost.text:find('UI-SilverIcon',1,true)and panel.cost.text:find('UI-CopperIcon',1,true)and panel.sale.text:find('UI-SilverIcon',1,true),'summary cards show compact native silver/copper icons')
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
 emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'missing material price cannot become zero')
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1},{itemKey={itemID=2320},minPrice=10,totalQuantity=100}}
@@ -233,3 +233,8 @@ page.search:SetText('linen');page.search:GetScript('OnTextChanged')(page.search)
 assert(not page.placeholder:IsShown(),'search hint disappears while typing')
 page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);assert(page.placeholder:IsShown())
 print('PASS: unified scan action, aligned quantity/price fields, editable batch and search placeholder')
+
+assert(AZPCForeverCraftingPage.professionArrow,'profession dropdown uses a native texture instead of an unsupported glyph')
+assert(panel.iconBorder and panel.cards[1].azpcSheen,'item framing and card surface details are present')
+assert(not panel.cost.text:find('UI-GoldIcon',1,true),'small values omit zero gold denomination')
+print('PASS: native dropdown arrow, framed item header, card surface details and compact coin denominations')
