@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.32 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.32 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.32 - Redesigned crafting interface" --notes "Redesign AZPC Crafting with compact recipe rows, a single Scan prices action, aligned material columns and Buy buttons, editable batch quantity, and clear material cost, sale price and profit cards. Existing capture and native purchase flows preserved. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.33 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.33 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.33 - Refine crafting visual match" --notes "Refine crafting typography, rounded bronze edging, framed item icons, subtle surface highlights and compact native coin icons. Replace the unsupported dropdown glyph with a native arrow texture. Watcher stays 0.4.40."
