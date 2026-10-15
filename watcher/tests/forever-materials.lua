@@ -97,3 +97,18 @@ C_Container.GetContainerItemInfo=function(bag)local q=bag==0 and bagLeather or b
 local beforeModern=#rows;emit('BANKFRAME_OPENED');assert(#rows==beforeModern,'account-only access cannot capture closed character bank')
 canView=true;emit('BAG_UPDATE_DELAYED');assert(rows[#rows].ownedQuantity==22 and rows[#rows].bankQuantity==20,'modern character tab capture excludes account bank 99')
 print('PASS modern bank tabs and account-bank isolation')
+
+-- Capture raw loot immediately, but coalesce its expensive derived-cost replay.
+emit('BANKFRAME_CLOSED')
+local queued={};C_Timer.After=function(delay,fn)queued[#queued+1]={delay=delay,fn=fn}end
+local rebuilds=0;local rebuildOriginal=AZPCForeverCrafting.RebuildCosts
+AZPCForeverCrafting.RebuildCosts=function(...)rebuilds=rebuilds+1;return rebuildOriginal(...)end
+lootGuid='Creature-0-1-2-3-4-5';lootId=2318;lootQuantity=1
+local captured=#AZPCForeverDB.crafting.materialEvents
+for i=1,3 do emit('LOOT_OPENED');bagLeather=bagLeather+1;emit('CHAT_MSG_LOOT',lootChat());emit('BAG_UPDATE_DELAYED')end
+assert(#AZPCForeverDB.crafting.materialEvents==captured+3,'all burst loot is retained before deferred costing')
+assert(rebuilds==0,'loot handler no longer synchronously replays all history')
+local jobs=0;for _,job in ipairs(queued)do if job.delay==0.25 then jobs=jobs+1;job.fn()end end
+assert(jobs==1 and rebuilds==1,'one derived rebuild for a burst of confirmed loot')
+for i=captured+1,#AZPCForeverDB.crafting.materialEvents do assert(AZPCForeverDB.crafting.materialEvents[i].syncExport,'all deferred loot exports are generated')end
+print('PASS: immediate durable loot capture, one queued replay per burst and complete deferred exports')

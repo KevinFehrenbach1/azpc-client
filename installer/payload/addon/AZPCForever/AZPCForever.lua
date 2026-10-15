@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.41"
+local addon, VERSION = ..., "0.2.42"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -709,25 +709,35 @@ local function mail(export)
     if prefix then local buyer,rest=suffix:match('^:([^:]*)(:.*)$');e.mailBuyerKnown=buyer~='';e.mailEnvelope=prefix..rest end
     return e
 end
+local parsedMail=setmetatable({},{__mode="k"})
 local function rebuild()
     local db=AZPCForeverDB.crafting
     if db.vendorCostingBlocked then error('Vendor ledger capacity reached; material costs cannot currently be verified.')end
     local events,seen,mailAnchors={},{},{}
     local receipts={}
-    for _,row in ipairs(AZPCForeverDB.trades or {})do local e=mail(row.tradeExport);if e then receipts[#receipts+1]=e end end
+    for _,row in ipairs(AZPCForeverDB.trades or {})do
+        local cached=parsedMail[row]
+        if not cached or cached.export~=row.tradeExport then cached={export=row.tradeExport,event=mail(row.tradeExport)};parsedMail[row]=cached end
+        if cached.event then receipts[#receipts+1]=cached.event end
+    end
     table.sort(receipts,function(a,b)return a.observedAt<b.observedAt or a.observedAt==b.observedAt and a.eventId<b.eventId end)
+    local purchases,envelopes={},{}
+    for _,e in ipairs(receipts)do
+        if e.kind=='buy' and e.quantity~=e.copper and e.mailPurchaseIdentity then local a=purchases[e.mailPurchaseIdentity]or{};purchases[e.mailPurchaseIdentity]=a;a[#a+1]=e end
+        if e.mailBuyerKnown and e.mailEnvelope then local a=envelopes[e.mailEnvelope]or{};envelopes[e.mailEnvelope]=a;a[#a+1]=e end
+    end
     for _,e in ipairs(receipts)do
         local duplicate=false
         if e.kind=='buy' and e.quantity==e.copper and e.mailPurchaseIdentity then
             local matches={};local count=0
-            for _,other in ipairs(receipts)do
+            for _,other in ipairs(purchases[e.mailPurchaseIdentity]or{})do
                 if other.kind=='buy' and other.quantity~=e.quantity and other.mailPurchaseIdentity==e.mailPurchaseIdentity and other.copper==e.copper and math.abs(other.observedAt-e.observedAt)<=5000 and math.abs(other.mailExpiry-e.mailExpiry)<=2 and not matches[other.mailIdentity]then matches[other.mailIdentity]=true;count=count+1 end
             end
             duplicate=count==1
         end
         if e.kind=='sell' and e.mailEnvelope and not e.mailBuyerKnown then
             local matches={};local count=0
-            for _,other in ipairs(receipts)do
+            for _,other in ipairs(envelopes[e.mailEnvelope]or{})do
                 if other.mailBuyerKnown and other.mailEnvelope==e.mailEnvelope and other.copper==e.copper and math.abs(other.observedAt-e.observedAt)<=5000 and math.abs(other.mailExpiry-e.mailExpiry)<=2 and not matches[other.mailIdentity]then matches[other.mailIdentity]=true;count=count+1 end
             end
             duplicate=count==1
@@ -812,7 +822,15 @@ local function rebuild()
             end
             if remaining>0 then error('Free classification exceeds unknown material stock.')end
             if e.untrackedQuantity>0 then new[#new+1]={quantity=e.untrackedQuantity,copper=0}end
-            for _,l in ipairs(p.lots)do if l.quantity>0 then new[#new+1]=l end end;p.lots=new
+            for _,l in ipairs(p.lots)do if l.quantity>0 then new[#new+1]=l end end
+            -- Adjacent confirmed zero-cash lots have identical FIFO value. Compact
+            -- only those lots; paid and partially known lots retain their order.
+            local compact={}
+            for _,l in ipairs(new)do local last=compact[#compact]
+                if last and last.copper==0 and l.copper==0 then last.quantity=last.quantity+l.quantity
+                else compact[#compact+1]=l end
+            end
+            p.lots=compact
         elseif e.kind=='transfer_out' then
             p.costChangedAt=e.observedAt
             local used=average(p,e.quantity);transit[#transit+1]={event=e,quantity=e.quantity,copper=used.complete and used.knownCopper or nil,partialCopper=not used.complete and used.knownCopper or nil}
@@ -1133,7 +1151,7 @@ local function record(kind,id,q,name,extra,eventId)
  AZPCForeverDB.itemIds=AZPCForeverDB.itemIds or {};if type(name)=='string' and id then AZPCForeverDB.itemIds[name]=id end
  local e=current();e.kind=kind;e.itemId=id;e.quantity=q;e.name=name or ('Item '..id);e.observedAt=observedMillis();e.eventId=eventId or tostring(UnitGUID('player'))..':material:'..e.observedAt..':'..c.materialSequence;e.confirmation='material_quantity_confirmed'
  for k,v in pairs(extra or {})do e[k]=v end;c.materialEvents[#c.materialEvents+1]=e
- AZPCForeverCrafting.RebuildCosts();return e
+ AZPCForeverCrafting.ScheduleCosts();return e
 end
 local function free(command)
  local me=current();if command.character~=me.character or command.realm~=me.realm or command.region~=me.region or command.faction~=me.faction then return end
@@ -1294,9 +1312,30 @@ local function json(value,key,depth)
     end
     error('Unsupported crafting export value.')
 end
+local exportCache=setmetatable({},{__mode='k'})
+local function exportField(k)return k~='syncExport' and k~='costingMissing'end
+local function sameExport(a,b,depth)
+    if type(a)~=type(b)then return false end
+    if type(a)~='table'then return a==b end
+    if depth>12 then return false end
+    for k,v in pairs(a)do if exportField(k)and not sameExport(v,b[k],depth+1)then return false end end
+    for k in pairs(b)do if exportField(k)and a[k]==nil then return false end end
+    return true
+end
+local function copyExport(v)
+    if type(v)~='table'then return v end
+    local copy={};for k,x in pairs(v)do if exportField(k)then copy[k]=copyExport(x)end end;return copy
+end
+local function syncExport(r,kind,id)
+    local cached=exportCache[r]
+    if cached and cached.kind==kind and cached.id==id and r.syncExport==cached.export and sameExport(r,cached.data,0)then return end
+    local payload=json({schema=1,recordType=kind,recordId=id,data=r})
+    r.syncExport='AZPCFCRAFT|1|'..encode(payload)
+    exportCache[r]={kind=kind,id=id,export=r.syncExport,data=copyExport(r)}
+end
 local function exports()
     local d=AZPCForeverDB and AZPCForeverDB.crafting;if not d then return end
-    for _,r in pairs(d.recipes)do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='recipe',recordId=r.recipeKey,data=r}))end
+    for _,r in pairs(d.recipes)do syncExport(r,'recipe',r.recipeKey)end
     for _,r in ipairs(d.crafts)do
         if not r.candidateItemIds then
             local ids={};r.candidateItemIds={};local catalog=d.recipes[r.recipeKey]
@@ -1304,9 +1343,9 @@ local function exports()
             for _,slot in ipairs(catalog and catalog.reagentSlots or {})do for _,option in ipairs(slot.options or {})do if option.itemId then ids[option.itemId]=true end end end
             for id in pairs(ids)do r.candidateItemIds[#r.candidateItemIds+1]=id end;table.sort(r.candidateItemIds)
         end
-        r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='craft',recordId=r.eventId,data=r}))end
-    for _,r in ipairs(d.vendorEvents or {})do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='vendor',recordId=r.eventId,data=r}))end
-    for _,r in ipairs(d.materialEvents or {})do r.syncExport='AZPCFCRAFT|1|'..encode(json({schema=1,recordType='material',recordId=r.eventId,data=r}))end
+        syncExport(r,'craft',r.eventId)end
+    for _,r in ipairs(d.vendorEvents or {})do syncExport(r,'vendor',r.eventId)end
+    for _,r in ipairs(d.materialEvents or {})do syncExport(r,'material',r.eventId)end
 end
 local old=AZPCForeverCrafting.RebuildCosts
 AZPCForeverCrafting.RebuildCosts=function()
