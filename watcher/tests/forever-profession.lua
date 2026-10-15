@@ -50,12 +50,13 @@ print('PASS: batch math, missing quantities, unknown/stale profit, character iso
 UIParent={}
 local function widget()
  local w={scripts={},shown=true}
- for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus'})do w[method]=function()end end
+ for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints'})do w[method]=function()end end
  function w:SetPoint(point,relative)assert(relative~=self,'a frame must never anchor to itself')end
  function w:SetText(value)self.text=value end
  function w:GetText()return self.text or ''end
  function w:GetFrameLevel()return 1 end
  function w:GetScript(event)return self.scripts[event]end
+ function w:HookScript(event,fn)local old=self.scripts[event];self.scripts[event]=function(...)if old then old(...)end;fn(...)end end
  function w:CreateTexture()local t=widget();function t:SetTexture(v)self.texture=v end;return t end
  function w:SetEnabled(value)self.enabled=value end
  function w:SetScript(event,fn)self.scripts[event]=fn end
@@ -140,7 +141,7 @@ emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
 local q=p.Quote(recipe,1)
 assert(q.ahCost==410 and q.missingCost==400 and q.ahProfit==160,'full recipe cost and only-missing cost are distinct')
 assert(p.Quote(recipe,3).ahCost==1230,'batch cost updates without another query')
-assert(panel.cost.text:find('Est. full material AH cost:',1,true))
+assert(panel.cost.text=='4s 10c'and panel.sale.text=='6s','summary cards show material cost and output unit price')
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
 emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'missing material price cannot become zero')
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1},{itemKey={itemID=2320},minPrice=10,totalQuantity=100}}
@@ -188,7 +189,7 @@ assert(page.recipeRows[1].recipe.name=='Leather Bag','saved recipes sort by name
 page.recipeRows[1]:GetScript('OnClick')()
 assert(panel.name.text=='Leather Bag','recipe browser selection drives pricing panel without opening profession')
 page.menuRows[3]:GetScript('OnClick')()
-assert(page.profession.text=='Tailoring'and page.recipeRows[1].recipe.name=='Linen Bag')
+assert(page.profession.text:find('Tailoring',1,true)and page.recipeRows[1].recipe.name=='Linen Bag')
 page.search:SetText('does not exist');page.search:GetScript('OnTextChanged')(page.search)
 assert(page.empty.text=='No matching recipes.')
 page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search)
@@ -217,3 +218,18 @@ assert(p.Buy(row)and calls==previousCalls+1,'uncached material falls back to one
 assert(buyHint.text:find('Missing: 5',1,true))
 assert(panel.rows[1].button.text=='Buy','AH cost row identifies listing action as Buy')
 print('PASS: exact native listing handoff, fresh missing quantity, bag refresh, satisfied/unknown/combat/throttle/closed guards and uncached search fallback')
+
+-- The redesigned page exposes one scan action, distinct columns and editable quantity.
+assert(panel.materialsTab==nil and panel.ahTab==nil,'redundant tabs removed')
+assert(panel.searchAll.text=='Scan prices')
+assert(panel.rows[1].need and panel.rows[1].bags and panel.rows[1].missing and panel.rows[1].unit and panel.rows[1].total,'material quantities and prices use separate columns')
+panel.batch:SetText('3');panel.batch:GetScript('OnEnterPressed')(panel.batch)
+assert(panel.rows[1].need.text==6 and panel.cards[3].title.text=='Est. profit / batch')
+panel.batch:SetText('0');panel.batch:GetScript('OnEnterPressed')(panel.batch)
+assert(panel.rows[1].need.text==2 and panel.cards[3].title.text=='Est. profit / craft','batch clamp preserves cost basis')
+panel.plus:GetScript('OnClick')();assert(panel.rows[1].need.text==4)
+panel.minus:GetScript('OnClick')();assert(panel.rows[1].need.text==2)
+page.search:SetText('linen');page.search:GetScript('OnTextChanged')(page.search)
+assert(not page.placeholder:IsShown(),'search hint disappears while typing')
+page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);assert(page.placeholder:IsShown())
+print('PASS: unified scan action, aligned quantity/price fields, editable batch and search placeholder')
