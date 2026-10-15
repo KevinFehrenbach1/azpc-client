@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.31 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.31 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.31 - Material Buy listing buttons" --notes "Add Buy buttons in the AH Cost material list. Open exact loaded listings through the native AH, show the missing quantity, and refresh counts after bag updates. Materials without a loaded result use normal item search first. Purchases stay under native user confirmation. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.32 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.32 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.32 - Redesigned crafting interface" --notes "Redesign AZPC Crafting with compact recipe rows, a single Scan prices action, aligned material columns and Buy buttons, editable batch quantity, and clear material cost, sale price and profit cards. Existing capture and native purchase flows preserved. Watcher stays 0.4.40."

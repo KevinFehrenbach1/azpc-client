@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.31"
+local addon, VERSION = ..., "0.2.32"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1534,7 +1534,12 @@ do
         if copper==nil then return 'No data' end
         local sign=copper<0 and '-' or '';copper=math.abs(copper)
         if GetCoinTextureString then return sign..GetCoinTextureString(copper) end
-        return sign..math.floor(copper/10000)..'g '..math.floor(copper%10000/100)..'s '..(copper%100)..'c'
+        local parts={}
+        for _,coin in ipairs({{10000,'g'},{100,'s'},{1,'c'}})do
+            local amount=math.floor(copper/coin[1]);copper=copper%coin[1]
+            if amount>0 or (coin[1]==1 and #parts==0)then parts[#parts+1]=amount..coin[2]end
+        end
+        return sign..table.concat(parts,' ')
     end
     local function count(id)
         local value
@@ -1650,7 +1655,9 @@ do
         end
         data.ahCost=complete and total or nil
         data.missingCost=recipe and recipe.materialsKnown and missingKnown and missing or nil
-        local output=valid and scan.prices[recipe.outputItemId]
+        data.quoteFresh=valid==true
+        local output=valid and scan.prices[recipe.outputItemId] or nil
+        data.salePrice=output
         if complete and output and recipe.outputMin==recipe.outputMax then data.ahProfit=math.floor(output*95/100)*recipe.outputMin*data.batch-total end
         return data
     end
@@ -1659,7 +1666,7 @@ do
         local rows=api(C_AuctionHouse,'GetBrowseResults')
         if type(rows)~='table' then return end
         -- Reject results from an unrelated manual/addon search.
-        for _,r in ipairs(rows)do if not r.itemKey or not scan.ids[r.itemKey.itemID]then stopScan('Another AH search interrupted this one. Search All again.');return end end
+        for _,r in ipairs(rows)do if not r.itemKey or not scan.ids[r.itemKey.itemID]then stopScan('Another AH search interrupted this one. Scan prices again.');return end end
         scan.prices={};scan.available={}
         for _,r in ipairs(rows)do
             local id=r.itemKey.itemID;local unit=number(r.minPrice);local amount=number(r.totalQuantity)
@@ -1678,7 +1685,7 @@ do
     local function searchAll(recipe)
         recipe=recipe or selected
         if not recipe or not recipe.materialsKnown or #(recipe.reagents or {})==0 then notify('Select a recipe with fixed materials first.');return false end
-        if not auctionOpen then notify('Open the Auction House to Search All.');return false end
+        if not auctionOpen then notify('Open the Auction House to scan prices.');return false end
         if type(InCombatLockdown)=='function' and InCombatLockdown()then notify('Search after combat.');return false end
         if not C_AuctionHouse or type(C_AuctionHouse.SearchForItemKeys)~='function' or type(C_AuctionHouse.GetBrowseResults)~='function' then notify('Grouped AH search is unavailable in this build.');return false end
         if type(C_AuctionHouse.IsThrottledMessageSystemReady)=='function' and not C_AuctionHouse.IsThrottledMessageSystemReady()then notify('The AH is busy. Try again shortly.');return false end
@@ -1699,7 +1706,7 @@ do
         if not ok then stopScan('Search unavailable. Try again.');return false end
         tab='ah'
         if C_Timer and C_Timer.After then C_Timer.After(20,function()
-            if scan==current and scan.waiting then stopScan('Search timed out. Search All again.');if render then render()end end
+            if scan==current and scan.waiting then stopScan('Search timed out. Scan prices again.');if render then render()end end
         end)end
         if render then render()end
         return true
@@ -1710,7 +1717,7 @@ do
         hookedQueries=true
         for _,name in ipairs({'SendBrowseQuery','SearchForItemKeys','SendSearchQuery'})do
             if type(C_AuctionHouse[name])=='function'then pcall(hooksecurefunc,C_AuctionHouse,name,function()
-                if not ownQuery then stopScan('Another AH search interrupted this one. Search All again.')end
+                if not ownQuery then stopScan('Another AH search interrupted this one. Scan prices again.')end
             end)end
         end
     end
@@ -1743,7 +1750,7 @@ do
                 if not result or r.minPrice<result.minPrice then result=r end
             end
         end
-        stopScan('Opening material listings. Search All again to refresh.')
+        stopScan('Opening material listings. Scan prices again to refresh.')
         buyTarget={itemId=row.itemId,needed=row.needed}
         local info=result and api(C_AuctionHouse,'GetItemKeyInfo',result.itemKey)
         if result and type(info)=='table' and AuctionHouseFrame and type(AuctionHouseFrame.SelectBrowseResult)=='function'then
@@ -1759,80 +1766,123 @@ do
         buyTarget=nil
         return false
     end
+    local function uiText(parent,style,x,y,width,align)
+        local text=parent:CreateFontString(nil,'OVERLAY',style)
+        text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH(align or 'LEFT')
+        return text
+    end
+    local function surface(frame,r,g,b,border)
+        frame:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8',edgeFile='Interface/Buttons/WHITE8X8',edgeSize=1})
+        frame:SetBackdropColor(r,g,b,1);frame:SetBackdropBorderColor(unpack(border or {0.19,0.20,0.19}))
+    end
+    local function uiButton(parent,label,width,height,teal)
+        local button=CreateFrame('Button',nil,parent,'BackdropTemplate');button:SetSize(width,height)
+        local text=button:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall')
+        text:SetPoint('CENTER');button:SetFontString(text);button:SetText(label)
+        local function rest()surface(button,teal and 0.025 or 0.065,teal and 0.18 or 0.075,teal and 0.18 or 0.075,teal and {0.12,0.63,0.60} or {0.34,0.31,0.24})end
+        rest()
+        button:SetScript('OnEnter',function()surface(button,0.08,0.23,0.23,{0.23,0.76,0.71})end)
+        button:SetScript('OnLeave',rest)
+        button:SetScript('OnDisable',function()button:SetAlpha(0.4)end)
+        button:SetScript('OnEnable',function()button:SetAlpha(1)end)
+        return button
+    end
+    local function itemIcon(id)
+        return (id and ((C_Item and api(C_Item,'GetItemIconByID',id)) or (GetItemIcon and GetItemIcon(id)))) or 'Interface/Icons/INV_Misc_QuestionMark'
+    end
     local function create()
         if panel then return panel end
         if not page or not page.ready then return end
         panel=CreateFrame('Frame','AZPCForeverProfessionPanel',page,'BackdropTemplate')
-        panel:SetPoint('TOPLEFT',page,'TOPLEFT',290,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
-        panel:SetBackdrop({bgFile='Interface/Tooltips/UI-Tooltip-Background',edgeFile='Interface/Tooltips/UI-Tooltip-Border',tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
-        panel:SetBackdropColor(0.035,0.055,0.06,0.97);panel:SetBackdropBorderColor(0.25,0.65,0.62)
+        panel:SetPoint('TOPLEFT',page,'TOPLEFT',224,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
+        surface(panel,0.025,0.037,0.04)
         panel:EnableMouse(true)
-        local function text(parent,font,x,y,width)
-            local t=parent:CreateFontString(nil,'OVERLAY',font);t:SetPoint('TOPLEFT',x,y);t:SetWidth(width);t:SetJustifyH('LEFT');return t
+        panel.icon=panel:CreateTexture(nil,'ARTWORK');panel.icon:SetSize(42,42);panel.icon:SetPoint('TOPLEFT',14,-16)
+        panel.name=uiText(panel,'GameFontNormalLarge',66,-18,320);panel.name:SetTextColor(0.95,0.94,0.87)
+        panel.subtitle=uiText(panel,'GameFontDisableSmall',66,-43,320)
+        local crafts=uiText(panel,'GameFontNormalSmall',0,0,90)
+        crafts:ClearAllPoints();crafts:SetPoint('TOPRIGHT',-12,-15);crafts:SetJustifyH('RIGHT');crafts:SetText('Crafts')
+        panel.minus=uiButton(panel,'−',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
+        panel.plus=uiButton(panel,'+',24,25);panel.plus:SetPoint('TOPRIGHT',-12,-34)
+        panel.batch=CreateFrame('EditBox',nil,panel,'BackdropTemplate');panel.batch:SetSize(49,25);panel.batch:SetPoint('TOPRIGHT',-39,-34)
+        surface(panel.batch,0.035,0.045,0.045,{0.34,0.31,0.24})
+        panel.batch:SetFontObject(GameFontHighlight);panel.batch:SetJustifyH('CENTER');panel.batch:SetAutoFocus(false);panel.batch:SetNumeric(true);panel.batch:SetMaxLetters(3)
+        local function applyBatch(self)quantity=math.max(1,math.min(999,number(self:GetText())or 1));self:ClearFocus();render()end
+        panel.batch:SetScript('OnEnterPressed',applyBatch)
+        panel.batch:SetScript('OnEditFocusLost',applyBatch)
+        panel.batch:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
+        panel.minus:SetScript('OnClick',function()quantity=math.max(1,quantity-1);render()end)
+        panel.plus:SetScript('OnClick',function()quantity=math.min(999,quantity+1);render()end)
+        panel.market=uiText(panel,'GameFontHighlightSmall',16,-91,330)
+        panel.searchAll=uiButton(panel,'Scan prices',126,30,true);panel.searchAll:SetPoint('TOPRIGHT',-14,-78)
+        panel.searchAll:SetScript('OnClick',function()installQueryHooks();searchAll()end)
+        local headings={{'Material',0,126},{'Need',130,28},{'Bags',163,28},{'Missing',194,44},{'Unit price',244,78},{'Total',330,78}}
+        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-124);panel.tableHeader:SetPoint('TOPRIGHT',-14,-124);panel.tableHeader:SetHeight(26)
+        surface(panel.tableHeader,0.065,0.065,0.055,{0.25,0.23,0.17})
+        for _,h in ipairs(headings)do uiText(panel.tableHeader,'GameFontNormalSmall',h[2]+4,-7,h[3],h[2]>0 and 'RIGHT' or 'LEFT'):SetText(h[1])end
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-153);scroll:SetPoint('BOTTOMRIGHT',-30,166)
+        panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(506,1);scroll:SetScrollChild(panel.child);panel.rows={}
+        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy opens AH listings. You choose quantity and confirm.')
+        panel.cards={}
+        for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
+            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(164,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*170,47)
+            surface(card,0.04,0.045,0.043,{0.30,0.26,0.18})
+            card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
+            card.title:SetText(label)
+            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91)
+            card.helper=uiText(card,'GameFontDisableSmall',10,-66,144)
+            panel.cards[i]=card
         end
-        text(panel,'GameFontNormalLarge',16,-16,350):SetText('Recipe materials & pricing')
-        panel.name=text(panel,'GameFontHighlight',16,-45,375)
-        panel.batch=text(panel,'GameFontNormal',16,-70,240)
-        local function button(label,x,fn)
-            local b=CreateFrame('Button',nil,panel,'UIPanelButtonTemplate');b:SetSize(34,22);b:SetPoint('TOPRIGHT',x,-65);b:SetText(label);b:SetScript('OnClick',fn)
-        end
-        button('-',-57,function()quantity=math.max(1,quantity-1);render()end)
-        button('+',-18,function()quantity=math.min(999,quantity+1);render()end)
-        local function tabButton(label,x,fn)
-            local b=CreateFrame('Button',nil,panel,'UIPanelButtonTemplate');b:SetSize(120,24);b:SetPoint('TOPLEFT',x,-97);b:SetText(label);b:SetScript('OnClick',fn);return b
-        end
-        panel.materialsTab=tabButton('Materials',16,function()tab='materials';render()end)
-        panel.ahTab=tabButton('AH Cost',140,function()tab='ah';render()end)
-        panel.searchAll=tabButton('Search All',282,function()installQueryHooks();searchAll()end)
-        panel.heading=text(panel,'GameFontDisableSmall',16,-132,410)
-        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',16,-155);scroll:SetPoint('BOTTOMRIGHT',-34,135)
-        local child=CreateFrame('Frame',nil,scroll);child:SetSize(390,1);scroll:SetScrollChild(child);panel.child=child;panel.rows={}
-        panel.cost=text(panel,'GameFontHighlight',16,-343,410)
-        panel.missing=text(panel,'GameFontHighlight',16,-365,410)
-        panel.profit=text(panel,'GameFontHighlight',16,-387,410)
-        panel.note=text(panel,'GameFontDisableSmall',16,-411,410)
-        panel.status=text(panel,'GameFontNormalSmall',16,-449,410)
+        panel.cost=panel.cards[1].value;panel.missing=panel.cards[1].helper
+        panel.sale=panel.cards[2].value;panel.cards[2].helper:SetText('Lowest listing / each')
+        panel.profit=panel.cards[3].value;panel.cards[3].helper:SetText('After 5% AH cut')
+        panel.note=uiText(panel,'GameFontDisableSmall',0,0,520);panel.note:ClearAllPoints();panel.note:SetPoint('BOTTOMLEFT',14,28)
+        panel.note:SetText('Lowest unit prices; price depth and deposit excluded. Vendor materials may cost less.')
+        panel.status=uiText(panel,'GameFontHighlightSmall',0,0,520);panel.status:ClearAllPoints();panel.status:SetPoint('BOTTOMLEFT',14,10)
         return panel
     end
     render=function()
         local p=create();if not p then return end
-        if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Search All again.');scan=nil end
-        local data=tab=='ah' and quote(selected,quantity) or model(selected,quantity)
-        p.name:SetText(selected and selected.name or 'Select a saved recipe from the list.')
-        p.batch:SetText('Crafts: '..quantity)
-        p.heading:SetText(tab=='ah' and 'Material • quantity • unit price • subtotal' or 'Material                 Need / Bags / Missing')
+        if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Scan prices again.');scan=nil end
+        local data=quote(selected,quantity)
+        p.name:SetText(selected and selected.name or 'Choose a recipe')
+        p.subtitle:SetText(selected and ((selected.profession or 'Saved recipe')..' • Creates '..(selected.outputMin or '?')..(selected.outputMax and selected.outputMax~=selected.outputMin and ('–'..selected.outputMax)or ''))or 'Select a learned recipe from the list.')
+        p.icon:SetTexture(itemIcon(selected and selected.outputItemId))
+        p.batch:SetText(tostring(quantity))
         p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
-        p.searchAll:SetText(scan and scan.waiting and 'Searching…' or 'Search All')
+        p.searchAll:SetText(scan and scan.waiting and 'Scanning…' or 'Scan prices')
+        p.market:SetText(scan and scan.waiting and 'Fetching AH prices…' or (data.quoteFresh and 'Latest AH search' or 'Scan for current prices'))
+        p.market:SetTextColor(data.quoteFresh and 0.4 or 0.65,data.quoteFresh and 0.84 or 0.67,data.quoteFresh and 0.63 or 0.67)
         for _,row in ipairs(p.rows)do row:Hide()end
         for i,m in ipairs(data.rows)do
             local row=p.rows[i]
             if not row then
-                row=CreateFrame('Frame',nil,p.child);row:SetSize(390,42);row:SetPoint('TOPLEFT',0,-(i-1)*44)
-                row.label=row:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall');row.label:SetPoint('TOPLEFT',0,0);row.label:SetWidth(270);row.label:SetJustifyH('LEFT')
-                row.amount=row:CreateFontString(nil,'OVERLAY','GameFontDisableSmall');row.amount:SetPoint('TOPLEFT',0,-19)
-                row.button=CreateFrame('Button',nil,row,'UIPanelButtonTemplate');row.button:SetSize(66,22);row.button:SetPoint('TOPRIGHT',0,-5);row.button:SetText('Search')
-                row.button:SetScript('OnClick',function()if tab=='ah' then buyMaterial(row.material)else stopScan();search(row.material)end end);p.rows[i]=row
+                row=CreateFrame('Frame',nil,p.child,'BackdropTemplate');row:SetSize(506,46);row:SetPoint('TOPLEFT',0,-(i-1)*48)
+                surface(row,0.035,0.047,0.049,{0.11,0.14,0.14})
+                row.icon=row:CreateTexture(nil,'ARTWORK');row.icon:SetSize(22,22);row.icon:SetPoint('LEFT',4,0)
+                row.label=uiText(row,'GameFontHighlightSmall',31,-16,94)
+                row.need=uiText(row,'GameFontHighlightSmall',130,-16,28,'RIGHT')
+                row.bags=uiText(row,'GameFontHighlightSmall',163,-16,28,'RIGHT')
+                row.missing=uiText(row,'GameFontHighlightSmall',194,-16,44,'RIGHT')
+                row.unit=uiText(row,'GameFontHighlightSmall',244,-16,78,'RIGHT')
+                row.total=uiText(row,'GameFontHighlightSmall',330,-16,78,'RIGHT')
+                row.button=uiButton(row,'Buy',62,26,true);row.button:SetPoint('TOPLEFT',438,-10)
+                row.button:SetScript('OnClick',function()buyMaterial(row.material)end);p.rows[i]=row
             end
-            row.material=m;row.label:SetText(m.name)
-            if tab=='ah' then
-                row.amount:SetText('x'..m.needed..' • '..money(m.unit)..' each • '..money(m.lineCost)..(m.available and m.available<m.needed and ' (short stock)' or ''))
-            else row.amount:SetText(m.needed..' / '..(m.held or 'No data')..' / '..(m.missing or 'No data'))end
-            row.button:SetText(tab=='ah' and 'Buy' or 'Search')
+            row.material=m;row.icon:SetTexture(itemIcon(m.itemId));row.label:SetText(m.name)
+            row.need:SetText(m.needed);row.bags:SetText(m.held~=nil and m.held or 'No data');row.missing:SetText(m.missing~=nil and m.missing or 'No data')
+            row.missing:SetTextColor(m.missing and m.missing>0 and 1 or 0.55,m.missing and m.missing>0 and 0.78 or 0.63,0.4)
+            row.unit:SetText(money(m.unit));row.total:SetText(m.available and m.available<m.needed and 'Short stock' or money(m.lineCost))
             row.button:SetEnabled(auctionOpen and m.missing~=nil and m.missing>0 and not(scan and scan.waiting));row:Show()
         end
-        p.child:SetHeight(math.max(1,#data.rows*44))
-        if tab=='ah' then
-            p.cost:SetText('Est. full material AH cost: '..money(data.ahCost))
-            p.missing:SetText('Est. missing material AH cost: '..money(data.missingCost))
-            p.profit:SetText('Est. AH profit for batch: '..money(data.ahProfit))
-            p.note:SetText('Lowest unit prices × quantities; price depth not included.\nProfit: 5% cut; deposit excluded. Vendor prices may be lower.')
-            p.status:SetText(scan and scan.status or 'Open the AH, then click Search All.')
-        else
-            p.cost:SetText('Recorded material cost: '..money(data.cost));p.missing:SetText('')
-            p.profit:SetText('Est. profit for batch: '..money(data.profit))
-            p.note:SetText('Recorded stock cost. Profit: 5% cut; deposit excluded.\nUse AH Cost → Search All for market material costs.')
-            p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved: No data' or (auctionOpen and 'AH open • Search missing materials' or 'Open the AH to search missing materials'))
-        end
+        p.child:SetHeight(math.max(1,#data.rows*48))
+        p.cost:SetText(money(data.ahCost));p.missing:SetText('To buy missing: '..money(data.missingCost))
+        p.sale:SetText(money(data.salePrice))
+        p.cards[3].title:SetText(quantity==1 and 'Est. profit / craft' or 'Est. profit / batch')
+        p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit))
+        if data.ahProfit==nil then p.profit:SetTextColor(0.65,0.67,0.67)
+        elseif data.ahProfit<0 then p.profit:SetTextColor(1,0.4,0.4)else p.profit:SetTextColor(0.48,0.9,0.48)end
+        p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved • No data' or (scan and scan.complete and not data.quoteFresh and 'Prices are stale. Scan prices again.' or (scan and scan.status or 'Choose a recipe, then Scan prices.')))
     end
     local function ownedRecipe(r)
         return type(r)=='table' and r.character==UnitName('player') and r.realm==GetRealmName() and r.faction==(UnitFactionGroup('player') or ''):lower() and r.region==currentRegion()
@@ -1884,8 +1934,9 @@ do
         if refreshBrowser then refreshBrowser()end
     end
     local function selectRecipe(recipe)
-        stopScan('Recipe changed. Search All again.');scan=nil
+        stopScan('Recipe changed. Scan prices again.');scan=nil
         selected=recipe;quantity=1;tab='ah'
+        if refreshBrowser then refreshBrowser()end
         if render then render()end
     end
     local function font(parent,style,x,y,width)
@@ -1894,31 +1945,34 @@ do
     refreshBrowser=function()
         if not page or not page.ready then return end
         local rows,professions=catalog(filterProfession,filterText)
-        page.profession:SetText(filterProfession or 'All professions')
-        page.count:SetText(#rows..' saved recipes')
+        page.profession:SetText((filterProfession or 'All professions')..'  ▾')
+        page.count:SetText(#rows..' learned recipes')
         for _,button in ipairs(page.recipeRows)do button:Hide()end
         for i,recipe in ipairs(rows)do
             local button=page.recipeRows[i]
             if not button then
-                button=CreateFrame('Button',nil,page.listChild,'UIPanelButtonTemplate');button:SetSize(254,38);button:SetPoint('TOPLEFT',0,-(i-1)*40)
-                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(26,26);button.icon:SetPoint('LEFT',5,0)
-                button.name=font(button,'GameFontHighlightSmall',38,-5,208)
-                button.profession=font(button,'GameFontDisableSmall',38,-22,208)
+                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(192,36);button:SetPoint('TOPLEFT',0,-(i-1)*38)
+                button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
+                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',5,0)
+                button.name=font(button,'GameFontHighlightSmall',35,-12,151)
                 button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
                 page.recipeRows[i]=button
             end
-            button.recipe=recipe;button.name:SetText(recipe.name);button.profession:SetText(recipe.profession or 'Other recipes')
+            button.recipe=recipe;button.name:SetText(recipe.name)
+            local active=selected and recipeKey(selected)==recipeKey(recipe)
+            surface(button,active and 0.025 or 0.04,active and 0.15 or 0.05,active and 0.15 or 0.05,active and {0.12,0.55,0.52} or {0.16,0.18,0.17})
+            if active then button.accent:Show()else button.accent:Hide()end
             local icon=recipe.outputItemId and ((C_Item and api(C_Item,'GetItemIconByID',recipe.outputItemId)) or (GetItemIcon and GetItemIcon(recipe.outputItemId)))
             button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
         end
-        page.listChild:SetHeight(math.max(1,#rows*40))
+        page.listChild:SetHeight(math.max(1,#rows*38))
         page.empty:SetText(#rows==0 and (filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
         for _,button in ipairs(page.menuRows)do button:Hide()end
         local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
         for i,name in ipairs(options)do
             local button=page.menuRows[i]
             if not button then
-                button=CreateFrame('Button',nil,page.menu,'UIPanelButtonTemplate');button:SetSize(250,24);button:SetPoint('TOPLEFT',4,-4-(i-1)*25)
+                button=uiButton(page.menu,'',196,24);button:SetPoint('TOPLEFT',4,-4-(i-1)*25)
                 button:SetScript('OnClick',function()filterProfession=button.value;page.menu:Hide();refreshBrowser()end)
                 page.menuRows[i]=button
             end
@@ -1953,23 +2007,25 @@ do
             refreshBrowser();render()
         end)
         page.tabButton=button
-        font(page,'GameFontNormalLarge',12,-12,270):SetText('Your professions')
-        page.profession=CreateFrame('Button',nil,page,'UIPanelButtonTemplate');page.profession:SetSize(264,25);page.profession:SetPoint('TOPLEFT',12,-40)
+        font(page,'GameFontNormalLarge',12,-13,200):SetText('RECIPES')
+        page.profession=uiButton(page,'All professions',200,27);page.profession:SetPoint('TOPLEFT',12,-40)
         page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
-        page.search=CreateFrame('EditBox',nil,page,'InputBoxTemplate');page.search:SetSize(252,24);page.search:SetPoint('TOPLEFT',18,-75);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
+        page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(200,27);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
         page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';refreshBrowser()end)
         page.search:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
         page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
-        font(page,'GameFontDisableSmall',12,-103,264):SetText('Search learned recipes')
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-125);scroll:SetPoint('BOTTOMLEFT',12,48);scroll:SetWidth(254)
-        page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(254,1);scroll:SetScrollChild(page.listChild)
+        page.placeholder=font(page.search,'GameFontDisableSmall',8,-8,182);page.placeholder:SetText('Search recipes…')
+        page.search:HookScript('OnTextChanged',function(self)if self:GetText()==''then page.placeholder:Show()else page.placeholder:Hide()end end)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-134);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(192)
+        page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(192,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={}
-        page.empty=font(page,'GameFontHighlightSmall',18,-150,236)
-        page.count=font(page,'GameFontDisableSmall',12,-430,264)
-        page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(258,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
+        page.empty=font(page,'GameFontHighlightSmall',18,-155,182)
+        page.count=font(page,'GameFontDisableSmall',12,-114,200)
+        local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
+        page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         page:SetScript('OnShow',function()refreshBrowser();render()end)
-        page:SetScript('OnHide',function()page.menu:Hide();stopScan('Crafting tab closed. Search All again.')end)
+        page:SetScript('OnHide',function()page.menu:Hide();stopScan('Crafting tab closed. Scan prices again.')end)
         page.ready=true
         page:Hide();refreshBrowser()
         return true
@@ -1988,7 +2044,7 @@ do
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
-            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Search All again.');buyTarget=nil;if buyHint then buyHint:Hide()end
+            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Scan prices again.');buyTarget=nil;if buyHint then buyHint:Hide()end
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults() end
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
