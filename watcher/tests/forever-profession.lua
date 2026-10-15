@@ -141,6 +141,21 @@ emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
 local q=p.Quote(recipe,1)
 assert(q.ahCost==410 and q.missingCost==400 and q.ahProfit==160,'full recipe cost and only-missing cost are distinct')
 assert(p.Quote(recipe,3).ahCost==1230,'batch cost updates without another query')
+assert(p.SearchAll());assert(p.Quote(recipe,1).ahCost==410,'new scan retains the completed summary')
+full=false;results={{itemKey={itemID=2589},minPrice=250,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(p.Quote(recipe,1).ahCost==410 and p.Quote(recipe,1).salePrice==600,'partial scan cannot blank or mix summary prices')
+results[#results+1]={itemKey={itemID=2320},minPrice=20,totalQuantity=100};results[#results+1]={itemKey={itemID=2996},minPrice=700,totalQuantity=10};full=true
+emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
+assert(p.Quote(recipe,1).ahCost==520 and p.Quote(recipe,1).salePrice==700 and p.Quote(recipe,1).ahProfit==145,'completed scan replaces all summary prices')
+assert(p.SearchAll());for _,fn in ipairs(timeouts)do fn()end
+assert(p.Quote(recipe,1).ahCost==520,'failed scan preserves last completed values')
+emit('AUCTION_HOUSE_CLOSED');emit('AUCTION_HOUSE_SHOW');assert(p.Quote(recipe,1).ahCost==520,'AH reopen preserves recipe summary')
+assert(p.Quote(recipe,3).ahCost==1560,'retained prices still scale with craft quantity')
+local originalRealm=GetRealmName;GetRealmName=function()return 'Other realm'end
+assert(p.Quote(recipe,1).ahCost==nil,'completed quote cannot cross realm scope');GetRealmName=originalRealm
+assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+print('PASS: persistent summary during scans and AH reopen, completed snapshot replacement, failed-scan retention, batch recalculation and market isolation')
+
 assert(panel.cost.text:find('UI-SilverIcon',1,true)and panel.cost.text:find('UI-CopperIcon',1,true)and panel.sale.text:find('UI-SilverIcon',1,true),'summary cards show compact native silver/copper icons')
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
 emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==nil,'missing material price cannot become zero')

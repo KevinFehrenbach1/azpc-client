@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.39 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.39 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.39 - Buy materials entirely inside AZPC" --notes "Keep material purchases entirely in AZPC with no Blizzard buy-screen handoff. Craft count sets missing quantities after bags and pending deliveries. AZPC requests and confirms live quotes directly, shows price changes in its own confirmation, and advances after successful orders. Individual material Buy uses the same AZPC flow. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.40 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.40 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.40 - Keep crafting summary visible during searches" --notes "Retain each recipe summary from its last completed price scan during new searches, material buying and tab changes. Publish new prices together only when a new scan completes. Preserve quantity recalculation, market isolation and quote-age checks. Watcher stays 0.4.40."

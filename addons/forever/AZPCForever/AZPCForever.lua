@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.39"
+local addon, VERSION = ..., "0.2.40"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1520,6 +1520,7 @@ end
 do
     local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
     local scan,render,ownQuery
+    local completedQuotes={}
     local page,ensurePage,refreshBrowser
     local filterProfession,filterText=nil,''
     local tab='ah'
@@ -1643,10 +1644,11 @@ do
         local complete=recipe and recipe.materialsKnown==true and #data.rows>0
         local missingKnown=true;local total,missing=0,0
         local now=GetServerTime and GetServerTime() or time()
-        local valid=scan and scan.complete and scan.at and now>=scan.at and now-scan.at<=21600 and scan.key==recipeKey(recipe)
+        local previous=completedQuotes[recipeKey(recipe)]
+        local valid=previous and previous.at and now>=previous.at and now-previous.at<=21600
         for _,row in ipairs(data.rows)do
-            local unit=valid and scan.prices[row.itemId] or nil
-            row.unit=unit;row.available=valid and scan.available[row.itemId] or nil
+            local unit=valid and previous.prices[row.itemId] or nil
+            row.unit=unit;row.available=valid and previous.available[row.itemId] or nil
             row.lineCost=unit and unit*row.needed
             if not unit or not row.available or row.available<row.needed then complete=false else total=total+row.lineCost end
             if row.missing==nil then missingKnown=false
@@ -1657,7 +1659,7 @@ do
         data.ahCost=complete and total or nil
         data.missingCost=recipe and recipe.materialsKnown and missingKnown and missing or nil
         data.quoteFresh=valid==true
-        local output=valid and scan.prices[recipe.outputItemId] or nil
+        local output=valid and previous.prices[recipe.outputItemId] or nil
         data.salePrice=output
         if complete and output and recipe.outputMin==recipe.outputMax then data.ahProfit=math.floor(output*95/100)*recipe.outputMin*data.batch-total end
         return data
@@ -1678,6 +1680,8 @@ do
         end
         if api(C_AuctionHouse,'HasFullBrowseResults')==true then
             scan.waiting=false;scan.complete=true;scan.at=GetServerTime and GetServerTime() or time()
+            -- Publish one completed snapshot; partial and unrelated searches never erase it.
+            completedQuotes[scan.key]={at=scan.at,prices=scan.prices,available=scan.available}
             local found,total=0,0;for id in pairs(scan.ids)do total=total+1;if scan.prices[id]then found=found+1 end end
             scan.status='Search complete • '..found..'/'..total..' items priced'
         else scan.more=true;scan.status='Loading remaining results…' end
@@ -2070,7 +2074,7 @@ do
         p.batch:SetText(tostring(quantity))
         p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
         p.searchAll:SetText(scan and scan.waiting and 'Scanning…' or 'Scan prices')
-        p.market:SetText(purchaseQueue and purchaseQueue.status or (scan and scan.waiting and 'Fetching AH prices…' or (data.quoteFresh and 'Latest AH search' or 'Scan for current prices')))
+        p.market:SetText(purchaseQueue and purchaseQueue.status or (scan and scan.waiting and (data.quoteFresh and 'Last scan prices - refreshing...' or 'Fetching AH prices…') or (data.quoteFresh and 'Latest AH search' or 'Scan for current prices')))
         p.market:SetTextColor(data.quoteFresh and 0.4 or 0.65,data.quoteFresh and 0.84 or 0.67,data.quoteFresh and 0.63 or 0.67)
         for _,row in ipairs(p.rows)do row:Hide()end
         for i,m in ipairs(data.rows)do
