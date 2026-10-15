@@ -238,3 +238,35 @@ assert(AZPCForeverCraftingPage.professionArrow,'profession dropdown uses a nativ
 assert(panel.iconBorder and panel.cards[1].azpcSheen,'item framing and card surface details are present')
 assert(not panel.cost.text:find('UI-GoldIcon',1,true),'small values omit zero gold denomination')
 print('PASS: native dropdown arrow, framed item header, card surface details and compact coin denominations')
+
+-- Buying requests quotes; only a user confirmation submits an order.
+local quotes={}
+C_AuctionHouse.SearchForItemKeys=function(keys)assert(#keys==1)end
+C_AuctionHouse.ConfirmCommoditiesPurchase=function()end
+AuctionHouseFrame.BuyDialog=widget();AuctionHouseFrame.BuyDialog:Hide()
+function AuctionHouseFrame:StartCommoditiesPurchase(id,n,unit,total)
+ quotes[#quotes+1]={id=id,n=n,total=total};self.BuyDialog:Show()
+end
+C_AuctionHouse.GetItemKeyInfo=function()return {isCommodity=true}end
+full=true;ready=true;held[2589]=1;held[2320]=2
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
+assert(p.BuyMissing(recipe,3));p.OpenQueuedQuote()
+assert(#quotes==1 and quotes[1].id==2589 and quotes[1].n==5,'batch three subtracts one owned cloth')
+assert(p.Pending(2589)==0,'requesting a quote is not a purchase')
+assert(not p.BuyMissing(recipe,3),'second click cannot replace a live quote')
+queryHooks.ConfirmCommoditiesPurchase(2589,5)
+assert(p.Pending(2589)==5,'submitted order is reserved before asynchronous result')
+p.PurchaseEvent('COMMODITY_PURCHASE_SUCCEEDED');AuctionHouseFrame.BuyDialog:Hide()
+timeouts[#timeouts]()
+results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};p.OpenQueuedQuote()
+assert(#quotes==2 and quotes[2].id==2320 and quotes[2].n==1,'queue advances to missing thread')
+queryHooks.ConfirmCommoditiesPurchase(2320,1);p.PurchaseEvent('COMMODITY_PURCHASE_FAILED');AuctionHouseFrame.BuyDialog:Hide()
+assert(p.Pending(2320)==0 and p.Pending(2589)==5,'failure releases only its own reservation')
+assert(p.BuyMissing(recipe,3));results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};p.OpenQueuedQuote()
+assert(quotes[#quotes].id==2320,'awaiting cloth is not bought twice')
+p.CancelBuying();AuctionHouseFrame.BuyDialog:Hide()
+held[2589]=6;p.PurchaseEvent('BAG_UPDATE_DELAYED');assert(p.Pending(2589)==0,'bag arrival clears delivery reservation')
+held[2589]=0;assert(p.BuyMissing(recipe,1));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1}};p.OpenQueuedQuote()
+assert(#quotes==3,'short supply never submits a partial order')
+p.CancelBuying()
+print('PASS: scaled purchase queue, native live quote, explicit confirmation, pending delivery, repeat-click and failed/short-supply guards')
