@@ -1,4 +1,4 @@
-﻿param([string]$ReleaseTag = 'forever-addon-v0.2.29')
+﻿param([string]$ReleaseTag = 'forever-addon-v0.2.30')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
@@ -42,6 +42,7 @@ $foreverBundle=Join-Path $output 'azpc-forever-components.zip'
 Compress-Archive -Path (Join-Path $forever '*') -DestinationPath $foreverBundle -Force
 @{schema=1;game='forever';launcherVersion='0.2.21';addonVersion=$version.foreverAddonVersion;watcherVersion=$version.watcherVersion;bundleUrl=('https://github.com/KevinFehrenbach1/azpc-client/releases/download/'+$ReleaseTag+'/azpc-forever-components.zip');bundleSha256=(Get-FileHash $foreverBundle -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content (Join-Path $output 'azpc-forever-update.json') -Encoding UTF8
 Remove-Item $forever -Recurse -Force
+
 
 
 

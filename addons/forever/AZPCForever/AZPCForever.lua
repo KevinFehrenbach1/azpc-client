@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.29"
+local addon, VERSION = ..., "0.2.30"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1716,7 +1716,7 @@ do
     end
     local function create()
         if panel then return panel end
-        if not page then return end
+        if not page or not page.ready then return end
         panel=CreateFrame('Frame','AZPCForeverProfessionPanel',page,'BackdropTemplate')
         panel:SetPoint('TOPLEFT',page,'TOPLEFT',290,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
         panel:SetBackdrop({bgFile='Interface/Tooltips/UI-Tooltip-Background',edgeFile='Interface/Tooltips/UI-Tooltip-Border',tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
@@ -1846,7 +1846,7 @@ do
         local text=parent:CreateFontString(nil,'OVERLAY',style);text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH('LEFT');return text
     end
     refreshBrowser=function()
-        if not page then return end
+        if not page or not page.ready then return end
         local rows,professions=catalog(filterProfession,filterText)
         page.profession:SetText(filterProfession or 'All professions')
         page.count:SetText(#rows..' saved recipes')
@@ -1881,7 +1881,7 @@ do
         page.menu:SetHeight(#options*25+8)
     end
     ensurePage=function()
-        if page then return true end
+        if page then return page.ready==true end
         local owner=AuctionHouseFrame
         if not UIParent or not owner or type(owner.SetDisplayMode)~='function' or type(AuctionHouseFrameDisplayMode)~='table' or type(owner.Tabs)~='table' then return false end
         page=CreateFrame('Frame','AZPCForeverCraftingPage',owner,'BackdropTemplate')
@@ -1890,11 +1890,13 @@ do
         page:EnableMouse(true)
         owner.AZPCCraftingPage=page
         local mode={'AZPCCraftingPage'};AuctionHouseFrameDisplayMode.AZPCCrafting=mode
+        -- The native template appends itself through parentArray="Tabs".
+        -- Capture the previous tab BEFORE CreateFrame to avoid anchoring to self.
+        local last=owner.Tabs[#owner.Tabs]
         local id=#owner.Tabs+1
         local name=(owner.GetName and owner:GetName() or 'AuctionHouseFrame')..'Tab'..id
         local button=CreateFrame('Button',name,owner,'AuctionHouseFrameDisplayModeTabTemplate')
         button:SetID(id);button:SetText('AZPC Crafting');button.displayMode=mode
-        local last=owner.Tabs[#owner.Tabs]
         if last then button:SetPoint('LEFT',last,'RIGHT',-15,0)else button:SetPoint('BOTTOMLEFT',20,-28)end
         owner.Tabs[id]=button;owner.tabsForDisplayMode=owner.tabsForDisplayMode or {};owner.tabsForDisplayMode[mode]=id
         if PanelTemplates_SetNumTabs then PanelTemplates_SetNumTabs(owner,id)end
@@ -1922,6 +1924,7 @@ do
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         page:SetScript('OnShow',function()refreshBrowser();render()end)
         page:SetScript('OnHide',function()page.menu:Hide();stopScan('Crafting tab closed. Search All again.')end)
+        page.ready=true
         page:Hide();refreshBrowser()
         return true
     end
@@ -1945,7 +1948,7 @@ do
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
             if professionOpen and not(page and page:IsShown())then selected=readSelection() end
-            if page and page:IsShown()then refreshBrowser();render()end
+            if page and page.ready and page:IsShown()then refreshBrowser();render()end
         end)
         if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end
     end)
@@ -1959,3 +1962,4 @@ do
     end) end
 end
 -- END AZPC PROFESSION PANEL
+
