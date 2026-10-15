@@ -112,7 +112,7 @@ assert(AuctionHouseFrame.title=='AZPC Crafting')
 assert(panel.rows[1].button.enabled==false,'Buy stays disabled when the recipe already has enough material')
 held[2589]=0;emit('AUCTION_HOUSE_SHOW')
 assert(panel.rows[1].button.enabled==true,'missing material becomes searchable at AH')
-panel.rows[1].button.scripts.OnClick();assert(calls==2 and name=='Linen Cloth')
+local oldCalls=calls;panel.rows[1].button.scripts.OnClick();assert(calls==oldCalls,'unsupported buying must not fall back to Blizzard search')
 p.Show();assert(panel.cost.text:find('No data',1,true)and panel.profit.text:find('No data',1,true))
 print('PASS: panel construction, selected recipe rendering, missing-stock UI and search button action')
 -- Grouped recipe shopping uses exact item IDs and complete, fresh search results.
@@ -198,26 +198,8 @@ assert(#AuctionHouseFrame.Tabs==5,'refreshing page must not duplicate the native
 print('PASS: persistent multi-profession catalog, learned-only capture, unsupported recipes, literal search, linked/character/realm isolation, browser selection and native tab registration')
 
 
--- Buy only opens native listings; quantity and purchase confirmation stay native.
 held[2589]=1;emit('AUCTION_HOUSE_SHOW')
-local opened
-C_AuctionHouse.GetItemKeyInfo=function()return {isCommodity=true}end
-function AuctionHouseFrame:SelectBrowseResult(result)opened=result;self:SetDisplayMode(AuctionHouseFrameDisplayMode.Buy)end
-local row={itemId=2589,needed=6,missing=999}
-assert(p.Buy(row)and opened.itemKey.itemID==2589)
-assert(buyHint.text:find('Missing: 5',1,true),'recompute missing quantity from current bags, never stale UI row')
-held[2589]=4;emit('BAG_UPDATE_DELAYED');assert(buyHint.text:find('Missing: 2',1,true),'bag updates refresh missing quantity')
-held[2589]=6;opened=nil;assert(not p.Buy(row)and opened==nil,'do not open purchase when material target met')
-held[2589]=nil;assert(not p.Buy(row),'unknown inventory cannot be treated as zero')
-held[2589]=1;combat=true;assert(not p.Buy(row));combat=false
-ready=false;assert(not p.Buy(row));ready=true
-emit('AUCTION_HOUSE_CLOSED');assert(not p.Buy(row)and not buyHint:IsShown(),'close clears purchase guidance')
-emit('AUCTION_HOUSE_SHOW')
-results={};local previousCalls=calls
-assert(p.Buy(row)and calls==previousCalls+1,'uncached material falls back to one normal item search')
-assert(buyHint.text:find('Missing: 5',1,true))
-assert(panel.rows[1].button.text=='Buy','AH cost row identifies listing action as Buy')
-print('PASS: exact native listing handoff, fresh missing quantity, bag refresh, satisfied/unknown/combat/throttle/closed guards and uncached search fallback')
+assert(panel.rows[1].button.text=='Buy')
 
 -- The redesigned page exposes one scan action, distinct columns and editable quantity.
 assert(panel.materialsTab==nil and panel.ahTab==nil,'redundant tabs removed')
@@ -249,9 +231,10 @@ C_AuctionHouse.HasFullCommoditySearchResults=function()return depthFull end
 C_AuctionHouse.SearchForItemKeys=function(keys)assert(#keys==1)end
 C_AuctionHouse.ConfirmCommoditiesPurchase=function()end
 AuctionHouseFrame.BuyDialog=widget();AuctionHouseFrame.BuyDialog:Hide()
-function AuctionHouseFrame:StartCommoditiesPurchase(id,n,unit,total)
- quotes[#quotes+1]={id=id,n=n,total=total};self.BuyDialog:Show()
-end
+function AuctionHouseFrame:StartCommoditiesPurchase()error('must never hand off to Blizzard buy UI')end
+function AuctionHouseFrame:SelectBrowseResult()error('must never navigate to Blizzard listings')end
+C_AuctionHouse.StartCommoditiesPurchase=function(id,n)quotes[#quotes+1]={id=id,n=n}end
+C_AuctionHouse.CancelCommoditiesPurchase=function()end
 C_AuctionHouse.GetItemKeyInfo=function()return {isCommodity=true}end
 full=true;ready=true;held[2589]=1;held[2320]=2
 results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
@@ -261,7 +244,7 @@ p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_ADDED',2320);assert(not p.ReviewPurcha
 emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
 assert(#quotes==0,'depth results only prepare purchase; hardware click requests quote')
 assert(p.ReviewPurchase())
-assert(quotes[1].total==1060,'quantity price includes more expensive price levels')
+assert(not AuctionHouseFrame.BuyDialog:IsShown(),'requesting a quote keeps Blizzard buy UI hidden')
 assert(#quotes==1 and quotes[1].id==2589 and quotes[1].n==5,'batch three subtracts one owned cloth')
 assert(p.Pending(2589)==0,'requesting a quote is not a purchase')
 assert(not p.BuyMissing(recipe,3),'second click cannot replace a live quote')
@@ -288,7 +271,7 @@ print('PASS: scaled purchase queue, native live quote, explicit confirmation, pe
 -- An unresponsive quote must not strand a disabled native dialog.
 p.CancelBuying();depthRows={{quantity=100,unitPrice=200}}
 assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED');assert(p.ReviewPurchase())
-assert(AuctionHouseFrame.BuyDialog:IsShown());timeouts[#timeouts]();assert(not AuctionHouseFrame.BuyDialog:IsShown(),'missing quote times out and releases the modal')
+assert(not AuctionHouseFrame.BuyDialog:IsShown());timeouts[#timeouts]();assert(p.Pending(2589)==0,'missing quote times out without a reservation')
 print('PASS: detail search before quote, price-depth total, click-only quote request and disabled-dialog timeout')
 
 print('PASS: payload-free Forever RECEIVED event reaches the queue through the registered event frame')
@@ -299,9 +282,8 @@ StaticPopupDialogs={}
 function StaticPopup_Show(key,text,_,data)popup={key=key,text=text,data=data};return popup end
 function StaticPopup_Hide()popup=nil end
 function GetMoney()return 100000 end
-function AuctionHouseFrame.BuyDialog:BuyNow()
- confirmed=confirmed+1;local quote=quotes[#quotes];queryHooks.ConfirmCommoditiesPurchase(quote.id,quote.n)
-end
+function AuctionHouseFrame.BuyDialog:BuyNow()error('must never use native BuyNow')end
+C_AuctionHouse.ConfirmCommoditiesPurchase=function(id,n)confirmed=confirmed+1;queryHooks.ConfirmCommoditiesPurchase(id,n)end
 held[2589]=0;held[2320]=2;depthRows={{quantity=100,unitPrice=200}}
 results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
 assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
@@ -318,9 +300,18 @@ assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULT
 shown=popup;StaticPopupDialogs[shown.key].OnAccept(nil,shown.data)
 p.PurchaseEvent('COMMODITY_PRICE_UPDATED',200,400);local confirmLater=timeouts[#timeouts]
 p.PurchaseEvent('COMMODITY_PRICE_UPDATED',250,500);confirmLater()
-assert(confirmed==1,'price increase cancels queued auto confirmation and requires new explicit consent')
+assert(confirmed==1 and popup and popup.data.target.total==500,'price increase cancels delayed confirmation and opens updated AZPC consent')
+assert(not AuctionHouseFrame.BuyDialog:IsShown(),'price changes keep Blizzard UI hidden')
 p.CancelBuying();AuctionHouseFrame.BuyDialog:Hide();assert(popup==nil,'Stop dismisses the pending popup')
 assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
 shown=popup;before=#quotes;StaticPopupDialogs[shown.key].OnCancel(nil,shown.data)
 assert(#quotes==before and confirmed==1 and popup==nil,'Cancel never requests a quote or buys')
 print('PASS: automatic quantity popup, explicit capped consent, live quote required, price increase guard and cancellation')
+
+-- A row Buy uses the same AZPC queue and current bag math.
+held[2589]=1;local before=#quotes
+assert(p.Buy({itemId=2589,needed=6,missing=999}));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
+assert(popup and popup.data.target.quantity==5 and #quotes==before,'single Buy subtracts current bags and prompts inside AZPC')
+assert(AuctionHouseFrame.displayMode~=AuctionHouseFrameDisplayMode.Buy,'purchase flow does not navigate away from AZPC')
+p.CancelBuying()
+print('PASS: direct auction APIs, AZPC-only purchase and repricing UI, single-row quantity buying with no native handoff')
