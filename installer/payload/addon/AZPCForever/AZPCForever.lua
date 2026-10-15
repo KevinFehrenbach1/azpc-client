@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.30"
+local addon, VERSION = ..., "0.2.31"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1714,6 +1714,51 @@ do
             end)end
         end
     end
+    local buyTarget,buyHint
+    local function updateBuyHint()
+        if not buyTarget or not AuctionHouseFrame then return end
+        if not buyHint then
+            buyHint=AuctionHouseFrame:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall')
+            buyHint:SetPoint('BOTTOMLEFT',AuctionHouseFrame,'BOTTOMLEFT',180,9)
+            buyHint:SetWidth(550);buyHint:SetJustifyH('LEFT')
+        end
+        local bags=count(buyTarget.itemId)
+        local missing=bags and math.max(0,buyTarget.needed-bags) or nil
+        buyHint:SetText('AZPC: '..itemName(buyTarget.itemId)..' • Missing: '..(missing or 'No data')..' • Choose quantity and confirm in the AH.')
+        buyHint:Show()
+    end
+    local function buyMaterial(row)
+        if not row or not number(row.itemId) or not number(row.needed) then return false end
+        if not auctionOpen then notify('Open the Auction House to buy materials.');return false end
+        if type(InCombatLockdown)=='function' and InCombatLockdown()then notify('Open the listing after combat.');return false end
+        local bags=count(row.itemId)
+        if bags==nil then notify('Bag quantity: No data. Wait for bags to update.');return false end
+        local missing=math.max(0,row.needed-bags)
+        if missing==0 then notify('You already have enough '..itemName(row.itemId)..' in your bags.');return false end
+        if C_AuctionHouse and type(C_AuctionHouse.IsThrottledMessageSystemReady)=='function' and not C_AuctionHouse.IsThrottledMessageSystemReady()then notify('The AH is busy. Try again shortly.');return false end
+        local result
+        local rows=api(C_AuctionHouse,'GetBrowseResults')
+        for _,r in ipairs(type(rows)=='table' and rows or {})do
+            if r.itemKey and r.itemKey.itemID==row.itemId and number(r.minPrice) and r.minPrice>0 then
+                if not result or r.minPrice<result.minPrice then result=r end
+            end
+        end
+        stopScan('Opening material listings. Search All again to refresh.')
+        buyTarget={itemId=row.itemId,needed=row.needed}
+        local info=result and api(C_AuctionHouse,'GetItemKeyInfo',result.itemKey)
+        if result and type(info)=='table' and AuctionHouseFrame and type(AuctionHouseFrame.SelectBrowseResult)=='function'then
+            local ok=pcall(AuctionHouseFrame.SelectBrowseResult,AuctionHouseFrame,result)
+            if ok then updateBuyHint();return true end
+        end
+        -- A material without a loaded browse result first needs a normal item search.
+        if search(row)then
+            updateBuyHint()
+            notify('Missing '..missing..' '..itemName(row.itemId)..'. Select its listing, then confirm the purchase in the AH.')
+            return true
+        end
+        buyTarget=nil
+        return false
+    end
     local function create()
         if panel then return panel end
         if not page or not page.ready then return end
@@ -1766,13 +1811,14 @@ do
                 row.label=row:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall');row.label:SetPoint('TOPLEFT',0,0);row.label:SetWidth(270);row.label:SetJustifyH('LEFT')
                 row.amount=row:CreateFontString(nil,'OVERLAY','GameFontDisableSmall');row.amount:SetPoint('TOPLEFT',0,-19)
                 row.button=CreateFrame('Button',nil,row,'UIPanelButtonTemplate');row.button:SetSize(66,22);row.button:SetPoint('TOPRIGHT',0,-5);row.button:SetText('Search')
-                row.button:SetScript('OnClick',function()stopScan();search(row.material)end);p.rows[i]=row
+                row.button:SetScript('OnClick',function()if tab=='ah' then buyMaterial(row.material)else stopScan();search(row.material)end end);p.rows[i]=row
             end
             row.material=m;row.label:SetText(m.name)
             if tab=='ah' then
                 row.amount:SetText('x'..m.needed..' • '..money(m.unit)..' each • '..money(m.lineCost)..(m.available and m.available<m.needed and ' (short stock)' or ''))
             else row.amount:SetText(m.needed..' / '..(m.held or 'No data')..' / '..(m.missing or 'No data'))end
-            row.button:SetEnabled(auctionOpen and (tab=='ah' or (m.missing~=nil and m.missing>0)) and not(scan and scan.waiting));row:Show()
+            row.button:SetText(tab=='ah' and 'Buy' or 'Search')
+            row.button:SetEnabled(auctionOpen and m.missing~=nil and m.missing>0 and not(scan and scan.waiting));row:Show()
         end
         p.child:SetHeight(math.max(1,#data.rows*44))
         if tab=='ah' then
@@ -1933,7 +1979,7 @@ do
         if not ensurePage()then notify('The AH crafting tab is waiting for the auction UI. Reopen the AH.');return end
         page.tabButton:GetScript('OnClick')(page.tabButton)
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY'})do pcall(events.RegisterEvent,events,event)end
     local professionOpen=false
@@ -1942,12 +1988,13 @@ do
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
-            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Search All again.')
+            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Search All again.');buyTarget=nil;if buyHint then buyHint:Hide()end
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults() end
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
             if professionOpen and not(page and page:IsShown())then selected=readSelection() end
+            if event=='BAG_UPDATE_DELAYED' and buyTarget then updateBuyHint()end
             if page and page.ready and page:IsShown()then refreshBrowser();render()end
         end)
         if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end

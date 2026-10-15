@@ -98,6 +98,8 @@ function AuctionHouseFrame:SetDisplayMode(mode)
 end
 function AuctionHouseFrame:GetName()return 'AuctionHouseFrame'end
 function AuctionHouseFrame:SetTitle(value)self.title=value end
+local buyHint
+function AuctionHouseFrame:CreateFontString()buyHint=widget();return buyHint end
 emit('TRADE_SKILL_SHOW')
 assert(AZPCForeverProfessionPanel==nil,'profession opening must not create a floating panel')
 emit('AUCTION_HOUSE_SHOW')
@@ -106,7 +108,7 @@ local panel=AZPCForeverProfessionPanel
 assert(panel and panel:IsShown()and panel.rows[1].material.itemId==2589)
 assert(AuctionHouseFrame.Tabs[5]==AZPCForeverCraftingPage.tabButton,'register after existing addon tabs')
 assert(AuctionHouseFrame.title=='AZPC Crafting')
-assert(panel.rows[1].button.enabled==true,'material search is available in AH crafting tab')
+assert(panel.rows[1].button.enabled==false,'Buy stays disabled when the recipe already has enough material')
 held[2589]=0;emit('AUCTION_HOUSE_SHOW')
 assert(panel.rows[1].button.enabled==true,'missing material becomes searchable at AH')
 panel.rows[1].button.scripts.OnClick();assert(calls==2 and name=='Linen Cloth')
@@ -194,3 +196,24 @@ assert(page.recipeRows[1].recipe.name=='Linen Bag')
 assert(#AuctionHouseFrame.Tabs==5,'refreshing page must not duplicate the native AH tab')
 print('PASS: persistent multi-profession catalog, learned-only capture, unsupported recipes, literal search, linked/character/realm isolation, browser selection and native tab registration')
 
+
+-- Buy only opens native listings; quantity and purchase confirmation stay native.
+held[2589]=1;emit('AUCTION_HOUSE_SHOW')
+local opened
+C_AuctionHouse.GetItemKeyInfo=function()return {isCommodity=true}end
+function AuctionHouseFrame:SelectBrowseResult(result)opened=result;self:SetDisplayMode(AuctionHouseFrameDisplayMode.Buy)end
+local row={itemId=2589,needed=6,missing=999}
+assert(p.Buy(row)and opened.itemKey.itemID==2589)
+assert(buyHint.text:find('Missing: 5',1,true),'recompute missing quantity from current bags, never stale UI row')
+held[2589]=4;emit('BAG_UPDATE_DELAYED');assert(buyHint.text:find('Missing: 2',1,true),'bag updates refresh missing quantity')
+held[2589]=6;opened=nil;assert(not p.Buy(row)and opened==nil,'do not open purchase when material target met')
+held[2589]=nil;assert(not p.Buy(row),'unknown inventory cannot be treated as zero')
+held[2589]=1;combat=true;assert(not p.Buy(row));combat=false
+ready=false;assert(not p.Buy(row));ready=true
+emit('AUCTION_HOUSE_CLOSED');assert(not p.Buy(row)and not buyHint:IsShown(),'close clears purchase guidance')
+emit('AUCTION_HOUSE_SHOW')
+results={};local previousCalls=calls
+assert(p.Buy(row)and calls==previousCalls+1,'uncached material falls back to one normal item search')
+assert(buyHint.text:find('Missing: 5',1,true))
+assert(panel.rows[1].button.text=='Buy','AH cost row identifies listing action as Buy')
+print('PASS: exact native listing handoff, fresh missing quantity, bag refresh, satisfied/unknown/combat/throttle/closed guards and uncached search fallback')
