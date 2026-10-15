@@ -241,6 +241,11 @@ print('PASS: native dropdown arrow, framed item header, card surface details and
 
 -- Buying requests quotes; only a user confirmation submits an order.
 local quotes={}
+local depthID,depthRows,depthFull=2589,{{quantity=2,unitPrice=200},{quantity=98,unitPrice=220}},true
+C_AuctionHouse.SendSearchQuery=function(key)depthID=key.itemID end
+C_AuctionHouse.GetNumCommoditySearchResults=function()return #depthRows end
+C_AuctionHouse.GetCommoditySearchResultInfo=function(id,i)assert(id==depthID);return depthRows[i]end
+C_AuctionHouse.HasFullCommoditySearchResults=function()return depthFull end
 C_AuctionHouse.SearchForItemKeys=function(keys)assert(#keys==1)end
 C_AuctionHouse.ConfirmCommoditiesPurchase=function()end
 AuctionHouseFrame.BuyDialog=widget();AuctionHouseFrame.BuyDialog:Hide()
@@ -251,6 +256,12 @@ C_AuctionHouse.GetItemKeyInfo=function()return {isCommodity=true}end
 full=true;ready=true;held[2589]=1;held[2320]=2
 results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
 assert(p.BuyMissing(recipe,3));p.OpenQueuedQuote()
+assert(#quotes==0,'browse results must not request restricted purchase quotes')
+p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2320);assert(not p.ReviewPurchase(),'ignore unrelated material results')
+p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2589)
+assert(#quotes==0,'depth results only prepare purchase; hardware click requests quote')
+assert(p.ReviewPurchase())
+assert(quotes[1].total==1060,'quantity price includes more expensive price levels')
 assert(#quotes==1 and quotes[1].id==2589 and quotes[1].n==5,'batch three subtracts one owned cloth')
 assert(p.Pending(2589)==0,'requesting a quote is not a purchase')
 assert(not p.BuyMissing(recipe,3),'second click cannot replace a live quote')
@@ -258,15 +269,24 @@ queryHooks.ConfirmCommoditiesPurchase(2589,5)
 assert(p.Pending(2589)==5,'submitted order is reserved before asynchronous result')
 p.PurchaseEvent('COMMODITY_PURCHASE_SUCCEEDED');AuctionHouseFrame.BuyDialog:Hide()
 timeouts[#timeouts]()
-results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};p.OpenQueuedQuote()
+results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};depthRows={{quantity=100,unitPrice=10}};p.OpenQueuedQuote()
+p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2320);assert(p.ReviewPurchase())
 assert(#quotes==2 and quotes[2].id==2320 and quotes[2].n==1,'queue advances to missing thread')
 queryHooks.ConfirmCommoditiesPurchase(2320,1);p.PurchaseEvent('COMMODITY_PURCHASE_FAILED');AuctionHouseFrame.BuyDialog:Hide()
 assert(p.Pending(2320)==0 and p.Pending(2589)==5,'failure releases only its own reservation')
 assert(p.BuyMissing(recipe,3));results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};p.OpenQueuedQuote()
+p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2320);assert(p.ReviewPurchase())
 assert(quotes[#quotes].id==2320,'awaiting cloth is not bought twice')
 p.CancelBuying();AuctionHouseFrame.BuyDialog:Hide()
 held[2589]=6;p.PurchaseEvent('BAG_UPDATE_DELAYED');assert(p.Pending(2589)==0,'bag arrival clears delivery reservation')
-held[2589]=0;assert(p.BuyMissing(recipe,1));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1}};p.OpenQueuedQuote()
+held[2589]=0;assert(p.BuyMissing(recipe,1));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=1}};depthRows={{quantity=1,unitPrice=200}};p.OpenQueuedQuote()
+p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2589);assert(not p.ReviewPurchase())
 assert(#quotes==3,'short supply never submits a partial order')
 p.CancelBuying()
 print('PASS: scaled purchase queue, native live quote, explicit confirmation, pending delivery, repeat-click and failed/short-supply guards')
+
+-- An unresponsive quote must not strand a disabled native dialog.
+p.CancelBuying();depthRows={{quantity=100,unitPrice=200}}
+assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();p.PurchaseEvent('COMMODITY_SEARCH_RESULTS_RECEIVED',2589);assert(p.ReviewPurchase())
+assert(AuctionHouseFrame.BuyDialog:IsShown());timeouts[#timeouts]();assert(not AuctionHouseFrame.BuyDialog:IsShown(),'missing quote times out and releases the modal')
+print('PASS: detail search before quote, price-depth total, click-only quote request and disabled-dialog timeout')
