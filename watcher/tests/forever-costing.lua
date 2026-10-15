@@ -66,3 +66,23 @@ local repairedBag=craft(253664,1,3000,{mat(2996,6)});rebuild()
 assert(repairedBag.costBasis.totalCopper==7 and position(2996).totalCopper==7,'future crafts consume corrected weighted copper exactly')
 assert(#AZPCForeverDB.trades==1,'repair retains original transaction')
 print('PASS: audited reconciliation and subsequent craft copper conservation')
+
+local function bankObservation(id,bags,bank,at)
+ local d=AZPCForeverDB.crafting;d.materialEvents=d.materialEvents or {}
+ d.materialEvents[#d.materialEvents+1]={eventId='bank:'..at,kind='inventory_observation',itemId=id,quantity=math.max(1,bags+bank),bagQuantity=bags,bankQuantity=bank,ownedQuantity=bags+bank,reservedQuantity=0,observedAt=at,character='Lu',realm='Realm',region=90,faction='horde',confirmation='bags_and_character_bank_observed'}
+end
+reset();bankObservation(2318,0,20,1000);trade('buy',2318,24,1008,2000);trade('buy',2320,15,510,2000)
+local first=craft(2309,1,3000,{mat(2318,8),mat(2320,5)});local second=craft(2309,1,4000,{mat(2318,8),mat(2320,5)});local third=craft(2309,1,5000,{mat(2318,8),mat(2320,5)})
+rebuild();assert(first.costBasis.complete and first.costBasis.totalCopper==506 and second.costBasis.totalCopper==506 and third.costBasis.totalCopper==506,'unknown bank stock cannot dilute known bag purchases')
+local leather=position(2318);assert(leather.quantity==20 and leather.bankLedgerQuantity==20 and leather.bagLedgerQuantity==0 and not leather.costComplete,'untouched bank inventory stays unresolved')
+reset();trade('buy',1,10,101,1000);bankObservation(1,2,8,2000);bankObservation(1,5,5,3000)
+a=craft(2,1,4000,{mat(1,5)});rebuild();assert(a.costBasis.complete and a.costBasis.totalCopper==51 and position(1).recordedCopper==50,'deposit and withdrawal preserve exact copper')
+reset();bankObservation(1,0,10,1000);trade('buy',1,2,40,2000);bankObservation(1,4,8,3000);a=craft(2,1,4000,{mat(1,4)});rebuild();assert(not a.costBasis.complete and a.costBasis.recordedCopper==40,'unknown bank withdrawal remains unknown in bags')
+reset();bankObservation(2318,4,20,1000);trade('buy',2318,20,840,2000);trade('buy',2320,15,510,2000)
+a=craft(2309,1,3000,{mat(2318,8),mat(2320,5)});rebuild();assert(not a.costBasis.complete and a.costBasis.inputs[1].availableQuantity==24 and a.costBasis.recordedCopper==450,'four unknown bag leather remains unresolved without averaging twenty bank leather into the craft')
+print('PASS: bag/bank cost isolation, exact location transfers, unknown withdrawals and Wet boots mixed-bag regression')
+reset();bankObservation(2318,3,20,1000);trade('buy',2318,20,840,2000);trade('buy',2320,15,510,2000);trade('inventory_snapshot',2318,24,0,2500)
+a=craft(2309,1,3000,{mat(2318,8),mat(2320,5)});b=craft(2309,1,4000,{mat(2318,8),mat(2320,5)});local c=craft(2309,1,5000,{mat(2318,8),mat(2320,5)})
+rebuild();assert(a.costBasis.inputs[1].availableQuantity==24 and a.costBasis.recordedCopper==450 and not a.costBasis.complete,'fresh bag proof adds the fourth unresolved bag leather')
+assert(b.costBasis.recordedCopper==450 and c.costBasis.recordedCopper==450 and position(2318).quantity==20 and position(2318).bagLedgerQuantity==0,'stale pre-craft snapshot cannot create stock again on later crafts')
+print('PASS: Wet exact bank-three, purchase-twenty, bag-twenty-four sequence and no repeated snapshot stock')
