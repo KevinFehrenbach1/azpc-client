@@ -51,6 +51,7 @@ UIParent={}
 local function widget()
  local w={scripts={},shown=true}
  for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus'})do w[method]=function()end end
+ function w:SetPoint(point,relative)assert(relative~=self,'a frame must never anchor to itself')end
  function w:SetText(value)self.text=value end
  function w:GetText()return self.text or ''end
  function w:GetFrameLevel()return 1 end
@@ -64,7 +65,26 @@ local function widget()
  function w:CreateFontString()return widget()end
  return w
 end
-function CreateFrame(_,name)local w=widget();if name then _G[name]=w end;return w end
+function CreateFrame(_,name,parent,template)
+ local w=widget();if name then _G[name]=w end
+ if template=='AuctionHouseFrameDisplayModeTabTemplate'then
+  parent.Tabs[#parent.Tabs+1]=w
+  -- Native template registration happens before the rest of the page exists.
+  -- Profession data can still arrive during construction.
+  assert(AZPCForeverCraftingPage and not AZPCForeverCraftingPage.profession)
+  local ok,err=pcall(function()
+   local empty=AZPCForeverProfession.Catalog()
+   -- Exercise the guarded browser refresh via catalog capture below.
+   local previousCatalog=AZPCForeverDB.professionCatalog
+   C_TradeSkillUI={GetBaseProfessionInfo=function()return {professionName='Tailoring'}end,GetRecipeInfo=function()return {name='Test',learned=true}end}
+   AZPCForeverProfession.CaptureCatalog({1})
+   AZPCForeverDB.professionCatalog=previousCatalog
+   C_TradeSkillUI=nil
+  end)
+  assert(ok,err)
+ end
+ return w
+end
 UISpecialFrames={}
 -- Load a selected recipe through an event, then render the UI.
 AuctionHouseFrame.Tabs={widget(),widget(),widget(),widget()}
@@ -173,3 +193,4 @@ page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search)
 assert(page.recipeRows[1].recipe.name=='Linen Bag')
 assert(#AuctionHouseFrame.Tabs==5,'refreshing page must not duplicate the native AH tab')
 print('PASS: persistent multi-profession catalog, learned-only capture, unsupported recipes, literal search, linked/character/realm isolation, browser selection and native tab registration')
+

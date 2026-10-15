@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.29 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.29 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.29 - AH crafting recipe browser" --notes "Move crafting into an AZPC Crafting Auction House tab. Browse saved learned recipes by profession and name, select a recipe and Search All for material and output pricing. Open each profession once to capture its catalog. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.30 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.30 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.30 - Fix AH crafting tab initialization" --notes "Fix native tab self-anchoring caused by automatic parentArray registration, and prevent browser refresh until page controls are ready. Preserve saved recipe catalogs. Watcher stays 0.4.40."
