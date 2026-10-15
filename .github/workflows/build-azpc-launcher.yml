@@ -29,6 +29,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
+      - run: lua5.1 watcher/tests/forever-performance.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
       - run: lua5.1 watcher/tests/forever-materials.lua
@@ -149,5 +150,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.41 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.41 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.41 - Separate bag and bank material costs" --notes "Separate bag and character-bank material cost pools. Crafting consumes bag costs; observed deposits and withdrawals transfer copper exactly. Preserve unknown costs and bank inventory without diluting new bag purchases. Fresh pre-craft bag snapshots can add unresolved acquisitions once. Historical complete costs remain protected. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.42 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.42 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.42 - Reduce loot and mailbox processing stalls" --notes "Reduce repeated loot and mailbox processing: batch confirmed loot costing, cache parsed receipts and unchanged exports, index duplicate candidates, and compact adjacent confirmed zero-cost lots. Preserve capture evidence, receipt identities, cost formulas, historical corrections, pending deliveries and logout flushes. Watcher stays 0.4.40; TBC stays 0.4.29."
