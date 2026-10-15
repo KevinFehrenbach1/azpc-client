@@ -292,3 +292,35 @@ assert(AuctionHouseFrame.BuyDialog:IsShown());timeouts[#timeouts]();assert(not A
 print('PASS: detail search before quote, price-depth total, click-only quote request and disabled-dialog timeout')
 
 print('PASS: payload-free Forever RECEIVED event reaches the queue through the registered event frame')
+
+-- The quantity/price confirmation opens itself, without a separate Review click.
+local popup,confirmed=nil,0
+StaticPopupDialogs={}
+function StaticPopup_Show(key,text,_,data)popup={key=key,text=text,data=data};return popup end
+function StaticPopup_Hide()popup=nil end
+function GetMoney()return 100000 end
+function AuctionHouseFrame.BuyDialog:BuyNow()
+ confirmed=confirmed+1;local quote=quotes[#quotes];queryHooks.ConfirmCommoditiesPurchase(quote.id,quote.n)
+end
+held[2589]=0;held[2320]=2;depthRows={{quantity=100,unitPrice=200}}
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
+assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
+assert(popup and popup.text:find('Buy 2 Linen Cloth?',1,true),'quantity popup opens from results without another review click')
+assert(popup.text:find('Maximum total:',1,true),'consent shows maximum spend')
+local shown=popup;local before=#quotes
+StaticPopupDialogs[shown.key].OnAccept(nil,shown.data)
+assert(#quotes==before+1 and confirmed==0,'Buy click requests quote, never buys before a live price')
+p.PurchaseEvent('COMMODITY_PRICE_UPDATED',200,400);timeouts[#timeouts]()
+assert(confirmed==1 and p.Pending(2589)==2,'live quote within displayed maximum completes the explicitly approved purchase')
+p.PurchaseEvent('COMMODITY_PURCHASE_FAILED');AuctionHouseFrame.BuyDialog:Hide()
+assert(p.Pending(2589)==0)
+assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
+shown=popup;StaticPopupDialogs[shown.key].OnAccept(nil,shown.data)
+p.PurchaseEvent('COMMODITY_PRICE_UPDATED',200,400);local confirmLater=timeouts[#timeouts]
+p.PurchaseEvent('COMMODITY_PRICE_UPDATED',250,500);confirmLater()
+assert(confirmed==1,'price increase cancels queued auto confirmation and requires new explicit consent')
+p.CancelBuying();AuctionHouseFrame.BuyDialog:Hide();assert(popup==nil,'Stop dismisses the pending popup')
+assert(p.BuyMissing(recipe,1));p.OpenQueuedQuote();emit('COMMODITY_SEARCH_RESULTS_RECEIVED')
+shown=popup;before=#quotes;StaticPopupDialogs[shown.key].OnCancel(nil,shown.data)
+assert(#quotes==before and confirmed==1 and popup==nil,'Cancel never requests a quote or buys')
+print('PASS: automatic quantity popup, explicit capped consent, live quote required, price increase guard and cancellation')
