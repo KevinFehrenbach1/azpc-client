@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.40"
+local addon, VERSION = ..., "0.2.41"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -690,10 +690,10 @@ local function market(e) return table.concat({canonicalRegion(e.region,e.realm),
 local function mail(export)
     if type(export)~='string' then return end
     local f={};for s in (export..'|'):gmatch('(.-)|') do f[#f+1]=s end
-    if f[1]~='AZPCFTRADE' or (f[2]~='1' and f[2]~='2') or (f[4]~='buy' and f[4]~='sell') then return end
+    if f[1]~='AZPCFTRADE' or (f[2]~='1' and f[2]~='2') or (f[4]~='buy' and f[4]~='sell' and f[4]~='inventory_snapshot') then return end
     if not ((f[2]=='1' and (#f==13 or #f==14)) or (f[2]=='2' and #f==21)) then return end
     local id,q,c,at,region=tonumber(f[5]),tonumber(f[7]),tonumber(f[8]),tonumber(f[9]),canonicalRegion(tonumber(f[12]),decode(f[10]))
-    if not integer(id,10000000) or id<1 or not integer(q,1000000) or q<1 or not integer(c) or not integer(at,4102444800000) or not integer(region,100) or region<1 then return end
+    if not integer(id,10000000) or id<1 or not integer(q,1000000) or q<(f[4]=='inventory_snapshot' and 0 or 1) or not integer(c) or not integer(at,4102444800000) or not integer(region,100) or region<1 then return end
     local e={kind=f[4],itemId=id,quantity=q,copper=c,observedAt=f[2]=='1' and at*1000 or at,eventId='mail:'..f[3],realm=decode(f[10]),faction=f[11],region=region,character=decode(f[13]),name=decode(f[6])}
     if e.realm=='' or e.character=='' or (e.faction~='horde' and e.faction~='alliance') then return end
     -- Apply verified legacy payment evidence to working costs, retaining raw exports.
@@ -757,7 +757,7 @@ local function rebuild()
         local region=canonicalRegion(e.region,e.realm)
         if region~=e.region then local copy={};for k,v in pairs(e)do copy[k]=v end;copy.region=region;events[i]=copy end
     end
-    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6,inventory_observation=7}
+    local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6,inventory_observation=7,inventory_snapshot=8}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
     local pools={};local transit={};local unresolved=0;local updates={}
     local function pool(e,id)
@@ -814,6 +814,7 @@ local function rebuild()
             if e.untrackedQuantity>0 then new[#new+1]={quantity=e.untrackedQuantity,copper=0}end
             for _,l in ipairs(p.lots)do if l.quantity>0 then new[#new+1]=l end end;p.lots=new
         elseif e.kind=='transfer_out' then
+            p.costChangedAt=e.observedAt
             local used=average(p,e.quantity);transit[#transit+1]={event=e,quantity=e.quantity,copper=used.complete and used.knownCopper or nil,partialCopper=not used.complete and used.knownCopper or nil}
         elseif e.kind=='transfer_in' then
             local matches={}
@@ -824,15 +825,31 @@ local function rebuild()
             else p.lots[#p.lots+1]={quantity=e.quantity,partialCopper=0}end
         elseif e.kind=='inventory_observation' then
             if e.confirmation~='bags_and_character_bank_observed' or not integer(e.bagQuantity,1000000) or not integer(e.bankQuantity,1000000) or not integer(e.reservedQuantity,1000000) or e.ownedQuantity~=e.bagQuantity+e.bankQuantity then error('Invalid bank observation.')end
-            local q=totals(p);local expected=e.ownedQuantity+e.reservedQuantity
-            if expected>q then p.lots[#p.lots+1]={quantity=expected-q,partialCopper=0}end
-            p.bankQuantity=e.bankQuantity;p.bagQuantity=e.bagQuantity;p.bankObservedAt=e.observedAt
-            p.inventoryMismatch=q>expected and {recorded=q,observed=expected,at=e.observedAt} or nil
-            if p.inventoryMismatch then p.uncertain=true end
+            -- Purchases, loot and crafts enter bags. Bank observations move existing
+            -- costs only when the other location has a matching surplus.
+            p.bank=p.bank or {lots={}}
+            local bank=p.bank;local bagTarget=e.bagQuantity+e.reservedQuantity
+            local bq=totals(p);local nq=totals(bank)
+            local function move(from,to,quantity)
+                if quantity<=0 then return end
+                local used=average(from,quantity)
+                to.lots[#to.lots+1]={quantity=quantity,copper=used.complete and used.knownCopper or nil,partialCopper=not used.complete and used.knownCopper or nil}
+            end
+            if nq<e.bankQuantity and bq>bagTarget then move(p,bank,math.min(e.bankQuantity-nq,bq-bagTarget))
+            elseif nq>e.bankQuantity and bq<bagTarget then move(bank,p,math.min(nq-e.bankQuantity,bagTarget-bq))end
+            bq=totals(p);nq=totals(bank)
+            if bagTarget>bq then p.lots[#p.lots+1]={quantity=bagTarget-bq,partialCopper=0}end
+            if e.bankQuantity>nq then bank.lots[#bank.lots+1]={quantity=e.bankQuantity-nq,partialCopper=0}end
+            local expected=e.ownedQuantity+e.reservedQuantity
+            p.bankQuantity=e.bankQuantity;p.bagQuantity=e.bagQuantity;p.bankObservedAt=e.observedAt;p.costChangedAt=e.observedAt
+            p.inventoryMismatch=bq+nq>expected and {recorded=bq+nq,observed=expected,at=e.observedAt} or nil
+            if bq>bagTarget then p.uncertain=true end
+            if nq>e.bankQuantity then bank.uncertain=true end
         elseif e.kind=='reconcile' then
             if not integer(e.targetQuantity,1000000) or not integer(e.totalCopper) or e.targetQuantity==0 and e.totalCopper~=0 or e.confirmation~='inventory_and_cost_reconciled' then error('Invalid material reconciliation.') end
-            p.lots=e.targetQuantity>0 and {{quantity=e.targetQuantity,copper=e.totalCopper}} or {};p.uncertain=nil
-        elseif e.kind=='sell' then sale(p,e.quantity)
+            p.lots=e.targetQuantity>0 and {{quantity=e.targetQuantity,copper=e.totalCopper}} or {};p.uncertain=nil;p.bank=nil;p.bankQuantity=nil;p.bagQuantity=nil;p.bankObservedAt=nil;p.inventoryMismatch=nil
+        elseif e.kind=='inventory_snapshot' then p.observedBagQuantity=e.quantity;p.observedBagAt=e.observedAt
+        elseif e.kind=='sell' then sale(p,e.quantity);p.costChangedAt=e.observedAt
         elseif e.kind=='vendor_unresolved' then p.uncertain=true
         else
             local r=e.record;local inputs,missing,partial,complete={},{},0,r.materialsKnown==true and type(r.consumedReagents)=='table'
@@ -846,7 +863,12 @@ local function rebuild()
             if complete and next(demand) then
                 local ids={};for id in pairs(demand)do ids[#ids+1]=id end;table.sort(ids)
                 for _,id in ipairs(ids) do
-                    local used=average(pool(e,id),demand[id]);used.itemId=id;inputs[#inputs+1]=used;partial=partial+used.knownCopper
+                    local material=pool(e,id)
+                    if material.bank and material.observedBagAt and material.observedBagAt>(material.costChangedAt or -1)then
+                        local bagQ=totals(material)
+                        if material.observedBagQuantity>bagQ then material.lots[#material.lots+1]={quantity=material.observedBagQuantity-bagQ,partialCopper=0}end
+                    end
+                    local used=average(material,demand[id]);material.costChangedAt=e.observedAt;used.itemId=id;inputs[#inputs+1]=used;partial=partial+used.knownCopper
                     if not used.complete then complete=false;missing[#missing+1]={itemId=id,quantity=demand[id],recordedQuantity=used.recordedQuantity,reason=used.recordedQuantity<demand[id] and 'purchase_cost_missing' or 'upstream_cost_unresolved'} end
                 end
             else
@@ -864,7 +886,7 @@ local function rebuild()
             local old=r.costBasis
             local conflict=old and old.complete and (not complete or old.totalCopper~=partial) or false
             if conflict then complete=false;missing[#missing+1]={reason='saved_cost_conflict'} end
-            local basis=old and old.complete and old or {schema=1,method='remaining_material_weighted_average',complete=complete,totalCopper=complete and partial or nil,recordedCopper=partial,outputQuantity=e.quantity,inputs=inputs,missing=missing,costedAt=r.observedAt}
+            local basis=old and old.complete and old or {schema=1,method='remaining_material_weighted_average',scope='bags',complete=complete,totalCopper=complete and partial or nil,recordedCopper=partial,outputQuantity=e.quantity,inputs=inputs,missing=missing,costedAt=r.observedAt}
             updates[#updates+1]={record=r,basis=basis,conflict=conflict,missing=missing}
             if not complete then unresolved=unresolved+1 end
             p.lots[#p.lots+1]={quantity=e.quantity,copper=complete and basis.totalCopper or nil,partialCopper=not complete and partial or nil}
@@ -873,7 +895,12 @@ local function rebuild()
     local positions={}
     for _,p in pairs(pools) do
         local q,c,known=totals(p)
-        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,bagQuantity=p.bagQuantity,bankQuantity=p.bankQuantity,bankObservedAt=p.bankObservedAt,inventoryMismatch=p.inventoryMismatch,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(p.lots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
+        local bagQ,bagC,bagKnown=q,c,known
+        local bankQ,bankC,bankKnown=0,0,true
+        if p.bank then bankQ,bankC,bankKnown=totals(p.bank);q=q+bankQ;c=c+bankC;known=known and bankKnown end
+        if c>MAX or q>10000000000 then error('Material cost totals exceed the supported exact range.')end
+        local allLots={};for _,l in ipairs(p.lots)do allLots[#allLots+1]=l end;for _,l in ipairs(p.bank and p.bank.lots or {})do allLots[#allLots+1]=l end
+        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,bagLedgerQuantity=bagQ,bagRecordedCopper=bagC,bagCostComplete=bagKnown,bankLedgerQuantity=bankQ,bankRecordedCopper=bankC,bankCostComplete=bankKnown,bagQuantity=p.bagQuantity,bankQuantity=p.bankQuantity,bankObservedAt=p.bankObservedAt,inventoryMismatch=p.inventoryMismatch,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(allLots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(allLots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
     end
     table.sort(positions,function(a,b)return a.key<b.key end)
     local state={schema=1,method='remaining_material_weighted_average',positions=positions,unresolvedCrafts=unresolved}
