@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.35"
+local addon, VERSION = ..., "0.2.36"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1825,47 +1825,100 @@ do
             if bags==nil then queueStatus('Bag quantity: No data. Buying paused.');return end
             local missing=math.max(0,row.needed-bags-pendingQuantity(row.itemId))
             if missing>0 then
-                q.current={itemId=row.itemId,quantity=missing};q.waiting=true
+                q.current={itemId=row.itemId,quantity=missing};q.waiting=true;q.detailKey=nil;q.detailSent=nil;q.moreDepth=nil;q.ready=nil
                 ownQuery=true
                 local ok=pcall(C_AuctionHouse.SearchForItemKeys,{api(C_AuctionHouse,'MakeItemKey',row.itemId) or {itemID=row.itemId}}, {{sortOrder=0,reverseSort=false}})
                 ownQuery=false
                 if not ok then q.waiting=false;queueStatus('Material search failed. Return to Crafting to retry.')else queueStatus('Buying '..q.index..'/'..#q.rows..': searching '..itemName(row.itemId))end
+                local current=q.current
+                if C_Timer and C_Timer.After then C_Timer.After(20,function()if purchaseQueue==q and q.current==current and q.waiting then q.waiting=false;queueStatus('Material search timed out. Click Buy missing materials to retry.')end end)end
                 return
             end
             q.index=q.index+1
         end
         purchaseQueue=nil;queueStatus('Materials ordered. Collect purchased materials from your mailbox.');if render then render()end
     end
+    local function readPurchaseDepth(id)
+        local q=purchaseQueue;local target=q and q.current
+        if not target or target.itemId~=id or not q.detailSent or purchaseAttempt then return end
+        local bags=count(id);if bags==nil then queueStatus('Bag quantity: No data. Buying paused.');return end
+        target.quantity=math.max(0,q.rows[q.index].needed-bags-pendingQuantity(id))
+        if target.quantity==0 then q.index=q.index+1;q.current=nil;advancePurchase();return end
+        local left,total=target.quantity,0
+        for index=1,(api(C_AuctionHouse,'GetNumCommoditySearchResults',id) or 0)do
+            local row=api(C_AuctionHouse,'GetCommoditySearchResultInfo',id,index)
+            if row and number(row.quantity) and number(row.unitPrice) and row.unitPrice>0 then
+                local available=math.max(0,row.quantity-(number(row.numOwnerItems) or 0))
+                local take=math.min(left,available);total=total+take*row.unitPrice;left=left-take
+                if left==0 then break end
+            end
+        end
+        if left>0 then
+            if api(C_AuctionHouse,'HasFullCommoditySearchResults',id)==false then
+                q.moreDepth=true
+                if api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreCommoditySearchResults)=='function'then q.moreDepth=false;pcall(C_AuctionHouse.RequestMoreCommoditySearchResults,id)end
+                return
+            end
+            q.waiting=false;q.ready=nil;queueStatus('Not enough '..itemName(id)..' listed. Buying paused.');return
+        end
+        q.waiting=false;q.ready={itemId=id,quantity=target.quantity,total=total,unit=math.ceil(total/target.quantity)}
+        queueStatus('Ready: '..itemName(id)..' x'..target.quantity..' • Click Review purchase.')
+    end
+    local function sendPurchaseSearch()
+        local q=purchaseQueue
+        if not q or not q.detailKey or q.detailSent then return end
+        if api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then return end
+        q.detailSent=true;ownQuery=true
+        local ok=pcall(C_AuctionHouse.SendSearchQuery,q.detailKey,{{sortOrder=0,reverseSort=false}},true)
+        ownQuery=false
+        if not ok then q.detailSent=false;queueStatus('Material listings could not load. Stop and try again.')end
+    end
     local function openQueuedQuote()
         local q=purchaseQueue
-        if not q or not q.waiting or not q.current or purchaseAttempt then return end
+        if not q or not q.waiting or not q.current or q.detailKey or purchaseAttempt then return end
         if not api(C_AuctionHouse,'HasFullBrowseResults')then return end
         local target=q.current
         for _,row in ipairs(api(C_AuctionHouse,'GetBrowseResults') or {})do
             if row.itemKey and row.itemKey.itemID==target.itemId and number(row.minPrice) and row.minPrice>0 then
                 local info=api(C_AuctionHouse,'GetItemKeyInfo',row.itemKey)
-                q.waiting=false
                 if not info or not info.isCommodity then queueStatus('This material requires an individual listing. Use its Buy button.');cancelQueue();return end
-                if number(row.totalQuantity) and row.totalQuantity<target.quantity then queueStatus('Not enough '..itemName(target.itemId)..' listed. Buying paused.');return end
-                local bags=count(target.itemId)
-                if bags==nil then return end
-                target.quantity=math.max(0,q.rows[q.index].needed-bags-pendingQuantity(target.itemId))
-                if target.quantity==0 then q.index=q.index+1;advancePurchase();return end
-                local owner=AuctionHouseFrame
-                if owner and owner.BuyDialog and not owner.BuyDialog.azpcQueueHide and owner.BuyDialog.HookScript then
-                    owner.BuyDialog:HookScript('OnHide',function()if purchaseAttempt and not purchaseAttempt.submitted then purchaseAttempt=nil;cancelQueue()end end);owner.BuyDialog.azpcQueueHide=true
-                end
-                if not owner or type(owner.StartCommoditiesPurchase)~='function' then queueStatus('Purchase dialog unavailable.');return end
-                if owner.BuyDialog and owner.BuyDialog:IsShown()then queueStatus('Close the current purchase dialog, then continue.');return end
-                purchaseAttempt={itemId=target.itemId,quantity=target.quantity}
-                local ok=pcall(owner.StartCommoditiesPurchase,owner,target.itemId,target.quantity,row.minPrice,row.minPrice*target.quantity)
-                if not ok then purchaseAttempt=nil;queueStatus('Could not request a purchase quote. Return to Crafting to retry.')end
-                return
+                q.detailKey=row.itemKey;sendPurchaseSearch();return
             end
         end
         q.waiting=false;queueStatus('No data: '..itemName(target.itemId)..' is not listed. Buying paused.')
     end
+    -- Restricted quote requests must originate from a button click, never an AH event or timer.
+    local function reviewPurchase()
+        local q=purchaseQueue;local target=q and q.ready
+        if not target or purchaseAttempt or not auctionOpen then return false end
+        if InCombatLockdown and InCombatLockdown()then return false end
+        if api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then notify('The AH is busy. Try again shortly.');return false end
+        reconcileDelivery()
+        local bags=count(target.itemId)
+        if bags==nil then return false end
+        local missing=math.max(0,q.rows[q.index].needed-bags-pendingQuantity(target.itemId))
+        if missing~=target.quantity then q.ready=nil;readPurchaseDepth(target.itemId);return false end
+        local owner=AuctionHouseFrame
+        if not owner or type(owner.StartCommoditiesPurchase)~='function' then queueStatus('Purchase dialog unavailable.');return false end
+        if owner.BuyDialog and owner.BuyDialog:IsShown()then notify('Close the current purchase dialog first.');return false end
+        if owner.BuyDialog and not owner.BuyDialog.azpcQueueHide and owner.BuyDialog.HookScript then
+            owner.BuyDialog:HookScript('OnHide',function()if purchaseAttempt and not purchaseAttempt.submitted then purchaseAttempt=nil;cancelQueue();if render then render()end end end);owner.BuyDialog.azpcQueueHide=true
+        end
+        purchaseAttempt={itemId=target.itemId,quantity=target.quantity}
+        local attempt=purchaseAttempt
+        local ok=pcall(owner.StartCommoditiesPurchase,owner,target.itemId,target.quantity,target.unit,target.total)
+        if not ok then purchaseAttempt=nil;if owner.BuyDialog then owner.BuyDialog:Hide()end;queueStatus('Could not request a purchase quote. Stop and try again.');return false end
+        if C_Timer and C_Timer.After then C_Timer.After(12,function()
+            if purchaseAttempt==attempt and not attempt.quoted and not attempt.submitted then
+                purchaseAttempt=nil;cancelQueue();if owner.BuyDialog then owner.BuyDialog:Hide()end
+                notify('The AH did not return a quote. Try buying again.');if render then render()end
+            end
+        end)end
+        if render then render()end
+        return true
+    end
     local function buyMissing(recipe,batch)
+        if purchaseQueue and purchaseQueue.ready then return reviewPurchase()end
         if purchaseAttempt then notify('Finish or cancel the current purchase first.');return false end
         if not auctionOpen or not recipe or recipe.materialsKnown~=true then notify('Open the AH and choose a recipe with known materials.');return false end
         if InCombatLockdown and InCombatLockdown()then return false end
@@ -1878,19 +1931,26 @@ do
         end
         purchaseQueue={rows=rows,index=1};advancePurchase();return true
     end
-    local function purchaseEvent(event)
+    local function purchaseEvent(event,id)
         local a=purchaseAttempt
-        if event=='BAG_UPDATE_DELAYED' then reconcileDelivery()
+        if event=='COMMODITY_SEARCH_RESULTS_RECEIVED' or event=='COMMODITY_SEARCH_RESULTS_ADDED' then readPurchaseDepth(id)
+        elseif event=='COMMODITY_PRICE_UPDATED' and a then a.quoted=true
+        elseif event=='COMMODITY_PRICE_UNAVAILABLE' and a then a.quoted=true;queueStatus('The quote is unavailable. Close the dialog and try again.')
+        elseif event=='BAG_UPDATE_DELAYED' then reconcileDelivery()
         elseif event=='COMMODITY_PURCHASE_SUCCEEDED' and a and a.submitted then
             local entry=deliveryLedger()[tostring(a.itemId)];if entry then entry.uncertain=nil end
             purchaseAttempt=nil
-            if purchaseQueue then purchaseQueue.index=purchaseQueue.index+1 end
+            if purchaseQueue then purchaseQueue.index=purchaseQueue.index+1;purchaseQueue.ready=nil;purchaseQueue.current=nil;purchaseQueue.detailKey=nil;purchaseQueue.detailSent=nil end
             -- Allow the native dialog to finish hiding before requesting the next quote.
             if C_Timer and C_Timer.After then C_Timer.After(0.2,advancePurchase)end
         elseif event=='COMMODITY_PURCHASE_FAILED' and a then
             if a.submitted then local entry=deliveryLedger()[tostring(a.itemId)];if entry then entry.quantity=math.max(0,entry.quantity-a.quantity);if entry.quantity==0 then deliveryLedger()[tostring(a.itemId)]=nil end end end
             purchaseAttempt=nil;cancelQueue();notify('Purchase failed. No automatic retry; scan and try again.')
-        elseif event=='AUCTION_HOUSE_THROTTLED_SYSTEM_READY' and purchaseQueue and not purchaseQueue.current then advancePurchase()end
+        elseif event=='AUCTION_HOUSE_THROTTLED_SYSTEM_READY' and purchaseQueue then
+            if not purchaseQueue.current then advancePurchase()
+            elseif purchaseQueue.moreDepth then readPurchaseDepth(purchaseQueue.current.itemId)
+            else sendPurchaseSearch()end
+        end
     end
     local function typography(text,style,size)
         local heading=style=='GameFontNormalLarge' or style=='GameFontNormalSmall'
@@ -1971,7 +2031,7 @@ do
         end
         local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-166);scroll:SetPoint('BOTTOMRIGHT',-30,166)
         panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(498,1);scroll:SetScrollChild(panel.child);panel.rows={}
-        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing scales with crafts and bags. Confirm each live quote in the AH.')
+        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing → Review purchase → Confirm. Quantities scale with crafts and bags.')
         panel.cards={}
         for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
             local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(160,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*166,47)
@@ -1994,7 +2054,8 @@ do
         local p=create();if not p then return end
         if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Scan prices again.');scan=nil end
         local data=quote(selected,quantity)
-        p.buyMissing:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not purchaseAttempt)
+        p.buyMissing:SetText(purchaseQueue and purchaseQueue.ready and 'Review purchase' or 'Buy missing materials')
+        p.buyMissing:SetEnabled((not purchaseQueue or purchaseQueue.ready~=nil or not purchaseQueue.waiting) and auctionOpen and selected~=nil and selected.materialsKnown==true and not purchaseAttempt)
         p.cancelBuying:SetEnabled(purchaseQueue~=nil)
         p.name:SetText(selected and selected.name or 'Choose a recipe')
         p.subtitle:SetText(selected and ((selected.profession or 'Saved recipe')..' • Creates '..(selected.outputMin or '?')..(selected.outputMax and selected.outputMax~=selected.outputMin and ('–'..selected.outputMax)or ''))or 'Select a learned recipe from the list.')
@@ -2189,18 +2250,18 @@ do
         if not ensurePage()then notify('The AH crafting tab is waiting for the auction UI. Reopen the AH.');return end
         page.tabButton:GetScript('OnClick')(page.tabButton)
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED'})do pcall(events.RegisterEvent,events,event)end
+    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED'})do pcall(events.RegisterEvent,events,event)end
     local professionOpen=false
-    events:SetScript('OnEvent',function(_,event)
+    events:SetScript('OnEvent',function(_,event,id)
         local ok=pcall(function()
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
             elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;cancelQueue();stopScan('AH closed. Scan prices again.');buyTarget=nil;if buyHint then buyHint:Hide()end
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults();openQueuedQuote() end
-            purchaseEvent(event)
+            purchaseEvent(event,id)
             if purchaseAttempt and not purchaseAttempt.submitted and AuctionHouseFrame and AuctionHouseFrame.BuyDialog and not AuctionHouseFrame.BuyDialog:IsShown()then purchaseAttempt=nil;cancelQueue()end
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)

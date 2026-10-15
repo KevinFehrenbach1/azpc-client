@@ -149,5 +149,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.35 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.35 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.35 - Scaled material buying queue" --notes "Buy missing recipe materials scaled to craft quantity and bags. Confirm each live quantity quote in the native AH dialog; successful purchases advance the queue. Pending delivery reservations prevent duplicate purchases, with cancellation and failure guards. Watcher stays 0.4.40."
+          if gh release view forever-addon-v0.2.36 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.36 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.36 - Fix disabled material purchase confirmation" --notes "Load detailed commodity listings and quantity-specific price depth before buying. Request native purchase quotes only from an explicit Review purchase button click, preserving the required user action. Add quote and search timeouts so failed requests cannot strand the dialog. Watcher stays 0.4.40."
