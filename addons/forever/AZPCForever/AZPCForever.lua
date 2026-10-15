@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.36"
+local addon, VERSION = ..., "0.2.37"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -1933,7 +1933,12 @@ do
     end
     local function purchaseEvent(event,id)
         local a=purchaseAttempt
-        if event=='COMMODITY_SEARCH_RESULTS_RECEIVED' or event=='COMMODITY_SEARCH_RESULTS_ADDED' then readPurchaseDepth(id)
+        if event=='COMMODITY_SEARCH_RESULTS_RECEIVED' then
+            -- Forever's RECEIVED event has no payload; ADDED and UPDATED carry itemID.
+            -- Read only the item that this queue has an outstanding detailed query for.
+            local q=purchaseQueue
+            if q and q.detailSent and q.current then readPurchaseDepth(q.current.itemId)end
+        elseif event=='COMMODITY_SEARCH_RESULTS_ADDED' or event=='COMMODITY_SEARCH_RESULTS_UPDATED' then readPurchaseDepth(id)
         elseif event=='COMMODITY_PRICE_UPDATED' and a then a.quoted=true
         elseif event=='COMMODITY_PRICE_UNAVAILABLE' and a then a.quoted=true;queueStatus('The quote is unavailable. Close the dialog and try again.')
         elseif event=='BAG_UPDATE_DELAYED' then reconcileDelivery()
@@ -2031,7 +2036,7 @@ do
         end
         local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-166);scroll:SetPoint('BOTTOMRIGHT',-30,166)
         panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(498,1);scroll:SetScrollChild(panel.child);panel.rows={}
-        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing → Review purchase → Confirm. Quantities scale with crafts and bags.')
+        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing > Review purchase > Confirm. Quantities scale with crafts and bags.')
         panel.cards={}
         for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
             local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(160,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*166,47)
@@ -2252,7 +2257,7 @@ do
     end
     AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED'})do pcall(events.RegisterEvent,events,event)end
+    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     local professionOpen=false
     events:SetScript('OnEvent',function(_,event,id)
         local ok=pcall(function()
