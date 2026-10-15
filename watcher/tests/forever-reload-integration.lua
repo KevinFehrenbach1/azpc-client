@@ -20,7 +20,7 @@ function GetInboxInvoiceInfo()return 'seller','Light Leather','Buyer',0,210,0,10
 function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Light Leather',200,0,30 end
 function GetItemInfo(name)return name,'|Hitem:2318|h[Light Leather]|h'end
 assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
-emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==1);assert(popups==0,'saved sale visible in mailbox must not prompt')
+emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==1);assert(popups==1,'new sale capture prompts while mailbox is open')
 hooks.TakeInboxMoney(1);visible=false;money=1200;emit('PLAYER_MONEY');emit('MAIL_INBOX_UPDATE');flush();assert(popups==1,'real receipt capture must reach the collected-payout prompt');assert(#AZPCForeverDB.trades==1,'prompt must not duplicate or delete sale records')
 print('PASS: live mailbox capture-to-collection reminder integration and record preservation')
 
@@ -32,7 +32,7 @@ hooks.TakeInboxMoney(1);emit('MAIL_CLOSED');flush();assert(popups==2,'fast close
 function GetInboxInvoiceInfo()return nil end
 function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction expired: Light Leather',0,0,30 end
 function GetInboxItem()return 'Light Leather',2318,nil,2 end
-emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==3);emit('MAIL_CLOSED');flush();assert(popups==3,'expiration-only mailbox must remind after capture')
+emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==3);assert(popups==3,'expiration prompts before closing mailbox');emit('MAIL_CLOSED');flush();assert(popups==3,'expiration-only mailbox must remind after capture')
 emit('MAIL_SHOW');flush();emit('MAIL_CLOSED');flush();assert(popups==3,'previously captured expiration must not nag')
 print('PASS: fast-close sale and expiration-only mailbox fallback')
 
