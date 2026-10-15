@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.28"
+local addon, VERSION = ..., "0.2.29"
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -615,6 +615,7 @@ local function captureRecipes()
     if type(ids)~='table' then return 0 end
     local count=0
     for _,id in ipairs(ids) do if recipe(id) then count=count+1 end end
+    if AZPCForeverProfession and AZPCForeverProfession.CaptureCatalog then AZPCForeverProfession.CaptureCatalog(ids)end
     return count
 end
 local function installHook()
@@ -1519,7 +1520,9 @@ end
 do
     local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
     local scan,render,ownQuery
-    local tab='materials'
+    local page,ensurePage,refreshBrowser
+    local filterProfession,filterText=nil,''
+    local tab='ah'
     local function notify(text)print('|cff4cddd4AZPC:|r '..text)end
     local function api(object,name,...)
         if object and type(object[name])=='function' then local ok,value=pcall(object[name],...);if ok then return value end end
@@ -1636,8 +1639,8 @@ do
         local now=GetServerTime and GetServerTime() or time()
         local valid=scan and scan.complete and scan.at and now>=scan.at and now-scan.at<=21600 and scan.key==recipeKey(recipe)
         for _,row in ipairs(data.rows)do
-            local unit=valid and scan.prices[row.itemId]
-            row.unit=unit;row.available=valid and scan.available[row.itemId]
+            local unit=valid and scan.prices[row.itemId] or nil
+            row.unit=unit;row.available=valid and scan.available[row.itemId] or nil
             row.lineCost=unit and unit*row.needed
             if not unit or not row.available or row.available<row.needed then complete=false else total=total+row.lineCost end
             if row.missing==nil then missingKnown=false
@@ -1713,18 +1716,16 @@ do
     end
     local function create()
         if panel then return panel end
-        if not UIParent then return end
-        panel=CreateFrame('Frame','AZPCForeverProfessionPanel',UIParent,'BackdropTemplate')
-        panel:SetSize(450,470);panel:SetPoint('CENTER',UIParent,'CENTER',310,0);panel:SetFrameStrata('DIALOG')
+        if not page then return end
+        panel=CreateFrame('Frame','AZPCForeverProfessionPanel',page,'BackdropTemplate')
+        panel:SetPoint('TOPLEFT',page,'TOPLEFT',290,0);panel:SetPoint('BOTTOMRIGHT',page,'BOTTOMRIGHT',0,0)
         panel:SetBackdrop({bgFile='Interface/Tooltips/UI-Tooltip-Background',edgeFile='Interface/Tooltips/UI-Tooltip-Border',tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
         panel:SetBackdropColor(0.035,0.055,0.06,0.97);panel:SetBackdropBorderColor(0.25,0.65,0.62)
-        panel:SetMovable(true);panel:EnableMouse(true);panel:RegisterForDrag('LeftButton')
-        panel:SetScript('OnDragStart',panel.StartMoving);panel:SetScript('OnDragStop',panel.StopMovingOrSizing)
+        panel:EnableMouse(true)
         local function text(parent,font,x,y,width)
             local t=parent:CreateFontString(nil,'OVERLAY',font);t:SetPoint('TOPLEFT',x,y);t:SetWidth(width);t:SetJustifyH('LEFT');return t
         end
-        text(panel,'GameFontNormalLarge',16,-16,350):SetText('AZPC • Crafting materials')
-        local close=CreateFrame('Button',nil,panel,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-3,-3)
+        text(panel,'GameFontNormalLarge',16,-16,350):SetText('Recipe materials & pricing')
         panel.name=text(panel,'GameFontHighlight',16,-45,375)
         panel.batch=text(panel,'GameFontNormal',16,-70,240)
         local function button(label,x,fn)
@@ -1746,14 +1747,13 @@ do
         panel.profit=text(panel,'GameFontHighlight',16,-387,410)
         panel.note=text(panel,'GameFontDisableSmall',16,-411,410)
         panel.status=text(panel,'GameFontNormalSmall',16,-449,410)
-        if UISpecialFrames then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverProfessionPanel' end
         return panel
     end
     render=function()
         local p=create();if not p then return end
         if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Search All again.');scan=nil end
         local data=tab=='ah' and quote(selected,quantity) or model(selected,quantity)
-        p.name:SetText(selected and selected.name or 'Select a recipe in your profession window.')
+        p.name:SetText(selected and selected.name or 'Select a saved recipe from the list.')
         p.batch:SetText('Crafts: '..quantity)
         p.heading:SetText(tab=='ah' and 'Material • quantity • unit price • subtotal' or 'Material                 Need / Bags / Missing')
         p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
@@ -1788,7 +1788,149 @@ do
             p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved: No data' or (auctionOpen and 'AH open • Search missing materials' or 'Open the AH to search missing materials'))
         end
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=function()render();if panel then panel:Show()end end}
+    local function ownedRecipe(r)
+        return type(r)=='table' and r.character==UnitName('player') and r.realm==GetRealmName() and r.faction==(UnitFactionGroup('player') or ''):lower() and r.region==currentRegion()
+    end
+    local function catalog(profession,query)
+        local db=AZPCForeverDB or {};local merged,groups={},{}
+        for _,group in pairs(db.professionCatalog or {})do
+            if ownedRecipe(group) then groups[group.profession]=true end
+        end
+        for _,r in pairs(db.crafting and db.crafting.recipes or {})do
+            if ownedRecipe(r) and not groups[r.profession or 'Other recipes']then merged[r.recipeId]=r end
+        end
+        for _,group in pairs(db.professionCatalog or {})do
+            if ownedRecipe(group)then for _,r in ipairs(group.recipes or {})do merged[r.recipeId]=r end end
+        end
+        local rows,names={},{}
+        query=(query or ''):lower()
+        for _,r in pairs(merged)do
+            local name=r.profession or 'Other recipes';names[name]=true
+            if (not profession or profession==name) and (query=='' or (r.name or ''):lower():find(query,1,true))then rows[#rows+1]=r end
+        end
+        table.sort(rows,function(a,b)return (a.name or ''):lower()<(b.name or ''):lower()end)
+        local professions={};for name in pairs(names)do professions[#professions+1]=name end;table.sort(professions)
+        return rows,professions
+    end
+    local function captureCatalog(ids)
+        if type(ids)~='table' or not C_TradeSkillUI or api(C_TradeSkillUI,'IsTradeSkillLinked') or api(C_TradeSkillUI,'IsTradeSkillGuild') or api(C_TradeSkillUI,'IsNPCCrafting') then return end
+        local base=api(C_TradeSkillUI,'GetBaseProfessionInfo')
+        local profession=type(base)=='table' and base.professionName
+        if type(profession)~='string' or profession=='' then return end
+        local who={character=UnitName('player'),realm=GetRealmName(),faction=(UnitFactionGroup('player') or ''):lower(),region=currentRegion()}
+        if not who.character or not who.realm or who.realm=='' or who.faction=='' then return end
+        local recipes={}
+        for _,id in ipairs(ids)do
+            local info=api(C_TradeSkillUI,'GetRecipeInfo',id)
+            if info and info.learned and info.name then
+                local r=AZPCForeverCrafting and AZPCForeverCrafting.ReadRecipe and AZPCForeverCrafting.ReadRecipe(id)
+                if not r then
+                    r={recipeId=id,name=info.name,materialsKnown=false,reagents={},character=who.character,realm=who.realm,faction=who.faction,region=who.region}
+                end
+                r.profession=profession;recipes[#recipes+1]=r
+            end
+        end
+        if #recipes==0 then return end -- transient loading must not erase a saved catalog
+        AZPCForeverDB=AZPCForeverDB or {};AZPCForeverDB.professionCatalog=AZPCForeverDB.professionCatalog or {}
+        who.profession=profession;who.recipes=recipes;who.observedAt=GetServerTime and GetServerTime() or time()
+        local key=table.concat({who.character,who.realm,who.faction,who.region,profession},'|')
+        AZPCForeverDB.professionCatalog[key]=who
+        if refreshBrowser then refreshBrowser()end
+    end
+    local function selectRecipe(recipe)
+        stopScan('Recipe changed. Search All again.');scan=nil
+        selected=recipe;quantity=1;tab='ah'
+        if render then render()end
+    end
+    local function font(parent,style,x,y,width)
+        local text=parent:CreateFontString(nil,'OVERLAY',style);text:SetPoint('TOPLEFT',x,y);text:SetWidth(width);text:SetJustifyH('LEFT');return text
+    end
+    refreshBrowser=function()
+        if not page then return end
+        local rows,professions=catalog(filterProfession,filterText)
+        page.profession:SetText(filterProfession or 'All professions')
+        page.count:SetText(#rows..' saved recipes')
+        for _,button in ipairs(page.recipeRows)do button:Hide()end
+        for i,recipe in ipairs(rows)do
+            local button=page.recipeRows[i]
+            if not button then
+                button=CreateFrame('Button',nil,page.listChild,'UIPanelButtonTemplate');button:SetSize(254,38);button:SetPoint('TOPLEFT',0,-(i-1)*40)
+                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(26,26);button.icon:SetPoint('LEFT',5,0)
+                button.name=font(button,'GameFontHighlightSmall',38,-5,208)
+                button.profession=font(button,'GameFontDisableSmall',38,-22,208)
+                button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
+                page.recipeRows[i]=button
+            end
+            button.recipe=recipe;button.name:SetText(recipe.name);button.profession:SetText(recipe.profession or 'Other recipes')
+            local icon=recipe.outputItemId and ((C_Item and api(C_Item,'GetItemIconByID',recipe.outputItemId)) or (GetItemIcon and GetItemIcon(recipe.outputItemId)))
+            button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
+        end
+        page.listChild:SetHeight(math.max(1,#rows*40))
+        page.empty:SetText(#rows==0 and (filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
+        for _,button in ipairs(page.menuRows)do button:Hide()end
+        local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
+        for i,name in ipairs(options)do
+            local button=page.menuRows[i]
+            if not button then
+                button=CreateFrame('Button',nil,page.menu,'UIPanelButtonTemplate');button:SetSize(250,24);button:SetPoint('TOPLEFT',4,-4-(i-1)*25)
+                button:SetScript('OnClick',function()filterProfession=button.value;page.menu:Hide();refreshBrowser()end)
+                page.menuRows[i]=button
+            end
+            button.value=i>1 and name or nil;button:SetText(name);button:Show()
+        end
+        page.menu:SetHeight(#options*25+8)
+    end
+    ensurePage=function()
+        if page then return true end
+        local owner=AuctionHouseFrame
+        if not UIParent or not owner or type(owner.SetDisplayMode)~='function' or type(AuctionHouseFrameDisplayMode)~='table' or type(owner.Tabs)~='table' then return false end
+        page=CreateFrame('Frame','AZPCForeverCraftingPage',owner,'BackdropTemplate')
+        page:SetPoint('TOPLEFT',owner,'TOPLEFT',10,-34);page:SetPoint('BOTTOMRIGHT',owner,'BOTTOMRIGHT',-10,29)
+        page:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page:SetBackdropColor(0.025,0.04,0.045,1)
+        page:EnableMouse(true)
+        owner.AZPCCraftingPage=page
+        local mode={'AZPCCraftingPage'};AuctionHouseFrameDisplayMode.AZPCCrafting=mode
+        local id=#owner.Tabs+1
+        local name=(owner.GetName and owner:GetName() or 'AuctionHouseFrame')..'Tab'..id
+        local button=CreateFrame('Button',name,owner,'AuctionHouseFrameDisplayModeTabTemplate')
+        button:SetID(id);button:SetText('AZPC Crafting');button.displayMode=mode
+        local last=owner.Tabs[#owner.Tabs]
+        if last then button:SetPoint('LEFT',last,'RIGHT',-15,0)else button:SetPoint('BOTTOMLEFT',20,-28)end
+        owner.Tabs[id]=button;owner.tabsForDisplayMode=owner.tabsForDisplayMode or {};owner.tabsForDisplayMode[mode]=id
+        if PanelTemplates_SetNumTabs then PanelTemplates_SetNumTabs(owner,id)end
+        if PanelTemplates_TabResize then PanelTemplates_TabResize(button,20,nil,70)end
+        button:SetScript('OnClick',function()
+            owner:SetDisplayMode(mode)
+            if owner.SetTitle then owner:SetTitle('AZPC Crafting')end
+            refreshBrowser();render()
+        end)
+        page.tabButton=button
+        font(page,'GameFontNormalLarge',12,-12,270):SetText('Your professions')
+        page.profession=CreateFrame('Button',nil,page,'UIPanelButtonTemplate');page.profession:SetSize(264,25);page.profession:SetPoint('TOPLEFT',12,-40)
+        page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
+        page.search=CreateFrame('EditBox',nil,page,'InputBoxTemplate');page.search:SetSize(252,24);page.search:SetPoint('TOPLEFT',18,-75);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
+        page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';refreshBrowser()end)
+        page.search:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
+        page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
+        font(page,'GameFontDisableSmall',12,-103,264):SetText('Search learned recipes')
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-125);scroll:SetPoint('BOTTOMLEFT',12,48);scroll:SetWidth(254)
+        page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(254,1);scroll:SetScrollChild(page.listChild)
+        page.recipeRows={};page.menuRows={}
+        page.empty=font(page,'GameFontHighlightSmall',18,-150,236)
+        page.count=font(page,'GameFontDisableSmall',12,-430,264)
+        page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(258,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
+        page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
+        page:SetScript('OnShow',function()refreshBrowser();render()end)
+        page:SetScript('OnHide',function()page.menu:Hide();stopScan('Crafting tab closed. Search All again.')end)
+        page:Hide();refreshBrowser()
+        return true
+    end
+    local function showPage()
+        if not auctionOpen then notify('Open the Auction House, then choose AZPC Crafting. Open each profession once to save its recipes.');return end
+        if not ensurePage()then notify('The AH crafting tab is waiting for the auction UI. Reopen the AH.');return end
+        page.tabButton:GetScript('OnClick')(page.tabButton)
+    end
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY'})do pcall(events.RegisterEvent,events,event)end
     local professionOpen=false
@@ -1796,14 +1938,14 @@ do
         local ok=pcall(function()
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
-            elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true
+            elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
             elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;stopScan('AH closed. Search All again.')
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults() end
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
-            if professionOpen then selected=readSelection() end
-            if professionOpen or (panel and panel:IsShown())then render();if event=='TRADE_SKILL_SHOW' and panel then panel:Show()end end
+            if professionOpen and not(page and page:IsShown())then selected=readSelection() end
+            if page and page:IsShown()then refreshBrowser();render()end
         end)
         if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end
     end)
@@ -1812,7 +1954,7 @@ do
         elapsed=elapsed+delta;if elapsed<0.4 then return end;elapsed=0
         pcall(function()
             local recipe=readSelection()
-            selected=recipe;if panel and panel:IsShown()then render()end
+            if not(page and page:IsShown())then selected=recipe end
         end)
     end) end
 end
