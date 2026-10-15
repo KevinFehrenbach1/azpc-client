@@ -50,8 +50,12 @@ print('PASS: batch math, missing quantities, unknown/stale profit, character iso
 UIParent={}
 local function widget()
  local w={scripts={},shown=true}
- for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing'})do w[method]=function()end end
+ for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus'})do w[method]=function()end end
  function w:SetText(value)self.text=value end
+ function w:GetText()return self.text or ''end
+ function w:GetFrameLevel()return 1 end
+ function w:GetScript(event)return self.scripts[event]end
+ function w:CreateTexture()local t=widget();function t:SetTexture(v)self.texture=v end;return t end
  function w:SetEnabled(value)self.enabled=value end
  function w:SetScript(event,fn)self.scripts[event]=fn end
  function w:Show()self.shown=true end
@@ -63,15 +67,30 @@ end
 function CreateFrame(_,name)local w=widget();if name then _G[name]=w end;return w end
 UISpecialFrames={}
 -- Load a selected recipe through an event, then render the UI.
+AuctionHouseFrame.Tabs={widget(),widget(),widget(),widget()}
+AuctionHouseFrame.tabsForDisplayMode={}
+AuctionHouseFrameDisplayMode={Buy={'BrowseResultsFrame'}}
+local modeChanges=0
+function AuctionHouseFrame:SetDisplayMode(mode)
+ modeChanges=modeChanges+1
+ local show=mode==AuctionHouseFrameDisplayMode.AZPCCrafting
+ if AZPCForeverCraftingPage then if show then AZPCForeverCraftingPage:Show()else AZPCForeverCraftingPage:Hide()end end
+end
+function AuctionHouseFrame:GetName()return 'AuctionHouseFrame'end
+function AuctionHouseFrame:SetTitle(value)self.title=value end
 emit('TRADE_SKILL_SHOW')
+assert(AZPCForeverProfessionPanel==nil,'profession opening must not create a floating panel')
+emit('AUCTION_HOUSE_SHOW')
 p.Show()
 local panel=AZPCForeverProfessionPanel
 assert(panel and panel:IsShown()and panel.rows[1].material.itemId==2589)
-assert(panel.rows[1].button.enabled==false,'search is disabled outside AH')
+assert(AuctionHouseFrame.Tabs[5]==AZPCForeverCraftingPage.tabButton,'register after existing addon tabs')
+assert(AuctionHouseFrame.title=='AZPC Crafting')
+assert(panel.rows[1].button.enabled==true,'material search is available in AH crafting tab')
 held[2589]=0;emit('AUCTION_HOUSE_SHOW')
 assert(panel.rows[1].button.enabled==true,'missing material becomes searchable at AH')
 panel.rows[1].button.scripts.OnClick();assert(calls==2 and name=='Linen Cloth')
-assert(panel.cost.text:find('No data',1,true)and panel.profit.text:find('No data',1,true))
+p.Show();assert(panel.cost.text:find('No data',1,true)and panel.profit.text:find('No data',1,true))
 print('PASS: panel construction, selected recipe rendering, missing-stock UI and search button action')
 -- Grouped recipe shopping uses exact item IDs and complete, fresh search results.
 local grouped,results,full,more,ready=0,{},true,0,true
@@ -120,3 +139,37 @@ emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==ni
 assert(p.SearchAll());emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).ahCost==410)
 moneyNow=moneyNow+21601;assert(p.Quote(recipe,1).ahCost==nil,'old completed quote cannot stay current forever')
 print('PASS: external query interruption and quote age guard')
+-- Learned catalogs are persisted per character/realm/faction and profession.
+local base='Leatherworking'
+C_TradeSkillUI={
+ GetBaseProfessionInfo=function()return {professionName=base}end,
+ GetRecipeInfo=function(id)return {recipeID=id,name=id==10 and 'Leather Bag' or id==11 and 'Unresolved Leather Recipe' or id==20 and 'Linen Bag' or 'Unlearned',learned=id~=12}end,
+}
+local function saved(id)
+ return {recipeId=id,name=id==10 and 'Leather Bag' or 'Linen Bag',profession=base,character='Phillip',realm='Classic Beta PvP 2',faction='horde',region=90,materialsKnown=true,outputItemId=2996,outputMin=1,outputMax=1,reagents={{itemId=2589,quantity=2},{itemId=2320,quantity=1}}}
+end
+AZPCForeverCrafting.ReadRecipe=function(id)if id~=11 then return saved(id)end end
+p.CaptureCatalog({10,11,12})
+local rows,professions=p.Catalog();assert(#rows==2 and #professions==1 and professions[1]=='Leatherworking')
+assert(rows[2].materialsKnown==false,'unsupported learned recipes remain visible without invented reagents')
+p.CaptureCatalog({10,11,12});assert(#p.Catalog()==2,'reopening a profession must not duplicate catalog')
+base='Tailoring';p.CaptureCatalog({20});rows,professions=p.Catalog();assert(#rows==3 and #professions==2,'multiple professions survive closing their windows')
+assert(#p.Catalog('Tailoring','linen')==1 and #p.Catalog('Leatherworking','linen')==0)
+assert(#p.Catalog(nil,'[')==0,'recipe search is literal, not a Lua pattern')
+C_TradeSkillUI.IsTradeSkillLinked=function()return true end;p.CaptureCatalog({99});assert(#p.Catalog()==3,'linked profession must not overwrite own recipes');C_TradeSkillUI.IsTradeSkillLinked=nil
+function UnitName()return 'Other'end;assert(#p.Catalog()==0,'another character must never see this character catalog')
+function UnitName()return 'Phillip'end
+local realmBefore=GetRealmName;function GetRealmName()return 'Other realm'end;assert(#p.Catalog()==0);GetRealmName=realmBefore
+local page=AZPCForeverCraftingPage
+page:GetScript('OnShow')()
+assert(page.recipeRows[1].recipe.name=='Leather Bag','saved recipes sort by name')
+page.recipeRows[1]:GetScript('OnClick')()
+assert(panel.name.text=='Leather Bag','recipe browser selection drives pricing panel without opening profession')
+page.menuRows[3]:GetScript('OnClick')()
+assert(page.profession.text=='Tailoring'and page.recipeRows[1].recipe.name=='Linen Bag')
+page.search:SetText('does not exist');page.search:GetScript('OnTextChanged')(page.search)
+assert(page.empty.text=='No matching recipes.')
+page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search)
+assert(page.recipeRows[1].recipe.name=='Linen Bag')
+assert(#AuctionHouseFrame.Tabs==5,'refreshing page must not duplicate the native AH tab')
+print('PASS: persistent multi-profession catalog, learned-only capture, unsupported recipes, literal search, linked/character/realm isolation, browser selection and native tab registration')

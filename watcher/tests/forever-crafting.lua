@@ -35,6 +35,8 @@ C_TradeSkillUI={
 assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
 emit('ADDON_LOADED','AZPCForever');emit('TRADE_SKILL_SHOW')
 local db=AZPCForeverDB.crafting
+local catalog=AZPCForeverDB.professionCatalog['Lu|Classic Beta PvP 2|horde|90|Tailoring']
+assert(catalog and #catalog.recipes==2,'opening a profession must capture its learned browser catalog')
 local n=0;for _ in pairs(db.recipes)do n=n+1 end;assert(n==2,'only learned recipes are saved')
 local r=db.recipes['Player-Lu:90:Classic Beta PvP 2:100']
 assert(r.outputItemId==2996 and r.reagents[1].itemId==2589 and r.reagents[1].quantity==2)
