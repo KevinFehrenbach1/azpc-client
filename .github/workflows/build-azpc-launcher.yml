@@ -28,6 +28,8 @@ jobs:
       - run: lua5.1 watcher/tests/forever-reload-prompt.lua
       - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
+      - run: lua5.1 watcher/tests/forever-disenchant.lua
+      - run: lua5.1 watcher/tests/forever-disenchant-integration.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-performance.lua
       - run: lua5.1 watcher/tests/forever-diagnostics.lua
@@ -153,5 +155,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.45 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.45 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.45 - Stage automatic cost replay across frames" --notes "Stage automatic material-cost replay across frames using isolated evidence, incremental validation and atomic publication. Unchanged evidence skips replay. New records and receipt changes invalidate stale work. Explicit rebuilds and logout retain the synchronous flush. Capture evidence, cost formulas, historical corrections and sync formats remain unchanged. Use /azpcf perf to inspect Cost replay slice timings. Watcher stays 0.4.40; TBC stays 0.4.29."
+          if gh release view forever-addon-v0.2.46 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.46 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.46 - Capture disenchant evidence" --notes "Add isolated capture-only disenchant evidence: successful spell, destroyed-item GUID and bag decrement, self-loot receipts and confirmed output bag increases. Use /azpcf disenchant after one disenchant, then /reload to save local evidence. Ambiguous input or output remains unresolved. This stage does not upload disenchant records or change material costs, trade profit, existing capture or staged replay. Watcher stays 0.4.40; TBC stays 0.4.29."
