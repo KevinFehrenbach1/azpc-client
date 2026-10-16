@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.44"
+local addon, VERSION = ..., "0.2.45"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -366,9 +366,10 @@ captureTrades=function()
                             end
                             local export=table.concat(fields,"|")
                             local receipt=existing or {tradeExport=export}
+                            if receipt.tradeExport~=export and AZPCForeverCrafting and AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
                             receipt.tradeExport=export
                             receipt.invoiceEvidence={schema=1,invoiceType=invoice,bid=number(bid),buyout=number(buyout),invoiceCount=number(invoiceCount),attachmentQuantity=quantity,amountSource=invoice=='buyer' and 'invoice_bid' or 'mail_money',observedAt=timestamp*1000}
-                            if not existing then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]=receipt end
+                            if not existing then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]=receipt;if AZPCForeverCrafting and AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end end
                             local fresh=not AZPCForeverDB.tradeSeen[fingerprint]
                             AZPCForeverDB.tradeSeen[fingerprint]=true
                             if invoice=='seller' and AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.ObserveSale(index,fingerprint,copper) end
@@ -415,6 +416,7 @@ local function statusRecord(kind,id,name,q,listed,pending,unresolved,bag)
     local event=table.concat({UnitGUID and UnitGUID("player") or character,realm,region,kind,id,at},":")
     local fields={"AZPCFTRADE","2",encode(event),kind,id,encode(name),q,0,at,encode(realm),faction,region,encode(character),"","","",listed or "",pending or "",unresolved or "",bag or "",""}
     AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport=table.concat(fields,"|")}
+    if AZPCForeverCrafting and AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
 end
 local function ownerKey()
     local realm,faction,region,character=identity();if not realm then return end
@@ -582,6 +584,7 @@ local function recipe(id)
         reagentSlots=slots,reagents=reagents,materialsKnown=complete,profession=type(profession)=='table' and profession.professionName or nil,
         character=who.character,realm=who.realm,faction=who.faction,region=who.region,observedAt=(GetServerTime and GetServerTime() or time())*1000}
     setup().recipes[key]=r
+    if AZPCForeverCrafting and AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
     return r
 end
 local function copyMaterials(rows)
@@ -618,6 +621,7 @@ local function finish(c)
     for id in pairs(candidates)do record.candidateItemIds[#record.candidateItemIds+1]=id end;table.sort(record.candidateItemIds)
     if known then record.consumedReagents=consumed end
     db.crafts[#db.crafts+1]=record;db.seen[eventId]=true
+    if AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
     if AZPCForeverCrafting.ScheduleCosts then AZPCForeverCrafting.ScheduleCosts() end
     message('Recorded craft: '..record.name..' x'..record.quantity..(known and '' or ' (material usage unresolved)')..'. /reload saves it.')
 end
@@ -757,62 +761,64 @@ local function mail(export)
     return e
 end
 local parsedMail=setmetatable({},{__mode="k"})
-local function rebuild()
-    local db=AZPCForeverDB.crafting
+local function rebuild(db,tradeRows,step,deferred)
+    db=db or AZPCForeverDB.crafting
+    tradeRows=tradeRows or AZPCForeverDB.trades or {}
+    step=step or function()end
     if db.vendorCostingBlocked then error('Vendor ledger capacity reached; material costs cannot currently be verified.')end
     local events,seen,mailAnchors={},{},{}
     local receipts={}
-    for _,row in ipairs(AZPCForeverDB.trades or {})do
+    for _,row in ipairs(tradeRows)do step();
         local cached=parsedMail[row]
         if not cached or cached.export~=row.tradeExport then cached={export=row.tradeExport,event=mail(row.tradeExport)};parsedMail[row]=cached end
         if cached.event then receipts[#receipts+1]=cached.event end
     end
     table.sort(receipts,function(a,b)return a.observedAt<b.observedAt or a.observedAt==b.observedAt and a.eventId<b.eventId end)
     local purchases,envelopes={},{}
-    for _,e in ipairs(receipts)do
+    for _,e in ipairs(receipts)do step();
         if e.kind=='buy' and e.quantity~=e.copper and e.mailPurchaseIdentity then local a=purchases[e.mailPurchaseIdentity]or{};purchases[e.mailPurchaseIdentity]=a;a[#a+1]=e end
         if e.mailBuyerKnown and e.mailEnvelope then local a=envelopes[e.mailEnvelope]or{};envelopes[e.mailEnvelope]=a;a[#a+1]=e end
     end
-    for _,e in ipairs(receipts)do
+    for _,e in ipairs(receipts)do step();
         local duplicate=false
         if e.kind=='buy' and e.quantity==e.copper and e.mailPurchaseIdentity then
             local matches={};local count=0
-            for _,other in ipairs(purchases[e.mailPurchaseIdentity]or{})do
+            for _,other in ipairs(purchases[e.mailPurchaseIdentity]or{})do step();
                 if other.kind=='buy' and other.quantity~=e.quantity and other.mailPurchaseIdentity==e.mailPurchaseIdentity and other.copper==e.copper and math.abs(other.observedAt-e.observedAt)<=5000 and math.abs(other.mailExpiry-e.mailExpiry)<=2 and not matches[other.mailIdentity]then matches[other.mailIdentity]=true;count=count+1 end
             end
             duplicate=count==1
         end
         if e.kind=='sell' and e.mailEnvelope and not e.mailBuyerKnown then
             local matches={};local count=0
-            for _,other in ipairs(envelopes[e.mailEnvelope]or{})do
+            for _,other in ipairs(envelopes[e.mailEnvelope]or{})do step();
                 if other.mailBuyerKnown and other.mailEnvelope==e.mailEnvelope and other.copper==e.copper and math.abs(other.observedAt-e.observedAt)<=5000 and math.abs(other.mailExpiry-e.mailExpiry)<=2 and not matches[other.mailIdentity]then matches[other.mailIdentity]=true;count=count+1 end
             end
             duplicate=count==1
         end
         if e.mailIdentity and not duplicate then
             local anchors=mailAnchors[e.mailIdentity] or {};mailAnchors[e.mailIdentity]=anchors
-            for _,old in ipairs(anchors)do if math.abs(old.mailExpiry-e.mailExpiry)<=2 and old.copper==e.copper then duplicate=true;break end end
+            for _,old in ipairs(anchors)do step(); if math.abs(old.mailExpiry-e.mailExpiry)<=2 and old.copper==e.copper then duplicate=true;break end end
             if not duplicate then anchors[#anchors+1]=e end
         end
         if not duplicate and not seen[e.eventId] then seen[e.eventId]=true;events[#events+1]=e end
     end
-    for _,e in ipairs(db.vendorEvents or {})do
+    for _,e in ipairs(db.vendorEvents or {})do step();
         if type(e.eventId)=='string' and not seen[e.eventId] and (e.kind=='buy' or e.kind=='sell' or e.kind=='vendor_unresolved') and integer(e.itemId,10000000) and e.itemId>0 and integer(e.quantity,1000000) and e.quantity>0 and integer(e.copper) then
             seen[e.eventId]=true;events[#events+1]=e
         end
     end
-    for _,e in ipairs(db.materialEvents or {})do
+    for _,e in ipairs(db.materialEvents or {})do step();
         if e.kind~='request_rejected' and type(e.eventId)=='string' and not seen[e.eventId]then seen[e.eventId]=true;events[#events+1]=e end
     end
-    for _,r in ipairs(db.crafts) do
+    for _,r in ipairs(db.crafts) do step();
         if type(r.eventId)=='string' and not seen[r.eventId] then
             seen[r.eventId]=true;events[#events+1]={kind='craft',itemId=r.itemId,quantity=r.quantity,observedAt=r.observedAt,eventId=r.eventId,realm=r.realm,faction=r.faction,region=r.region,character=r.character,name=r.name,record=r}
         end
     end
     -- Canonicalize working copies only; retain original saved region evidence.
-    for i,e in ipairs(events)do
+    for i,e in ipairs(events)do step();
         local region=canonicalRegion(e.region,e.realm)
-        if region~=e.region then local copy={};for k,v in pairs(e)do copy[k]=v end;copy.region=region;events[i]=copy end
+        if region~=e.region then local copy={};for k,v in pairs(e)do step(); copy[k]=v end;copy.region=region;events[i]=copy end
     end
     local rank={buy=1,free=1,transfer_out=2,transfer_in=2,craft=3,sell=4,vendor_unresolved=5,reconcile=6,inventory_observation=7,inventory_snapshot=8}
     table.sort(events,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if rank[a.kind]~=rank[b.kind] then return rank[a.kind]<rank[b.kind] end;return a.eventId<b.eventId end)
@@ -824,7 +830,7 @@ local function rebuild()
     end
     local function totals(p)
         local q,c,known=0,0,not p.uncertain
-        for _,l in ipairs(p.lots) do q=q+l.quantity;c=c+(l.copper or l.partialCopper or 0);if l.copper==nil then known=false end end
+        for _,l in ipairs(p.lots) do step(); q=q+l.quantity;c=c+(l.copper or l.partialCopper or 0);if l.copper==nil then known=false end end
         if c>MAX or q>10000000000 then error('Material cost totals exceed the supported exact range.') end
         return q,c,known
     end
@@ -837,7 +843,7 @@ local function rebuild()
         return {quantity=wanted,availableQuantity=q,recordedQuantity=used,knownCopper=transferred,complete=known and used==wanted}
     end
     local function sale(p,wanted)
-        while wanted>0 and #p.lots>0 do
+        while wanted>0 and #p.lots>0 do step();
             local l=p.lots[1];local use=math.min(wanted,l.quantity);local c=l.copper or l.partialCopper or 0
             local removed=use==l.quantity and c or share(c,use,l.quantity)
             l.quantity=l.quantity-use;if l.copper~=nil then l.copper=c-removed else l.partialCopper=c-removed end
@@ -850,18 +856,18 @@ local function rebuild()
         local a,c=normalizedName(address),normalizedName(character);if a==c then return true end
         if a:find('-',1,true)then return false end
         local names={}
-        for _,other in ipairs(events)do if other.realm==e.realm and other.region==e.region and other.faction==e.faction then names[normalizedName(other.character)]=true end end
+        for _,other in ipairs(events)do step(); if other.realm==e.realm and other.region==e.region and other.faction==e.faction then names[normalizedName(other.character)]=true end end
         if names[a]then return false end
-        local count,matched=0,nil;for name in pairs(names)do if a:sub(1,#name+1)==name..' 'then count=count+1;matched=name end end
+        local count,matched=0,nil;for name in pairs(names)do step(); if a:sub(1,#name+1)==name..' 'then count=count+1;matched=name end end
         return count==1 and matched==c
     end
-    for _,e in ipairs(events) do
+    for _,e in ipairs(events) do step();
         local p=pool(e,e.itemId)
         if e.kind=='buy' then p.lots[#p.lots+1]={quantity=e.quantity,copper=e.purchaseCostKnown~=false and e.copper or nil}
         elseif e.kind=='free' then
             local remaining=e.quantity-e.untrackedQuantity
             local new={}
-            for _,l in ipairs(p.lots)do
+            for _,l in ipairs(p.lots)do step();
                 if l.copper==nil and remaining>0 then
                     if (l.partialCopper or 0)>0 then error('Cannot classify partially paid material stock as free.')end
                     local use=math.min(remaining,l.quantity);l.quantity=l.quantity-use;remaining=remaining-use;new[#new+1]={quantity=use,copper=0}
@@ -869,11 +875,11 @@ local function rebuild()
             end
             if remaining>0 then error('Free classification exceeds unknown material stock.')end
             if e.untrackedQuantity>0 then new[#new+1]={quantity=e.untrackedQuantity,copper=0}end
-            for _,l in ipairs(p.lots)do if l.quantity>0 then new[#new+1]=l end end
+            for _,l in ipairs(p.lots)do step(); if l.quantity>0 then new[#new+1]=l end end
             -- Adjacent confirmed zero-cash lots have identical FIFO value. Compact
             -- only those lots; paid and partially known lots retain their order.
             local compact={}
-            for _,l in ipairs(new)do local last=compact[#compact]
+            for _,l in ipairs(new)do step(); local last=compact[#compact]
                 if last and last.copper==0 and l.copper==0 then last.quantity=last.quantity+l.quantity
                 else compact[#compact+1]=l end
             end
@@ -883,7 +889,7 @@ local function rebuild()
             local used=average(p,e.quantity);transit[#transit+1]={event=e,quantity=e.quantity,copper=used.complete and used.knownCopper or nil,partialCopper=not used.complete and used.knownCopper or nil}
         elseif e.kind=='transfer_in' then
             local matches={}
-            for _,t in ipairs(transit)do local from=t.event
+            for _,t in ipairs(transit)do step(); local from=t.event
                 if not t.received and from.itemId==e.itemId and from.quantity==e.quantity and from.realm==e.realm and from.region==e.region and from.faction==e.faction and sameCharacter(e.counterparty,from.character,from) and sameCharacter(from.counterparty,e.character,e) and from.transferKey==e.transferKey and from.observedAt<=e.observedAt then matches[#matches+1]=t end
             end
             if #matches==1 then local t=matches[1];t.received=true;p.lots[#p.lots+1]={quantity=e.quantity,copper=t.copper,partialCopper=t.partialCopper}
@@ -920,14 +926,14 @@ local function rebuild()
             local r=e.record;local inputs,missing,partial,complete={},{},0,r.materialsKnown==true and type(r.consumedReagents)=='table'
             local demand={}
             if complete then
-                for _,m in ipairs(r.consumedReagents) do
+                for _,m in ipairs(r.consumedReagents) do step();
                     if not integer(m.itemId,10000000) or m.itemId<1 or not integer(m.quantity,1000000) then complete=false;break end
                     demand[m.itemId]=(demand[m.itemId] or 0)+m.quantity
                 end
             end
             if complete and next(demand) then
-                local ids={};for id in pairs(demand)do ids[#ids+1]=id end;table.sort(ids)
-                for _,id in ipairs(ids) do
+                local ids={};for id in pairs(demand)do step(); ids[#ids+1]=id end;table.sort(ids)
+                for _,id in ipairs(ids) do step();
                     local material=pool(e,id)
                     if material.bank and material.observedBagAt and material.observedBagAt>(material.costChangedAt or -1)then
                         local bagQ=totals(material)
@@ -940,11 +946,11 @@ local function rebuild()
                 complete=false
                 -- Without reliable consumption, these candidate material pools cannot establish later costs.
                 local candidates={}
-                for _,m in ipairs(r.recipeReagents or {})do candidates[m.itemId]=true end
-                for _,id in ipairs(r.candidateItemIds or {})do candidates[id]=true end
+                for _,m in ipairs(r.recipeReagents or {})do step(); candidates[m.itemId]=true end
+                for _,id in ipairs(r.candidateItemIds or {})do step(); candidates[id]=true end
                 local catalog=db.recipes[r.recipeKey]
-                for _,slot in ipairs(catalog and catalog.reagentSlots or {})do for _,option in ipairs(slot.options or {})do if option.itemId then candidates[option.itemId]=true end end end
-                for id in pairs(candidates)do pool(e,id).uncertain=true end
+                for _,slot in ipairs(catalog and catalog.reagentSlots or {})do step(); for _,option in ipairs(slot.options or {})do step(); if option.itemId then candidates[option.itemId]=true end end end
+                for id in pairs(candidates)do step(); pool(e,id).uncertain=true end
                 missing[#missing+1]={reason='material_usage_unresolved'}
             end
             if partial>MAX then error('Craft cost exceeds the supported exact range.') end
@@ -958,34 +964,158 @@ local function rebuild()
         end
     end
     local positions={}
-    for _,p in pairs(pools) do
+    for _,p in pairs(pools) do step();
         local q,c,known=totals(p)
         local bagQ,bagC,bagKnown=q,c,known
         local bankQ,bankC,bankKnown=0,0,true
         if p.bank then bankQ,bankC,bankKnown=totals(p.bank);q=q+bankQ;c=c+bankC;known=known and bankKnown end
         if c>MAX or q>10000000000 then error('Material cost totals exceed the supported exact range.')end
-        local allLots={};for _,l in ipairs(p.lots)do allLots[#allLots+1]=l end;for _,l in ipairs(p.bank and p.bank.lots or {})do allLots[#allLots+1]=l end
-        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,bagLedgerQuantity=bagQ,bagRecordedCopper=bagC,bagCostComplete=bagKnown,bankLedgerQuantity=bankQ,bankRecordedCopper=bankC,bankCostComplete=bankKnown,bagQuantity=p.bagQuantity,bankQuantity=p.bankQuantity,bankObservedAt=p.bankObservedAt,inventoryMismatch=p.inventoryMismatch,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(allLots)do if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(allLots)do if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
+        local allLots={};for _,l in ipairs(p.lots)do step(); allLots[#allLots+1]=l end;for _,l in ipairs(p.bank and p.bank.lots or {})do step(); allLots[#allLots+1]=l end
+        if q>0 then positions[#positions+1]={key=p.key,itemId=p.itemId,name=p.name,realm=p.realm,character=p.character,faction=p.faction,region=p.region,quantity=q,bagLedgerQuantity=bagQ,bagRecordedCopper=bagC,bagCostComplete=bagKnown,bankLedgerQuantity=bankQ,bankRecordedCopper=bankC,bankCostComplete=bankKnown,bagQuantity=p.bagQuantity,bankQuantity=p.bankQuantity,bankObservedAt=p.bankObservedAt,inventoryMismatch=p.inventoryMismatch,costComplete=known,totalCopper=known and c or nil,recordedCopper=c,unknownQuantity=(function()local n=0;for _,l in ipairs(allLots)do step(); if l.copper==nil then n=n+l.quantity end end;return n end)(),unknownRecordedCopper=(function()local n=0;for _,l in ipairs(allLots)do step(); if l.copper==nil then n=n+(l.partialCopper or 0)end end;return n end)()} end
     end
     table.sort(positions,function(a,b)return a.key<b.key end)
     local state={schema=1,method='remaining_material_weighted_average',positions=positions,unresolvedCrafts=unresolved}
-    for _,u in ipairs(updates)do u.record.costBasis=u.basis;u.record.costConflict=u.conflict;u.record.costingMissing=u.missing end
+    if deferred then return state,updates end
+    for _,u in ipairs(updates)do step(); u.record.costBasis=u.basis;u.record.costConflict=u.conflict;u.record.costingMissing=u.missing end
     db.costing=state
     return state
 end
+local computeCosts=rebuild
 rebuild=perf.Wrap("Cost replay",rebuild)
-local pending=false
+-- Automatic updates use isolated evidence and publish only after validation.
+-- Explicit requests and logout keep the original synchronous rebuild/export path.
+local job,queued,lastEvidence,lastRoot=nil,false,nil,nil
+local epoch,revision=0,0
+AZPCForeverCrafting.InvalidateCosts=function()revision=revision+1 end
+local worker=CreateFrame('Frame')
+local function evidence()
+    local root=AZPCForeverDB;local d=root and root.crafting
+    if not d then return end
+    return {trades=root.trades or {},recipes=d.recipes or {},crafts=d.crafts or {},vendorEvents=d.vendorEvents or {},materialEvents=d.materialEvents or {},vendorCostingBlocked=d.vendorCostingBlocked}
+end
+-- Invoice display/enrichment metadata is not an input to local costing; the
+-- exact tradeExport already contains the receipt evidence used by replay.
+local function evidenceField(k)return k~='syncExport' and k~='costingMissing' and k~='invoiceEvidence'end
+local function copyEvidence(value,step,depth)
+    if type(value)~='table'then return value end
+    depth=depth or 0;if depth>16 then error('Cost evidence exceeds nesting limit.')end
+    local result={}
+    for k,v in pairs(value)do
+        step()
+        if evidenceField(k)then result[k]=copyEvidence(v,step,depth+1)end
+    end
+    return result
+end
+local function sameEvidence(a,b,depth,step)
+    if type(a)~=type(b)then return false end
+    if type(a)~='table'then return a==b end
+    depth=depth or 0;if depth>16 then return false end
+    for k,v in pairs(a)do if step then step()end;if evidenceField(k)and not sameEvidence(v,b[k],depth+1,step)then return false end end
+    for k in pairs(b)do if step then step()end;if evidenceField(k)and a[k]==nil then return false end end
+    return true
+end
+local function stopJob()
+    epoch=epoch+1;job=nil;queued=false
+    worker:SetScript('OnUpdate',nil)
+end
 AZPCForeverCrafting.RebuildCosts=function()
+    stopJob();lastEvidence=nil;lastRoot=nil
     if not AZPCForeverDB or not AZPCForeverDB.crafting then return end
     local ok,state=pcall(rebuild)
     if not ok then AZPCForeverDB.crafting.costingError=tostring(state);return nil,state end
     AZPCForeverDB.crafting.costingError=nil;return state
 end
+local function supported()
+    return type(GetTimePreciseSec)=='function' and type(coroutine)=='table' and type(coroutine.create)=='function' and type(coroutine.resume)=='function'
+end
+local function now()
+    local ok,value=pcall(GetTimePreciseSec)
+    if ok and type(value)=='number' and value==value then return value end
+end
+local function publishExports()
+    if AZPCForeverCrafting.ExportCosts then AZPCForeverCrafting.ExportCosts()end
+end
+local startJob
+local function advance()
+    local current=job;if not current then worker:SetScript('OnUpdate',nil);return end
+    current.started=now();current.work=0
+    local ok,result=coroutine.resume(current.thread)
+    if not ok then
+        job=nil;worker:SetScript('OnUpdate',nil)
+        if AZPCForeverDB==current.root and AZPCForeverDB.crafting then
+            AZPCForeverDB.crafting.costingError=tostring(result);publishExports()
+        end
+        return
+    end
+    if coroutine.status(current.thread)~='dead'then return end
+    job=nil;worker:SetScript('OnUpdate',nil)
+    local live=current.root and current.root.crafting
+    local valid=AZPCForeverDB==current.root and live==current.db and revision==current.revision and not result.stale
+    if valid then
+        valid=current.trades==current.root.trades and current.crafts==live.crafts and current.materials==live.materialEvents and current.vendors==live.vendorEvents and current.recipes==live.recipes
+            and #(current.root.trades or {})==#result.snapshot.trades and #(live.crafts or {})==#result.snapshot.crafts and #(live.materialEvents or {})==#result.snapshot.materialEvents and #(live.vendorEvents or {})==#result.snapshot.vendorEvents and live.vendorCostingBlocked==result.snapshot.vendorCostingBlocked
+    end
+    if not valid then
+        -- No partially computed costs have been assigned to live records.
+        startJob();return
+    end
+    if not result.unchanged then
+        local d=AZPCForeverDB.crafting;local originals={}
+        for i,r in ipairs(result.snapshot.crafts)do originals[r]=d.crafts[i]end
+        for _,u in ipairs(result.updates)do
+            local r=originals[u.record]
+            r.costBasis=u.basis;r.costConflict=u.conflict;r.costingMissing=u.missing
+            u.record.costBasis=u.basis;u.record.costConflict=u.conflict
+        end
+        d.costing=result.state;d.costingError=nil
+        publishExports()
+        -- The existing exporter fills legacy candidate IDs. Include that exact
+        -- enrichment in the cache so unchanged mail does not replay once more.
+        for i,r in ipairs(result.snapshot.crafts)do
+            if not r.candidateItemIds and d.crafts[i].candidateItemIds then
+                r.candidateItemIds=copyEvidence(d.crafts[i].candidateItemIds,function()end)
+            end
+        end
+    end
+    lastEvidence=result.snapshot;lastRoot=current.root
+end
+advance=perf.Wrap('Cost replay slice',advance)
+startJob=function()
+    if not AZPCForeverDB or not AZPCForeverDB.crafting then return end
+    local root=AZPCForeverDB;local d=root.crafting
+    local current={root=root,db=d,work=0,revision=revision,trades=root.trades,crafts=d.crafts,materials=d.materialEvents,vendors=d.vendorEvents,recipes=d.recipes};job=current
+    local function step()
+        current.work=current.work+1
+        if current.work%32~=0 then return end
+        local stamp=now()
+        -- A broken/unavailable clock still yields after bounded work.
+        if stamp and current.started and stamp-current.started>=0.003 or (not stamp or not current.started)and current.work>=256 then coroutine.yield()end
+    end
+    current.thread=coroutine.create(function()
+        current.phase='snapshot'
+        local snapshot=copyEvidence(evidence(),step)
+        local unchanged=lastRoot==current.root and lastEvidence and sameEvidence(snapshot,lastEvidence,nil,step)
+        local state,updates
+        if not unchanged then current.phase='replay';state,updates=computeCosts(snapshot,snapshot.trades,step,true)end
+        -- Exact comparison is sliced; revision/ref/count checks immediately before
+        -- publication reject any event arriving after an earlier field was checked.
+        current.phase='validate'
+        local valid=sameEvidence(snapshot,evidence(),nil,step)
+        return {snapshot=snapshot,state=state,updates=updates,unchanged=unchanged,stale=not valid}
+    end)
+    worker:SetScript('OnUpdate',advance)
+end
 local function schedule()
-    if pending then return end;pending=true
-    C_Timer.After(0.25,function()pending=false;AZPCForeverCrafting.RebuildCosts()end)
+    if queued or job then return end
+    queued=true;local token=epoch
+    C_Timer.After(0.25,function()
+        if token~=epoch then return end
+        queued=false
+        if supported()then startJob()else AZPCForeverCrafting.RebuildCosts()end
+    end)
 end
 AZPCForeverCrafting.ScheduleCosts=schedule
+AZPCForeverCrafting.CostsPending=function()return queued or job~=nil end
 local function money(c)
     return math.floor(c/10000)..'g '..math.floor(c%10000/100)..'s '..(c%100)..'c'
 end
@@ -1080,6 +1210,7 @@ local function save(kind,id,q,c,name,at,source)
     d.vendorSequence=(d.vendorSequence or 0)+1
     d.vendorEvents[#d.vendorEvents+1]={schema=1,eventId=tostring(call(UnitGUID,'player') or character)..':vendor:'..at..':'..d.vendorSequence,
         kind=kind,itemId=id,quantity=q,copper=c,name=name or ('Item '..id),observedAt=at,realm=realm,character=character,faction=faction,region=region,source=source,confirmation='vendor_intent_money_and_bags'}
+    if AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
     return true
 end
 local schedule
@@ -1199,6 +1330,7 @@ local function record(kind,id,q,name,extra,eventId)
  AZPCForeverDB.itemIds=AZPCForeverDB.itemIds or {};if type(name)=='string' and id then AZPCForeverDB.itemIds[name]=id end
  local e=current();e.kind=kind;e.itemId=id;e.quantity=q;e.name=name or ('Item '..id);e.observedAt=observedMillis();e.eventId=eventId or tostring(UnitGUID('player'))..':material:'..e.observedAt..':'..c.materialSequence;e.confirmation='material_quantity_confirmed'
  for k,v in pairs(extra or {})do e[k]=v end;c.materialEvents[#c.materialEvents+1]=e
+ if AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end
  AZPCForeverCrafting.ScheduleCosts();return e
 end
 local function free(command)
@@ -1398,6 +1530,12 @@ local function exports()
     for _,r in ipairs(d.materialEvents or {})do syncExport(r,'material',r.eventId)end
 end
 exports=perf.Wrap("Export generation",exports)
+AZPCForeverCrafting.ExportCosts=function()
+    local ok,err=pcall(exports)
+    local d=AZPCForeverDB and AZPCForeverDB.crafting
+    if d then d.syncError=not ok and tostring(err) or nil end
+    return ok,err
+end
 local old=AZPCForeverCrafting.RebuildCosts
 AZPCForeverCrafting.RebuildCosts=function()
     local state,err=old();local ok,exportError=pcall(exports)
@@ -1536,7 +1674,7 @@ local function capture()
  for _,r in ipairs(pending)do
   d.materialSequence=(d.materialSequence or 0)+1
   local e={schema=1,kind='inventory_observation',confirmation='bags_and_character_bank_observed',itemId=r.id,name=r.name,quantity=math.max(1,r.bag+r.bank),ownedQuantity=r.bag+r.bank,bagQuantity=r.bag,bankQuantity=r.bank,reservedQuantity=r.reserved,observedAt=at,realm=GetRealmName(),character=UnitName('player'),faction=UnitFactionGroup('player'):lower(),region=currentRegion(),eventId=tostring(UnitGUID('player'))..':bank:'..at..':'..d.materialSequence}
-  d.materialEvents[#d.materialEvents+1]=e;previous[r.id]={name=r.name,bag=r.bag,bank=r.bank,reserved=r.reserved,at=at}
+  d.materialEvents[#d.materialEvents+1]=e;if AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end;previous[r.id]={name=r.name,bag=r.bag,bank=r.bank,reserved=r.reserved,at=at}
  end
  last[k]=previous
  if #pending>0 then AZPCForeverCrafting.RebuildCosts()end

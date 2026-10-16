@@ -31,6 +31,8 @@ jobs:
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-performance.lua
       - run: lua5.1 watcher/tests/forever-diagnostics.lua
+      - run: lua5.1 watcher/tests/forever-staged-costing.lua
+      - run: lua5.1 watcher/tests/forever-staged-parity.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
       - run: lua5.1 watcher/tests/forever-materials.lua
@@ -151,5 +153,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.44 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.44 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.44 - Optional in-game timing diagnostics" --notes "Add optional in-memory timings for mailbox capture, bag scanning, loot confirmation, cost replay and exports. Use /azpcf perf on, reproduce the pause, then /azpcf perf to view results; /azpcf perf off disables diagnostics. Off by default. No scheduling, capture, accounting or save protocol changes. Watcher stays 0.4.40; TBC stays 0.4.29."
+          if gh release view forever-addon-v0.2.45 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.45 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.45 - Stage automatic cost replay across frames" --notes "Stage automatic material-cost replay across frames using isolated evidence, incremental validation and atomic publication. Unchanged evidence skips replay. New records and receipt changes invalidate stale work. Explicit rebuilds and logout retain the synchronous flush. Capture evidence, cost formulas, historical corrections and sync formats remain unchanged. Use /azpcf perf to inspect Cost replay slice timings. Watcher stays 0.4.40; TBC stays 0.4.29."
