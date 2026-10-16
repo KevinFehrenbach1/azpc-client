@@ -1,5 +1,49 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.43"
+local addon, VERSION = ..., "0.2.44"
+-- BEGIN AZPC TIMING DIAGNOSTICS
+local perf={enabled=false,stats={}}
+AZPCForeverDiagnostics=perf
+local perfUnpack=unpack or table.unpack
+local function perfClock()
+    local fn=type(debugprofilestop)=='function' and debugprofilestop
+    if not fn then return nil end
+    local ok,value=pcall(fn)
+    if ok and type(value)=='number' and value==value then return value end
+end
+local function perfResults(...)return {n=select('#',...),...}end
+function perf.Wrap(name,fn)
+    return function(...)
+        if not perf.enabled then return fn(...) end
+        local start=perfClock()
+        -- Do not catch or transform capture errors; existing callers retain their
+        -- original error handling. Preserve all return values, including nils.
+        local result=perfResults(fn(...))
+        local finish=perfClock()
+        if start and finish and finish>=start then
+            local elapsed=finish-start
+            local s=perf.stats[name] or {calls=0,total=0,max=0,last=0};perf.stats[name]=s
+            s.calls=s.calls+1;s.total=s.total+elapsed;s.max=math.max(s.max,elapsed);s.last=elapsed
+        end
+        return perfUnpack(result,1,result.n)
+    end
+end
+function perf.Command(command)
+    local action=(command or ''):match('^perf%s*(.-)%s*$')
+    if action==nil then return false end
+    if action=='on' then
+        if not perfClock() then print('AZPC timing: timer unavailable; diagnostics remain off.');perf.enabled=false;return true end
+        perf.stats={};perf.enabled=true;print('AZPC timing ON. Loot/skin one mob and collect mail, then /azpcf perf. No reload needed to view timings.')
+    elseif action=='off' then perf.enabled=false;print('AZPC timing OFF. Existing results remain available with /azpcf perf.')
+    elseif action=='reset' then perf.stats={};print('AZPC timing results cleared.')
+    elseif action=='' then
+        print('AZPC timing '..(perf.enabled and 'ON' or 'OFF')..' | milliseconds; nested totals overlap.')
+        local names={};for name in pairs(perf.stats)do names[#names+1]=name end;table.sort(names)
+        if #names==0 then print('No timings yet. Use /azpcf perf on, reproduce the pause, then /azpcf perf.')end
+        for _,name in ipairs(names)do local s=perf.stats[name];print(string.format('%s: %d calls | max %.2f ms | last %.2f ms | total %.2f ms',name,s.calls,s.max,s.last,s.total))end
+    else print('AZPC timing: /azpcf perf on | /azpcf perf | /azpcf perf off | /azpcf perf reset')end
+    return true
+end
+-- END AZPC TIMING DIAGNOSTICS
 -- BEGIN AZPC SALE SYNC REMINDER
 do
 -- A reminder is not an upload acknowledgement: SavedVariables reach the watcher only after reload/logout.
@@ -189,6 +233,7 @@ end)
 SLASH_AZPCFOREVER1="/azpcf"
 local captureTrades
 SlashCmdList.AZPCFOREVER=function(command)
+    if perf.Command(command)then return end
     if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
     elseif command == "materials" then AZPCForeverProfession.Show()
     elseif command == "crafts" then AZPCForeverCrafting.Status()
@@ -347,6 +392,7 @@ captureTrades=function()
     end
     if AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.EndCapture() end
 end
+captureTrades=perf.Wrap("Mailbox capture",captureTrades)
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
 tradeFrame:SetScript("OnEvent",function()
     local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err))end
@@ -456,6 +502,7 @@ local function captureBags()
     end
     AZPCForeverDB.bagStates[k]=rows
 end
+captureBags=perf.Wrap("Bag scan",captureBags)
 local lifecycle=CreateFrame("Frame")
 for _,event in ipairs({"AUCTION_OWNED_LIST_UPDATE","OWNED_AUCTIONS_UPDATED","BAG_UPDATE_DELAYED","PLAYER_ENTERING_WORLD","PLAYER_LOGOUT"}) do pcall(lifecycle.RegisterEvent,lifecycle,event) end
 lifecycle:SetScript("OnEvent",function(_,event)
@@ -926,6 +973,7 @@ local function rebuild()
     db.costing=state
     return state
 end
+rebuild=perf.Wrap("Cost replay",rebuild)
 local pending=false
 AZPCForeverCrafting.RebuildCosts=function()
     if not AZPCForeverDB or not AZPCForeverDB.crafting then return end
@@ -1199,6 +1247,7 @@ local function confirmLoot()
   end
  end
 end
+confirmLoot=perf.Wrap("Loot confirmation",confirmLoot)
 local function openLoot()
  confirmLoot()
  if currentLoot and not currentLoot.closed then currentLoot.closed=GetServerTime and GetServerTime()or time()end
@@ -1217,6 +1266,7 @@ local function openLoot()
   end
  end
 end
+openLoot=perf.Wrap("Loot window scan",openLoot)
 local function selfLoot(text)
  if type(text)~='string'or not currentLoot then return end
  local link,q
@@ -1347,6 +1397,7 @@ local function exports()
     for _,r in ipairs(d.vendorEvents or {})do syncExport(r,'vendor',r.eventId)end
     for _,r in ipairs(d.materialEvents or {})do syncExport(r,'material',r.eventId)end
 end
+exports=perf.Wrap("Export generation",exports)
 local old=AZPCForeverCrafting.RebuildCosts
 AZPCForeverCrafting.RebuildCosts=function()
     local state,err=old();local ok,exportError=pcall(exports)
@@ -1354,6 +1405,7 @@ AZPCForeverCrafting.RebuildCosts=function()
     elseif AZPCForeverDB and AZPCForeverDB.crafting then AZPCForeverDB.crafting.syncError=nil end
     return state,err
 end
+AZPCForeverCrafting.RebuildCosts=perf.Wrap("Costs plus exports",AZPCForeverCrafting.RebuildCosts)
 end
 
 -- One-time, evidence-bounded migration of the legacy linen ledger.
