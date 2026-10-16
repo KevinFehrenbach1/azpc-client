@@ -20,6 +20,8 @@ jobs:
       - run: lua5.1 watcher/tests/forever-reload-prompt.lua
       - run: lua5.1 watcher/tests/forever-reload-integration.lua
       - run: lua5.1 watcher/tests/forever-crafting.lua
+      - run: lua5.1 watcher/tests/forever-disenchant.lua
+      - run: lua5.1 watcher/tests/forever-disenchant-integration.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
@@ -69,3 +71,4 @@ jobs:
         run: |
           if gh release view watcher-v0.4.28 >/dev/null 2>&1; then exit 0; fi
           gh release create watcher-v0.4.28 release/* --target "$GITHUB_SHA" --latest --title "Watcher 0.4.28 + AZPC Forever 0.1.1" --notes-file addons/forever/README.md
+
