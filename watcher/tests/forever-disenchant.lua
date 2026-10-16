@@ -1,3 +1,9 @@
+local function loadCapture()
+ local file=assert(io.open('addons/forever/AZPCForever/AZPCForever.lua','r'))
+ local source=file:read('*a');file:close()
+ local block=assert(source:match('%-%- BEGIN AZPC DISENCHANT EVIDENCE\n(.-)%-%- END AZPC DISENCHANT EVIDENCE'))
+ assert((loadstring or load)(block))()
+end
 -- Pure capture tests: no cash/crafting mutation, no timers or protected actions.
 local frames,messages={},{}
 local originalCommandCalls=0
@@ -44,7 +50,7 @@ local function receipt(id,q)return 'You receive loot: |Hitem:'..id..'::::::::|h[
 local trades,crafting={evidence='unchanged'},{evidence='unchanged'}
 AZPCForeverDB={trades=trades,crafting=crafting}
 AZPCForeverCrafting={ScheduleCosts=function()error('capture must not schedule accounting')end,RebuildCosts=function()error('capture must not replay accounting')end}
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverDisenchant.lua'))('AZPCForever')
+loadCapture()
 emit('ADDON_LOADED','AZPCForever')
 local events=AZPCForeverDB.disenchanting.events
 emit('BAG_UPDATE_DELAYED');emit('LOOT_OPENED');emit('CHAT_MSG_LOOT',receipt(10940,2))
@@ -104,6 +110,6 @@ SlashCmdList.AZPCFOREVER('disenchant');assert(originalCommandCalls==0 and messag
 SlashCmdList.AZPCFOREVER('materials');assert(originalCommandCalls==1,'existing slash commands are preserved')
 emit('PLAYER_LOGOUT')
 -- Reloaded module uses durable cast IDs to suppress duplicate success.
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverDisenchant.lua'))('AZPCForever')
+loadCapture()
 emit('UNIT_SPELLCAST_SUCCEEDED','player','de-1',13262);assert(#events==5,'saved cast identity survives reload')
 io.write('PASS disenchant capture: source GUID + consumed item, multiple self-loot/bag outputs, duplicates/reload, failures, missing APIs, event ordering, expiry, isolation and command compatibility\n')

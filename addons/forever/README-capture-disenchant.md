@@ -6,4 +6,4 @@ This stage saves local evidence only. It does not upload disenchant records, tra
 
 A confirmed input requires a successful Disenchant cast, the input item GUID in the loot source, and a matching one-item decrease in bags. Outputs require matching self-loot messages and bag increases. Missing APIs, ambiguous consumption or unconfirmed loot stay explicitly unresolved. Failed/interrupted casts do not create completed records. Stored cast identities prevent repeated success notifications from duplicating the capture.
 
-The module is separate from the existing addon source. It scans bags only while capturing a disenchant and does not schedule accounting replays. Watcher remains 0.4.40 and TBC remains 0.4.29.
+Capture is isolated in a separate local scope inside the existing addon file, preserving the current launcher archive layout. It scans bags only while capturing a disenchant and does not schedule accounting replays. Watcher remains 0.4.40 and TBC remains 0.4.29.

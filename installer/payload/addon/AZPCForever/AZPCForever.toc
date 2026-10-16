@@ -5,7 +5,6 @@
 ## Version: 0.2.46
 ## SavedVariables: AZPCForeverDB
 AZPCForever.lua
-AZPCForeverDisenchant.lua
 
 
 
