@@ -16,9 +16,10 @@ function UnitGUID()return 'Player-Wet' end
 function UnitFactionGroup()return 'Horde' end
 function GetCurrentRegion()return 90 end
 local rows,loaded={},true
+local invoiceReady=true
 function GetInboxNumItems()if not loaded then return 0,0 end;return #rows,#rows end
 function GetInboxInvoiceInfo(i)
- local r=loaded and rows[i];if r then return 'seller',r.name,r.buyer,0,16000,r.deposit,r.fee,0,0,0,r.quantity end
+ local r=loaded and rows[i];if r and invoiceReady then return 'seller',r.name,r.buyer,0,16000,r.deposit,r.fee,0,0,0,r.quantity end
 end
 function GetInboxHeaderInfo(i)
  local r=loaded and rows[i];if r then return nil,nil,'Auction House','Auction successful: '..r.name,r.amount,0,r.days end
@@ -36,7 +37,10 @@ assert(#sales()==1 and sales()[1].tradeExport==original,'20-minute cached expiry
 emit('PLAYER_LOGOUT')
 assert(AZPCForeverDB.mailReloadCheckpoint and #AZPCForeverDB.mailReloadCheckpoint.entries==1,'uncollected live receipt checkpoint survives logout')
 clock=clock+8;loadAddon();loaded=false;emit('MAIL_SHOW')
-loaded=true;rows[1].buyer='Buyer';clock=clock+1;emit('MAIL_INBOX_UPDATE')
+loaded=true;invoiceReady=false;clock=clock+1;emit('MAIL_INBOX_UPDATE')
+assert(#sales()==1,'loaded headers without an invoice cannot retire the resumed receipt')
+loaded=false;emit('MAIL_INBOX_UPDATE');loaded=true;invoiceReady=true
+rows[1].buyer='Buyer';clock=clock+1;emit('MAIL_INBOX_UPDATE')
 assert(#sales()==1 and sales()[1].tradeExport==original,'empty initial cache, reload, expiry drift and buyer hydration preserve original identity and time')
 rows[2]=row(nil,'Buyer');emit('MAIL_INBOX_UPDATE')
 assert(#sales()==2,'another identical receipt remains a distinct sale')

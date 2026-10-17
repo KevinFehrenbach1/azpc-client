@@ -329,7 +329,7 @@ function mailboxReceipts.End(incomplete)
         for _,r in ipairs(session.entries)do if not session.used[r.fingerprint]then AZPCForeverDB.retiredMailReceipts[r.fingerprint]=true end end
     end
     session.entries=session.next;session.next=nil;session.used=nil
-    if session.count>0 then session.resumeUntil=0 end
+    if session.count>0 and not incomplete and not session.partial then session.resumeUntil=0 end
 end
 local f=CreateFrame('Frame')
 for _,event in ipairs({'MAIL_SHOW','MAIL_CLOSED','PLAYER_LOGOUT'})do pcall(f.RegisterEvent,f,event)end
@@ -366,6 +366,9 @@ captureTrades=function()
     for index=1,count do
         local invoice, itemName, otherPlayer, bid, buyout, deposit, fee, delay, hour, minute, invoiceCount = GetInboxInvoiceInfo(index)
         local _, _, sender, subject, money, cod, daysLeft = GetInboxHeaderInfo(index)
+        -- Headers can load before seller invoice details after a UI reload.
+        -- An unresolved monetary mail is not proof that an old receipt left.
+        if not invoice and number(money)and money>0 then incomplete=true end
         -- Preserve 0.1.1/0.1.2 mailbox identities while fixing the export shape.
         -- Those versions included gsub's subject replacement count in the fingerprint.
         local _, subjectEscapes = tostring(subject or ""):gsub("([^%w%-_%.])", "")
