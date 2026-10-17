@@ -346,3 +346,28 @@ InCombatLockdown=function()return false end
 emit('AUCTION_HOUSE_CLOSED');p.Select(recipe)
 assert(grouped==beforeSelection+1,'recipe selection outside AH never queries')
 print('PASS: recipe selection automatic scan, passive refresh and existing safety guards')
+
+-- A throttled selection must resume without a second click and only for the latest recipe.
+emit('AUCTION_HOUSE_SHOW')
+local selectedOutput
+C_AuctionHouse.SearchForItemKeys=function(keys)grouped=grouped+1;selectedOutput=keys[#keys].itemID end
+ready=false;p.Select(recipe)
+local waitingCount=grouped
+assert(panel.searchAll.text=='Waiting for AH…','queued scan has visible waiting state')
+emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount,'ready event cannot bypass actual throttle state')
+local other={name='Other recipe',recipeId=2,materialsKnown=true,outputItemId=999,reagents=recipe.reagents}
+p.Select(other);ready=true;emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount+1 and selectedOutput==999,'only the most recent recipe scans when AH becomes ready')
+emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount+1,'duplicate ready events never repeat the scan')
+ready=false;p.Select(recipe);emit('AUCTION_HOUSE_CLOSED');ready=true
+emit('AUCTION_HOUSE_SHOW');emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount+1,'closing AH clears deferred work across reopen')
+ready=false;p.Select(recipe);queryHooks.SendBrowseQuery();ready=true
+emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount+1,'an external search cancels deferred scans')
+ready=false;p.Select(recipe);ready=true;assert(p.SearchAll(recipe))
+assert(grouped==waitingCount+2);emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==waitingCount+2,'manual scan supersedes deferred scan')
+print('PASS: deferred recipe scan readiness, latest selection, one-shot dispatch and cancellation')

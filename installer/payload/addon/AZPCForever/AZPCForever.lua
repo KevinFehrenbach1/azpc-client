@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.48"
+local addon, VERSION = ..., "0.2.49"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1873,7 +1873,7 @@ end
 -- BEGIN AZPC PROFESSION PANEL
 do
     local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
-    local scan,render,ownQuery
+    local scan,render,ownQuery,pendingAuto
     local completedQuotes={}
     local page,ensurePage,refreshBrowser
     local filterProfession,filterText=nil,''
@@ -2042,6 +2042,7 @@ do
         if render then render()end
     end
     local function searchAll(recipe)
+        pendingAuto=nil -- a manual scan supersedes any deferred selection
         recipe=recipe or selected
         if not recipe or not recipe.materialsKnown or #(recipe.reagents or {})==0 then notify('Select a recipe with fixed materials first.');return false end
         if not auctionOpen then notify('Open the Auction House to scan prices.');return false end
@@ -2076,11 +2077,23 @@ do
         hookedQueries=true
         for _,name in ipairs({'SendBrowseQuery','SearchForItemKeys','SendSearchQuery'})do
             if type(C_AuctionHouse[name])=='function'then pcall(hooksecurefunc,C_AuctionHouse,name,function()
-                if not ownQuery then stopScan('Another AH search interrupted this one. Scan prices again.')end
+                if not ownQuery then pendingAuto=nil;stopScan('Another AH search interrupted this one. Scan prices again.')end
             end)end
         end
     end
     local purchaseQueue,purchaseAttempt,advancePurchase,pendingQuantity,showReadyPopup,buyMissing
+    local function tryAutoScan(delta)
+        local request=pendingAuto
+        if not request then return end
+        request.remaining=request.remaining-(delta or 0)
+        if not auctionOpen or recipeKey(selected)~=request.key or request.remaining<=0
+            or purchaseQueue or purchaseAttempt or (InCombatLockdown and InCombatLockdown())then
+            pendingAuto=nil;return
+        end
+        if api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then return end
+        installQueryHooks()
+        searchAll(request.recipe)
+    end
     local function buyMaterial(row)
         if purchaseQueue or purchaseAttempt then notify('Stop the current buying queue first.');return false end
         if not row or not number(row.itemId) or not number(row.needed)then return false end
@@ -2427,7 +2440,7 @@ do
         p.icon:SetTexture(itemIcon(selected and selected.outputItemId))
         p.batch:SetText(tostring(quantity))
         p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
-        p.searchAll:SetText(scan and scan.waiting and 'Scanning…' or 'Scan prices')
+        p.searchAll:SetText(pendingAuto and 'Waiting for AH…' or (scan and scan.waiting and 'Scanning…' or 'Scan prices'))
         p.market:SetText(purchaseQueue and purchaseQueue.status or (scan and scan.waiting and (data.quoteFresh and 'Last scan prices - refreshing...' or 'Fetching AH prices…') or (data.quoteFresh and 'Latest AH search' or 'Scan for current prices')))
         p.market:SetTextColor(data.quoteFresh and 0.4 or 0.65,data.quoteFresh and 0.84 or 0.67,data.quoteFresh and 0.63 or 0.67)
         for _,row in ipairs(p.rows)do row:Hide()end
@@ -2517,7 +2530,13 @@ do
         if refreshBrowser then refreshBrowser()end
         if render then render()end
         -- Only an explicit recipe selection starts a scan; refreshes stay passive.
-        if auctionOpen then installQueryHooks();searchAll(recipe)end
+        pendingAuto=nil
+        if auctionOpen and recipe and recipe.materialsKnown and #(recipe.reagents or {})>0 then
+            installQueryHooks()
+            pendingAuto={recipe=recipe,key=recipeKey(recipe),remaining=20}
+            tryAutoScan()
+            if render then render()end
+        end
     end
     local function font(parent,style,x,y,width)
         return uiText(parent,style,x,y,width)
@@ -2626,9 +2645,10 @@ do
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
-            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;cancelQueue();stopScan('AH closed. Scan prices again.');
+            elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;pendingAuto=nil;cancelQueue();stopScan('AH closed. Scan prices again.');
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults();openQueuedQuote() end
             purchaseEvent(event,id,total)
+            if event=='AUCTION_HOUSE_THROTTLED_SYSTEM_READY' then tryAutoScan()end
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
@@ -2638,6 +2658,7 @@ do
         if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end
     end)
     if UIParent then events:SetScript('OnUpdate',function(_,delta)
+        if pendingAuto then local before=pendingAuto;tryAutoScan(delta);if pendingAuto~=before and render then render()end end
         if not professionOpen then return end
         elapsed=elapsed+delta;if elapsed<0.4 then return end;elapsed=0
         pcall(function()

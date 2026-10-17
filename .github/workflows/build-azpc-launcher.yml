@@ -156,5 +156,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.48 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.48 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.48 - Scan prices on recipe selection" --notes "Selecting a recipe starts the existing guarded material and output price scan. Move the Recipes heading clear of the auctioneer portrait. Purchases remain explicitly approved. Watcher stays 0.4.40; TBC stays 0.4.29; launcher stays 0.2.21."
+          if gh release view forever-addon-v0.2.49 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.49 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.49 - Wait for AH readiness on recipe scans" --notes "Queue a selected recipe price scan while the AH is throttled, and retry when ready. Only the latest selection is retained; close, external search, combat, buying or timeout cancels deferred work. Manual scans use their existing guards. Watcher stays 0.4.40; TBC stays 0.4.29; launcher stays 0.2.21."
