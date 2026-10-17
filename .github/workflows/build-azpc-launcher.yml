@@ -30,6 +30,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-crafting.lua
       - run: lua5.1 watcher/tests/forever-disenchant.lua
       - run: lua5.1 watcher/tests/forever-disenchant-integration.lua
+      - run: lua5.1 watcher/tests/forever-mail-reload.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-performance.lua
       - run: lua5.1 watcher/tests/forever-diagnostics.lua
@@ -155,5 +156,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.46 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.46 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.46 - Capture disenchant evidence" --notes "Add isolated capture-only disenchant evidence: successful spell, destroyed-item GUID and bag decrement, self-loot receipts and confirmed output bag increases. Use /azpcf disenchant after one disenchant, then /reload to save local evidence. Ambiguous input or output remains unresolved. This stage does not upload disenchant records or change material costs, trade profit, existing capture or staged replay. Watcher stays 0.4.40; TBC stays 0.4.29."
+          if gh release view forever-addon-v0.2.47 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.47 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.47 - Keep mailbox receipt identities across reloads" --notes "Preserve validated uncollected seller-mail receipt IDs across a short UI reload, even when cached expiry estimates drift or buyer details load later. Confirmed absent receipts retire their old occurrence IDs so a new equal-priced sale remains distinct. Keep original receipt timestamps and accounting values. Historical uploaded copies are retained for evidence-based website reconciliation. Disenchant capture remains capture-only. Watcher stays 0.4.40; TBC stays 0.4.29; launcher stays 0.2.21."
