@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.46"
+local addon, VERSION = ..., "0.2.47"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -232,6 +232,7 @@ frame:SetScript("OnEvent",function(_,event,name)
 end)
 SLASH_AZPCFOREVER1="/azpcf"
 local captureTrades
+local mailboxReceipts
 SlashCmdList.AZPCFOREVER=function(command)
     if perf.Command(command)then return end
     if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
@@ -268,6 +269,83 @@ local function expiredExpiry(base,timestamp,daysLeft)
     anchors[#anchors+1]=anchor
     return anchor
 end
+-- BEGIN AZPC MAIL RELOAD CHECKPOINT
+do
+-- Only live mailbox continuity may bridge a drifting expiry estimate. This is
+-- not a permanent item/price dedup key: collected or absent mails retire it.
+local open,session,closedCheckpoint=false,nil,nil
+local function clock()return GetServerTime and GetServerTime()or time()end
+local function checkpoint()
+    if not session then return end
+    local entries={}
+    for _,r in ipairs(session.entries)do
+        local invoice,name,_,_,_,deposit,fee,delay,_,_,quantity=GetInboxInvoiceInfo(r.index)
+        local _,_,sender,subject,money,cod=GetInboxHeaderInfo(r.index)
+        if invoice=='seller' and name==r.name and number(quantity)==r.quantity and number(money)==r.amount and number(cod)==0 and sender==r.sender and subject==r.subject and number(deposit)==r.deposit and number(fee)==r.fee and (not number(delay)or delay==0)then
+            local copy={};for k,v in pairs(r)do copy[k]=v end;entries[#entries+1]=copy
+        end
+    end
+    if #entries>0 then return {schema=1,owner=session.owner,at=clock(),entries=entries}end
+end
+mailboxReceipts={}
+function mailboxReceipts.Open()
+    if not open then session=nil end;open=true;closedCheckpoint=nil
+end
+function mailboxReceipts.Begin(owner,count,total)
+    AZPCForeverDB.retiredMailReceipts=AZPCForeverDB.retiredMailReceipts or{}
+    if not session or session.owner~=owner or session.trades~=AZPCForeverDB.trades then
+        local saved=AZPCForeverDB.mailReloadCheckpoint
+        local entries={}
+        if open and saved and saved.schema==1 and saved.owner==owner and clock()>=saved.at and clock()-saved.at<=300 then entries=saved.entries or{}end
+        session={owner=owner,trades=AZPCForeverDB.trades,entries=entries,resumeUntil=clock()+10}
+        AZPCForeverDB.mailReloadCheckpoint=nil
+    end
+    session.next={};session.used={};session.partial=total and total>count
+    session.count=count
+end
+function mailboxReceipts.Match(base,buyer,expiry,at,deposit,fee)
+    local exact,compatible={},{}
+    for _,r in ipairs(session.entries)do
+        local advance=expiry-(r.estimateExpiry or expiry)
+        local drift=advance>=-2 and advance<=math.ceil(math.max(0,at-(r.seenAt or at))/60)+2
+        local sameInvoice=(r.deposit==nil or deposit==nil or r.deposit==deposit)and(r.fee==nil or fee==nil or r.fee==fee)
+        if r.base==base and drift and sameInvoice and not session.used[r.fingerprint]then
+            if r.buyer==buyer then exact[#exact+1]=r
+            elseif r.buyer=='' or buyer=='' then compatible[#compatible+1]=r end
+        end
+    end
+    local r=exact[1]or(#compatible==1 and compatible[1])
+    if r then session.used[r.fingerprint]=true;return r.fingerprint end
+end
+function mailboxReceipts.Remember(r)
+    session.used[r.fingerprint]=true;session.next[#session.next+1]=r
+end
+function mailboxReceipts.Retired(fingerprint)return AZPCForeverDB.retiredMailReceipts[fingerprint]end
+function mailboxReceipts.End(incomplete)
+    if not session then return end
+    if incomplete or session.partial or session.count==0 and clock()<=session.resumeUntil then
+        for _,r in ipairs(session.entries)do if not session.used[r.fingerprint]then session.next[#session.next+1]=r end end
+    else
+        for _,r in ipairs(session.entries)do if not session.used[r.fingerprint]then AZPCForeverDB.retiredMailReceipts[r.fingerprint]=true end end
+    end
+    session.entries=session.next;session.next=nil;session.used=nil
+    if session.count>0 and not incomplete and not session.partial then session.resumeUntil=0 end
+end
+local f=CreateFrame('Frame')
+for _,event in ipairs({'MAIL_SHOW','MAIL_CLOSED','PLAYER_LOGOUT'})do pcall(f.RegisterEvent,f,event)end
+f:SetScript('OnEvent',function(_,event)
+    if event=='MAIL_SHOW'then mailboxReceipts.Open()
+    elseif event=='MAIL_CLOSED'then
+        local ok,saved=pcall(checkpoint);closedCheckpoint=ok and saved or nil;open=false;session=nil
+    elseif event=='PLAYER_LOGOUT'then
+        local ok,saved
+        if open then ok,saved=pcall(checkpoint)
+        elseif closedCheckpoint and clock()-closedCheckpoint.at<=5 then ok,saved=true,closedCheckpoint end
+        AZPCForeverDB.mailReloadCheckpoint=ok and saved or nil
+    end
+end)
+end
+-- END AZPC MAIL RELOAD CHECKPOINT
 captureTrades=function()
     setup()
     AZPCForeverDB.trades = AZPCForeverDB.trades or {}
@@ -281,16 +359,22 @@ captureTrades=function()
     local guid = (UnitGUID and UnitGUID("player")) or character
     if realm == "" or character == "" or (faction ~= "horde" and faction ~= "alliance") then return end
     if AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.BeginCapture() end
-    local occurrences = {}
-    local count = GetInboxNumItems() or 0
+    local occurrences,usedFingerprints = {},{}
+    local count,total = GetInboxNumItems();count=count or 0
+    mailboxReceipts.Begin(table.concat({guid,realm,region,faction},':'),count,total)
+    local incomplete=false
     for index=1,count do
         local invoice, itemName, otherPlayer, bid, buyout, deposit, fee, delay, hour, minute, invoiceCount = GetInboxInvoiceInfo(index)
         local _, _, sender, subject, money, cod, daysLeft = GetInboxHeaderInfo(index)
+        -- Headers can load before seller invoice details after a UI reload.
+        -- An unresolved monetary mail is not proof that an old receipt left.
+        if not invoice and number(money)and money>0 then incomplete=true end
         -- Preserve 0.1.1/0.1.2 mailbox identities while fixing the export shape.
         -- Those versions included gsub's subject replacement count in the fingerprint.
         local _, subjectEscapes = tostring(subject or ""):gsub("([^%w%-_%.])", "")
         local returnedName = expiredSubject(subject)
         if returnedName and number(money)==0 and number(cod)==0 then invoice="expired" end
+        local resolved=false
         if invoice == "buyer" or invoice == "seller" or invoice == "expired" then
             local id, quantity, name
             if (invoice == "buyer" or invoice == "expired") and type(GetInboxItem) == "function" then name,id,_,quantity = GetInboxItem(index,1) end
@@ -318,7 +402,10 @@ captureTrades=function()
                     expiry=expiredExpiry(base,timestamp,daysLeft) or 0
                 end
                 if expiry>0 then
-                    if invoice~="expired" then
+                    local base=table.concat({guid,realm,region,invoice,id,quantity,copper,encode(sender),encode(subject),subjectEscapes},':')
+                    local estimateExpiry=expiry
+                    local reused=invoice=='seller'and mailboxReceipts.Match(base,encode(otherPlayer),expiry,timestamp,number(deposit),number(fee))
+                    if invoice~="expired" and not reused then
                         -- Mail daysLeft is an estimate, not an immutable receipt ID.
                         -- Reuse the original minute anchor across small estimate drift.
                         -- Keep the occurrence suffix below so simultaneous equal sales remain distinct.
@@ -343,6 +430,12 @@ captureTrades=function()
                         local unnamed=table.concat({guid,realm,region,invoice,id,quantity,copper,expiry,'',encode(sender),encode(subject),subjectEscapes},':')..':'..occurrences[fingerprint:match('^(.*):%d+$')]
                         if AZPCForeverDB.tradeSeen[unnamed]then fingerprint=unnamed end
                     end
+                    if reused then fingerprint=reused
+                    else
+                        local stem=fingerprint:match('^(.*):%d+$');local occurrence=tonumber(fingerprint:match(':(%d+)$'))
+                        while usedFingerprints[fingerprint]or mailboxReceipts.Retired(fingerprint)do occurrence=occurrence+1;fingerprint=stem..':'..occurrence end
+                    end
+                    usedFingerprints[fingerprint]=true
                     local oldExport=encode(fingerprint)
                     local existing
                     if AZPCForeverDB.tradeSeen[fingerprint] then
@@ -372,6 +465,8 @@ captureTrades=function()
                             if not existing then AZPCForeverDB.trades[#AZPCForeverDB.trades+1]=receipt;if AZPCForeverCrafting and AZPCForeverCrafting.InvalidateCosts then AZPCForeverCrafting.InvalidateCosts()end end
                             local fresh=not AZPCForeverDB.tradeSeen[fingerprint]
                             AZPCForeverDB.tradeSeen[fingerprint]=true
+                            resolved=true
+                            if invoice=='seller'then mailboxReceipts.Remember({base=base,buyer=encode(otherPlayer),fingerprint=fingerprint,index=index,name=name,quantity=quantity,amount=copper,sender=sender,subject=subject,deposit=number(deposit),fee=number(fee),estimateExpiry=estimateExpiry,seenAt=timestamp})end
                             if invoice=='seller' and AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.ObserveSale(index,fingerprint,copper) end
                             if fresh then
                                 if AZPCForeverSyncPrompt and (invoice=="seller" or invoice=="expired") then AZPCForeverSyncPrompt.MarkDirty() end
@@ -390,12 +485,15 @@ captureTrades=function()
                 end
             end
         end
+        if invoice=='seller' and not resolved then incomplete=true end
     end
+    mailboxReceipts.End(incomplete)
     if AZPCForeverSyncPrompt then AZPCForeverSyncPrompt.EndCapture() end
 end
 captureTrades=perf.Wrap("Mailbox capture",captureTrades)
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
-tradeFrame:SetScript("OnEvent",function()
+tradeFrame:SetScript("OnEvent",function(_,event)
+    if event=='MAIL_SHOW'then mailboxReceipts.Open()end
     local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err))end
     C_Timer.After(0.5,function() local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err)) end end)
 end)
@@ -2547,6 +2645,7 @@ do
     end) end
 end
 -- END AZPC PROFESSION PANEL
+
 
 
 -- BEGIN AZPC DISENCHANT EVIDENCE

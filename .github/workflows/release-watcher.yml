@@ -22,6 +22,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-crafting.lua
       - run: lua5.1 watcher/tests/forever-disenchant.lua
       - run: lua5.1 watcher/tests/forever-disenchant-integration.lua
+      - run: lua5.1 watcher/tests/forever-mail-reload.lua
       - run: lua5.1 watcher/tests/forever-costing.lua
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
