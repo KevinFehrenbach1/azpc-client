@@ -2532,6 +2532,7 @@ do
         -- Only an explicit recipe selection starts a scan; refreshes stay passive.
         pendingAuto=nil
         if auctionOpen and recipe and recipe.materialsKnown and #(recipe.reagents or {})>0 then
+            installQueryHooks()
             pendingAuto={recipe=recipe,key=recipeKey(recipe),remaining=20}
             tryAutoScan()
             if render then render()end
