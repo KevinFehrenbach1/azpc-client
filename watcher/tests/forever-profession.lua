@@ -218,6 +218,8 @@ assert(panel.rows[1].button.text=='Buy')
 
 -- The redesigned page exposes one scan action, distinct columns and editable quantity.
 assert(panel.materialsTab==nil and panel.ahTab==nil,'redundant tabs removed')
+assert(panel.searchAll.text=='Scanning…','recipe selection starts the existing scanner')
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
 assert(panel.searchAll.text=='Scan prices')
 assert(panel.rows[1].need and panel.rows[1].bags and panel.rows[1].missing and panel.rows[1].unit and panel.rows[1].total,'material quantities and prices use separate columns')
 panel.batch:SetText('3');panel.batch:GetScript('OnEnterPressed')(panel.batch)
@@ -330,3 +332,17 @@ assert(popup and popup.data.target.quantity==5 and #quotes==before,'single Buy s
 assert(AuctionHouseFrame.displayMode~=AuctionHouseFrameDisplayMode.Buy,'purchase flow does not navigate away from AZPC')
 p.CancelBuying()
 print('PASS: direct auction APIs, AZPC-only purchase and repricing UI, single-row quantity buying with no native handoff')
+
+-- Explicit recipe selection scans once; passive refresh and guarded states do not.
+C_AuctionHouse.SearchForItemKeys=function()grouped=grouped+1 end
+local beforeSelection=grouped
+p.Select(recipe)
+assert(grouped==beforeSelection+1,'recipe click automatically scans prices')
+p.Show();assert(grouped==beforeSelection+1,'rendering must not repeat the automatic scan')
+ready=false;p.Select(recipe);assert(grouped==beforeSelection+1,'automatic scan respects AH throttle');ready=true
+InCombatLockdown=function()return true end
+p.Select(recipe);assert(grouped==beforeSelection+1,'automatic scan respects combat guard')
+InCombatLockdown=function()return false end
+emit('AUCTION_HOUSE_CLOSED');p.Select(recipe)
+assert(grouped==beforeSelection+1,'recipe selection outside AH never queries')
+print('PASS: recipe selection automatic scan, passive refresh and existing safety guards')

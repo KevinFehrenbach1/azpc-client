@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.47"
+local addon, VERSION = ..., "0.2.48"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2516,6 +2516,8 @@ do
         selected=recipe;quantity=1;tab='ah'
         if refreshBrowser then refreshBrowser()end
         if render then render()end
+        -- Only an explicit recipe selection starts a scan; refreshes stay passive.
+        if auctionOpen then installQueryHooks();searchAll(recipe)end
     end
     local function font(parent,style,x,y,width)
         return uiText(parent,style,x,y,width)
@@ -2586,7 +2588,7 @@ do
             refreshBrowser();render()
         end)
         page.tabButton=button
-        font(page,'GameFontNormalLarge',12,-13,200):SetText('RECIPES')
+        font(page,'GameFontNormalLarge',64,-13,160):SetText('RECIPES')
         page.profession=uiButton(page,'All professions',212,29);page.profession:SetPoint('TOPLEFT',12,-40)
         page.professionArrow=page.profession:CreateTexture(nil,'OVERLAY');page.professionArrow:SetTexture('Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up');page.professionArrow:SetSize(18,18);page.professionArrow:SetPoint('RIGHT',-5,0)
         page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
