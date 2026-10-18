@@ -52,6 +52,9 @@ local function widget()
  local w={scripts={},shown=true}
  for _,method in ipairs({'SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints','SetFont','SetShadowColor','SetShadowOffset'})do w[method]=function()end end
  function w:SetPoint(point,relative)assert(relative~=self,'a frame must never anchor to itself')end
+ function w:SetFont(_,size)self.fontSize=size end
+ function w:SetWordWrap(value)self.wordWrap=value end
+ function w:SetHeight(value)self.height=value end
  function w:SetText(value)self.text=value end
  function w:GetText()return self.text or ''end
  function w:GetFrameLevel()return 1 end
@@ -404,3 +407,36 @@ p.Select(recipe);firstCount=grouped;ready=false;emit('AUCTION_HOUSE_BROWSE_RESUL
 emit('AUCTION_HOUSE_CLOSED');ready=true;emit('AUCTION_HOUSE_SHOW');emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
 assert(grouped==firstCount,'AH close cancels a waiting follow-up')
 print('PASS: missing recipe price recovery, paged follow-up, same-scan evidence, no invented prices, one retry and cancellation')
+
+-- Native item tooltips are confined to item areas and resolve reused rows dynamically.
+local tooltipOwner,tooltipLink,tooltipShown
+GameTooltip={
+ SetOwner=function(_,owner)tooltipOwner=owner end,
+ SetHyperlink=function(_,link)tooltipLink=link end,
+ Show=function()tooltipShown=true end,
+ Hide=function()tooltipShown=false end,
+ IsOwned=function(_,owner)return tooltipOwner==owner end,
+}
+local beforeHover=grouped
+panel.itemHover:GetScript('OnEnter')(panel.itemHover)
+assert(tooltipLink=='item:'..recipe.outputItemId and tooltipShown,'output header shows native item tooltip')
+panel.itemHover:GetScript('OnLeave')(panel.itemHover);assert(not tooltipShown)
+local materialRow=panel.rows[1]
+materialRow.itemHover:GetScript('OnEnter')(materialRow.itemHover)
+assert(tooltipLink=='item:'..materialRow.material.itemId and tooltipShown,'material name/icon shows current row item')
+local oldMaterial=materialRow.material;materialRow.material={itemId=999}
+materialRow.itemHover:GetScript('OnEnter')(materialRow.itemHover)
+assert(tooltipLink=='item:999','reused hover region reads latest material')
+materialRow.material=oldMaterial
+local recipeButton=page.recipeRows[1]
+recipeButton:GetScript('OnEnter')(recipeButton)
+assert(tooltipLink=='item:'..recipeButton.recipe.outputItemId,'recipe browser shows output item')
+materialRow.itemHover:GetScript('OnHide')(materialRow.itemHover)
+assert(tooltipShown,'hiding another row cannot hide a different tooltip owner')
+recipeButton:GetScript('OnHide')(recipeButton);assert(not tooltipShown,'hidden item row releases tooltip')
+assert(grouped==beforeHover,'hovering never sends an AH query')
+GameTooltip=nil;assert(pcall(panel.itemHover:GetScript('OnEnter'),panel.itemHover),'missing tooltip API is harmless')
+for _,card in ipairs(panel.cards)do
+ assert(card.value.fontSize==16 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
+end
+print('PASS: output/material/recipe tooltips, dynamic reused rows, ownership, passive hover and compact non-wrapping summary values')
