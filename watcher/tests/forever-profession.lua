@@ -371,3 +371,36 @@ ready=false;p.Select(recipe);ready=true;assert(p.SearchAll(recipe))
 assert(grouped==waitingCount+2);emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
 assert(grouped==waitingCount+2,'manual scan supersedes deferred scan')
 print('PASS: deferred recipe scan readiness, latest selection, one-shot dispatch and cancellation')
+
+-- Reproduce the screenshot: first complete response omits thread, follow-up supplies it.
+ready=true;p.Select(recipe)
+local firstCount=grouped
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}}
+ready=false;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(grouped==firstCount and p.Quote(recipe,1).ahCost==nil,'missing prices remain unknown while AH is throttled')
+ready=true;emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==firstCount+1,'one follow-up search is sent when ready')
+results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}}
+full=false;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(p.Quote(recipe,1).ahCost==nil,'follow-up pages are not published prematurely')
+full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
+assert(p.Quote(recipe,1).ahCost==410 and p.Quote(recipe,1).salePrice==600,'follow-up fills missing thread and preserves same-scan leather and output')
+emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY');emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(grouped==firstCount+1,'follow-up is strictly bounded to one query')
+
+p.Select(recipe);firstCount=grouped
+results={{itemKey={itemID=2589},minPrice=250,totalQuantity=100}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(grouped==firstCount+1)
+results={};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(p.Quote(recipe,1).ahCost==nil and p.Quote(recipe,1).salePrice==nil,'genuinely absent listings cannot reuse an older recipe quote')
+assert(grouped==firstCount+1,'empty follow-up never loops')
+
+p.Select(recipe);firstCount=grouped;ready=false
+results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100}}
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');queryHooks.SendBrowseQuery()
+ready=true;emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==firstCount,'external search cancels a waiting follow-up')
+p.Select(recipe);firstCount=grouped;ready=false;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+emit('AUCTION_HOUSE_CLOSED');ready=true;emit('AUCTION_HOUSE_SHOW');emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY')
+assert(grouped==firstCount,'AH close cancels a waiting follow-up')
+print('PASS: missing recipe price recovery, paged follow-up, same-scan evidence, no invented prices, one retry and cancellation')

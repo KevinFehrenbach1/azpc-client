@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.49"
+local addon, VERSION = ..., "0.2.50"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2019,25 +2019,37 @@ do
         return data
     end
     local function readResults()
-        if not scan or not scan.waiting then return end
+        if not scan or not scan.waiting or scan.retryPending then return end
         local rows=api(C_AuctionHouse,'GetBrowseResults')
         if type(rows)~='table' then return end
         -- Reject results from an unrelated manual/addon search.
         for _,r in ipairs(rows)do if not r.itemKey or not scan.ids[r.itemKey.itemID]then stopScan('Another AH search interrupted this one. Scan prices again.');return end end
-        scan.prices={};scan.available={}
+        local prices,available={},{}
         for _,r in ipairs(rows)do
             local id=r.itemKey.itemID;local unit=number(r.minPrice);local amount=number(r.totalQuantity)
             if unit and unit>0 and amount then
-                scan.prices[id]=math.min(scan.prices[id] or unit,unit)
-                scan.available[id]=amount
+                prices[id]=math.min(prices[id] or unit,unit)
+                available[id]=amount
             end
         end
+        if scan.retried then
+            -- Keep only evidence from this scan, never fill gaps from older cached quotes.
+            for id,price in pairs(scan.firstPrices)do
+                if not prices[id]then prices[id]=price;available[id]=scan.firstAvailable[id]end
+            end
+        end
+        scan.prices=prices;scan.available=available
         if api(C_AuctionHouse,'HasFullBrowseResults')==true then
             scan.waiting=false;scan.complete=true;scan.at=GetServerTime and GetServerTime() or time()
             -- Publish one completed snapshot; partial and unrelated searches never erase it.
             completedQuotes[scan.key]={at=scan.at,prices=scan.prices,available=scan.available}
             local found,total=0,0;for id in pairs(scan.ids)do total=total+1;if scan.prices[id]then found=found+1 end end
             scan.status='Search complete • '..found..'/'..total..' items priced'
+            if found<total and not scan.retried then
+                scan.firstPrices=prices;scan.firstAvailable=available
+                scan.waiting=true;scan.complete=false;scan.retryPending=true;scan.more=false
+                scan.status='Checking missing prices…'
+            end
         else scan.more=true;scan.status='Loading remaining results…' end
         if render then render()end
     end
@@ -2057,7 +2069,7 @@ do
         end
         for _,m in ipairs(recipe.reagents)do add(m.itemId)end;add(recipe.outputItemId)
         stopScan()
-        scan={key=recipeKey(recipe),ids=ids,prices={},available={},waiting=true,status='Searching all materials and output…'}
+        scan={key=recipeKey(recipe),ids=ids,keys=keys,prices={},available={},waiting=true,status='Searching all materials and output…'}
         local current=scan
         local sorts={{sortOrder=Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0,reverseSort=false}}
         ownQuery=true
@@ -2082,6 +2094,20 @@ do
         end
     end
     local purchaseQueue,purchaseAttempt,advancePurchase,pendingQuantity,showReadyPopup,buyMissing
+    local function tryMissingScan()
+        if not scan or not scan.waiting or not scan.retryPending then return end
+        if not auctionOpen or scan.key~=recipeKey(selected)or purchaseQueue or purchaseAttempt
+            or (InCombatLockdown and InCombatLockdown())then
+            stopScan('Price scan interrupted. Scan prices again.');return
+        end
+        if api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then return end
+        scan.retryPending=false;scan.retried=true
+        scan.status='Checking missing prices…'
+        ownQuery=true
+        local ok=pcall(C_AuctionHouse.SearchForItemKeys,scan.keys,{{sortOrder=Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0,reverseSort=false}})
+        ownQuery=false
+        if not ok then stopScan('Search unavailable. Try again.')end
+    end
     local function tryAutoScan(delta)
         local request=pendingAuto
         if not request then return end
@@ -2649,6 +2675,7 @@ do
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults();openQueuedQuote() end
             purchaseEvent(event,id,total)
             if event=='AUCTION_HOUSE_THROTTLED_SYSTEM_READY' then tryAutoScan()end
+            tryMissingScan()
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
@@ -2657,7 +2684,12 @@ do
         end)
         if not ok then notify('Crafting panel is waiting for profession data. /azpcf materials opens it again.')end
     end)
+    local retryElapsed=0
     if UIParent then events:SetScript('OnUpdate',function(_,delta)
+        if scan and scan.waiting and scan.retryPending then
+            retryElapsed=retryElapsed+delta
+            if retryElapsed>=0.2 then retryElapsed=0;tryMissingScan();if render then render()end end
+        end
         if pendingAuto then local before=pendingAuto;tryAutoScan(delta);if pendingAuto~=before and render then render()end end
         if not professionOpen then return end
         elapsed=elapsed+delta;if elapsed<0.4 then return end;elapsed=0
