@@ -96,6 +96,7 @@ AuctionHouseFrame.tabsForDisplayMode={}
 AuctionHouseFrameDisplayMode={Buy={'BrowseResultsFrame'}}
 local modeChanges=0
 function AuctionHouseFrame:SetDisplayMode(mode)
+ self.displayMode=mode
  modeChanges=modeChanges+1
  local show=mode==AuctionHouseFrameDisplayMode.AZPCCrafting
  if AZPCForeverCraftingPage then if show then AZPCForeverCraftingPage:Show()else AZPCForeverCraftingPage:Hide()end end
@@ -440,3 +441,42 @@ for _,card in ipairs(panel.cards)do
  assert(card.value.fontSize==16 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
 end
 print('PASS: output/material/recipe tooltips, dynamic reused rows, ownership, passive hover and compact non-wrapping summary values')
+
+-- Profession shortcut is separate from Auctionator and resolves the current selection at click time.
+emit('AUCTION_HOUSE_CLOSED');emit('TRADE_SKILL_CLOSE')
+local shortcutRecipe={name='Selected Woolen Bag',recipeId=3757,profession='Tailoring',materialsKnown=true,outputItemId=4240,outputMin=1,outputMax=1,reagents=recipe.reagents}
+local otherShortcut={name='Selected Leather Item',recipeId=999,profession='Leatherworking',materialsKnown=true,outputItemId=999,outputMin=1,outputMax=1,reagents=recipe.reagents}
+local liveRecipe=shortcutRecipe
+InCombatLockdown=function()return combat end
+ProfessionsFrame=widget();ProfessionsFrame.CraftingPage={SchematicForm=widget()}
+function ProfessionsFrame.CraftingPage.SchematicForm:GetRecipeInfo()return liveRecipe and {recipeID=liveRecipe.recipeId}end
+AZPCForeverCrafting.ReadRecipe=function(id)if liveRecipe and id==liveRecipe.recipeId then return liveRecipe end end
+local auctionatorSearch=widget();local auctionatorClicks=0
+auctionatorSearch:SetScript('OnClick',function()auctionatorClicks=auctionatorClicks+1 end)
+ProfessionsFrame.AuctionatorSearchButton=auctionatorSearch
+local auctionatorHandler=auctionatorSearch:GetScript('OnClick')
+emit('TRADE_SKILL_SHOW')
+assert(not ProfessionsFrame.AZPCCraftSearchButton,'profession opening away from AH adds no visible shortcut')
+emit('AUCTION_HOUSE_SHOW')
+local shortcut=assert(ProfessionsFrame.AZPCCraftSearchButton)
+assert(shortcut:IsShown() and shortcut.enabled and shortcut.text=='AZPC Craft Search')
+local beforeShortcut=grouped
+shortcut:GetScript('OnClick')()
+assert(AuctionHouseFrame.displayMode==AuctionHouseFrameDisplayMode.AZPCCrafting and panel.name.text==shortcutRecipe.name,'shortcut opens AZPC tab on exact profession selection')
+assert(grouped==beforeShortcut+1,'shortcut uses guarded automatic price scan once')
+assert(page.search:GetText()=='' and page.profession.text=='Tailoring','shortcut clears conflicting browser search/profession filters')
+liveRecipe=otherShortcut;shortcut:GetScript('OnClick')()
+assert(panel.name.text==otherShortcut.name and page.profession.text=='Leatherworking','shortcut reads newly selected recipe at click time')
+assert(ProfessionsFrame.AuctionatorSearchButton==auctionatorSearch and auctionatorSearch:GetScript('OnClick')==auctionatorHandler and auctionatorClicks==0,'AZPC leaves Auctionator controls and handlers untouched')
+combat=true;emit('TRADE_SKILL_LIST_UPDATE');assert(not shortcut.enabled)
+local combatCount=grouped;shortcut:GetScript('OnClick')();assert(grouped==combatCount,'shortcut never queries during combat');combat=false
+liveRecipe=nil;emit('TRADE_SKILL_LIST_UPDATE');assert(not shortcut.enabled,'no profession selection disables shortcut')
+liveRecipe=shortcutRecipe;emit('TRADE_SKILL_CLOSE');assert(not shortcut:IsShown())
+emit('TRADE_SKILL_SHOW');assert(shortcut:IsShown(),'shortcut returns when both windows open')
+emit('AUCTION_HOUSE_CLOSED');assert(not shortcut:IsShown())
+local closedCount=grouped;shortcut:GetScript('OnClick')();assert(grouped==closedCount,'AH closure makes even a stale click harmless')
+-- Legacy details windows use the same isolated shortcut path.
+ProfessionsFrame:Hide();TradeSkillFrame=widget();TradeSkillFrame.DetailsFrame=widget();TradeSkillFrame.DetailsFrame.selectedRecipeID=shortcutRecipe.recipeId
+emit('AUCTION_HOUSE_SHOW');assert(TradeSkillFrame.AZPCCraftSearchButton and TradeSkillFrame.AZPCCraftSearchButton:IsShown())
+TradeSkillFrame.AZPCCraftSearchButton:GetScript('OnClick')();assert(panel.name.text==shortcutRecipe.name)
+print('PASS: profession Craft Search exact recipe, AH-only visibility, filter reset, selection changes, combat/no-selection/closed guards and isolated Auctionator/legacy controls')
