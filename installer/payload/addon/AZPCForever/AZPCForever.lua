@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.50"
+local addon, VERSION = ..., "0.2.51"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2356,6 +2356,21 @@ do
             else sendPurchaseSearch()end
         end
     end
+    local function itemTooltip(frame,itemId)
+        frame:EnableMouse(true)
+        local function hide(self)
+            if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self))then GameTooltip:Hide()end
+        end
+        frame:SetScript('OnEnter',function(self)
+            local id=itemId()
+            if not id or not GameTooltip or type(GameTooltip.SetHyperlink)~='function'then return end
+            GameTooltip:SetOwner(self,'ANCHOR_RIGHT')
+            GameTooltip:SetHyperlink('item:'..id)
+            GameTooltip:Show()
+        end)
+        frame:SetScript('OnLeave',hide)
+        frame:SetScript('OnHide',hide)
+    end
     local function typography(text,style,size)
         local heading=style=='GameFontNormalLarge' or style=='GameFontNormalSmall'
         if type(text.SetFont)=='function'then text:SetFont('Fonts/FRIZQT__.TTF',size or (style=='GameFontNormalLarge' and 18 or (style=='GameFontDisableSmall' and 10 or 12)),'')end
@@ -2402,6 +2417,8 @@ do
         panel.iconBorder=panel:CreateTexture(nil,'OVERLAY');panel.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');panel.iconBorder:SetSize(85,85);panel.iconBorder:SetPoint('CENTER',panel.icon,'CENTER')
         panel.name=uiText(panel,'GameFontNormalLarge',86,-20,290);panel.name:SetTextColor(0.95,0.94,0.87);typography(panel.name,'GameFontHighlight',22)
         panel.subtitle=uiText(panel,'GameFontDisableSmall',86,-53,290)
+        panel.itemHover=CreateFrame('Frame',nil,panel);panel.itemHover:SetSize(375,70);panel.itemHover:SetPoint('TOPLEFT',16,-12)
+        itemTooltip(panel.itemHover,function()return selected and selected.outputItemId end)
         local crafts=uiText(panel,'GameFontNormalSmall',0,0,90)
         crafts:ClearAllPoints();crafts:SetPoint('TOPRIGHT',-12,-15);crafts:SetJustifyH('RIGHT');crafts:SetText('Crafts')
         panel.minus=uiButton(panel,'-',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
@@ -2442,7 +2459,9 @@ do
             surface(card,0.04,0.045,0.043,{0.45,0.36,0.20})
             card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
             card.title:SetText(label)
-            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',22)
+            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',16)
+            card.value:SetHeight(24)
+            if card.value.SetWordWrap then card.value:SetWordWrap(false)end
             card.helper=uiText(card,'GameFontDisableSmall',10,-66,144)
             panel.cards[i]=card
         end
@@ -2477,6 +2496,8 @@ do
                 surface(row,0.035,0.047,0.049,{0.11,0.14,0.14})
                 row.icon=row:CreateTexture(nil,'ARTWORK');row.icon:SetSize(22,22);row.icon:SetPoint('LEFT',4,0)
                 row.label=uiText(row,'GameFontHighlightSmall',31,-15,94)
+                row.itemHover=CreateFrame('Frame',nil,row);row.itemHover:SetSize(125,46);row.itemHover:SetPoint('TOPLEFT',0,0)
+                itemTooltip(row.itemHover,function()return row.material and row.material.itemId end)
                 row.need=uiText(row,'GameFontHighlightSmall',128,-16,34,'CENTER')
                 row.bags=uiText(row,'GameFontHighlightSmall',166,-16,34,'CENTER')
                 row.missing=uiText(row,'GameFontHighlightSmall',204,-16,52,'CENTER')
@@ -2493,10 +2514,10 @@ do
             row.button:SetEnabled(pendingQuantity(m.itemId)==0 and not purchaseQueue and auctionOpen and m.missing~=nil and m.missing>0 and not(scan and scan.waiting));row:Show()
         end
         p.child:SetHeight(math.max(1,#data.rows*48))
-        p.cost:SetText(money(data.ahCost,18));p.missing:SetText('To buy missing: '..money(data.missingCost))
-        p.sale:SetText(money(data.salePrice,18))
+        p.cost:SetText(money(data.ahCost,12));p.missing:SetText('To buy missing: '..money(data.missingCost))
+        p.sale:SetText(money(data.salePrice,12))
         p.cards[3].title:SetText(quantity==1 and 'Est. profit / craft' or 'Est. profit / batch')
-        p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit,18))
+        p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit,12))
         if data.ahProfit==nil then p.profit:SetTextColor(0.65,0.67,0.67)
         elseif data.ahProfit<0 then p.profit:SetTextColor(1,0.4,0.4)else p.profit:SetTextColor(0.48,0.9,0.48)end
         p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved • No data' or (scan and scan.complete and not data.quoteFresh and 'Prices are stale. Scan prices again.' or (scan and scan.status or 'Choose a recipe, then Scan prices.')))
@@ -2582,6 +2603,7 @@ do
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
                 button.name=font(button,'GameFontHighlightSmall',37,-12,161)
                 button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
+                itemTooltip(button,function()return button.recipe and button.recipe.outputItemId end)
                 page.recipeRows[i]=button
             end
             button.recipe=recipe;button.name:SetText(recipe.name)
