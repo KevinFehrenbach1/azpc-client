@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.51"
+local addon, VERSION = ..., "0.2.52"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1940,7 +1940,7 @@ do
         return out
     end
     local function readSelection()
-        local modern=ProfessionsFrame and ProfessionsFrame.CraftingPage
+        local modern=ProfessionsFrame and (not ProfessionsFrame.IsShown or ProfessionsFrame:IsShown())and ProfessionsFrame.CraftingPage
         local form=modern and modern.SchematicForm
         local details=TradeSkillFrame and TradeSkillFrame.DetailsFrame
         -- Forever's schematic stores currentRecipeInfo and exposes GetRecipeInfo().
@@ -2684,10 +2684,42 @@ do
         if not ensurePage()then notify('The AH crafting tab is waiting for the auction UI. Reopen the AH.');return end
         page.tabButton:GetScript('OnClick')(page.tabButton)
     end
+    local professionOpen=false
+    local craftSearchButton,craftSearchHost
+    local function updateCraftSearch(recipe)
+        local owner=ProfessionsFrame
+        if not owner or type(owner.IsShown)~='function'or not owner:IsShown()then owner=TradeSkillFrame end
+        if not auctionOpen or not professionOpen or not owner or type(owner.IsShown)~='function'or not owner:IsShown()then
+            if craftSearchButton then craftSearchButton:Hide()end;return
+        end
+        local host=owner.CraftingPage and owner.CraftingPage.SchematicForm or owner.DetailsFrame or owner
+        if host~=craftSearchHost then
+            if craftSearchButton then craftSearchButton:Hide()end
+            craftSearchHost=host
+            craftSearchButton=uiButton(host,'AZPC Craft Search',154,25,true)
+            -- Separate header row above reagents; never reanchor Auctionator's search button.
+            craftSearchButton:SetPoint('TOPRIGHT',host,'TOPRIGHT',-14,-72)
+            owner.AZPCCraftSearchButton=craftSearchButton
+            craftSearchButton:SetScript('OnClick',function()
+                if not auctionOpen or not professionOpen then return end
+                if InCombatLockdown and InCombatLockdown()then notify('Search after combat.');return end
+                local current=readSelection()
+                if not current then notify('Select a recipe in your profession window first.');return end
+                showPage()
+                if page and page.ready and page:IsShown()then
+                    filterProfession=current.profession;filterText=''
+                    if page.search then page.search:SetText('')end
+                    selectRecipe(current)
+                end
+            end)
+        end
+        local current=recipe or readSelection()
+        craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
+        craftSearchButton:Show()
+    end
     AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
-    local professionOpen=false
+    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
         local ok=pcall(function()
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
@@ -2701,6 +2733,7 @@ do
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
                 scan.more=false;pcall(C_AuctionHouse.RequestMoreBrowseResults)
             end
+            updateCraftSearch()
             if professionOpen and not(page and page:IsShown())then selected=readSelection() end
             if page and page.ready and page:IsShown()then refreshBrowser();render()end
         end)
@@ -2717,6 +2750,7 @@ do
         elapsed=elapsed+delta;if elapsed<0.4 then return end;elapsed=0
         pcall(function()
             local recipe=readSelection()
+            updateCraftSearch(recipe)
             if not(page and page:IsShown())then selected=recipe end
         end)
     end) end
