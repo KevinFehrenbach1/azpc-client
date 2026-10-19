@@ -20,6 +20,7 @@ function GetInboxInvoiceInfo()return 'seller','Light Leather','Buyer',0,210,0,10
 function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction successful: Light Leather',200,0,30 end
 function GetItemInfo(name)return name,'|Hitem:2318|h[Light Leather]|h'end
 assert(loadfile('addons/forever/AZPCForever/AZPCForever.lua'))('AZPCForever')
+AZPCForeverSyncStatus.Initialize()
 emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==1);assert(popups==1,'new sale capture prompts while mailbox is open')
 hooks.TakeInboxMoney(1);visible=false;money=1200;emit('PLAYER_MONEY');emit('MAIL_INBOX_UPDATE');flush();assert(popups==1,'real receipt capture must reach the collected-payout prompt');assert(#AZPCForeverDB.trades==1,'prompt must not duplicate or delete sale records')
 print('PASS: live mailbox capture-to-collection reminder integration and record preservation')
@@ -52,3 +53,12 @@ function GetInboxHeaderInfo()return nil,nil,'Auction House','Auction expired: Li
 emit('MAIL_SHOW');flush();assert(#AZPCForeverDB.trades==10002,'expiration must save beyond former shared history limit')
 emit('MAIL_CLOSED');flush();assert(popups==5)
 print('PASS: sales, expirations and reminders beyond 10000 existing records without clearing history')
+
+local before=#AZPCForeverDB.trades;local details=0;local text
+local popup=StaticPopupDialogs.AZPC_FOREVER_SYNC_SALES
+assert(popup.button1=='Reload now' and popup.button2=='Later' and popup.button3=='Details')
+AZPCForeverSyncStatus.Show=function()details=details+1 end
+popup.OnAlt();assert(details==1 and #AZPCForeverDB.trades==before,'Details opens status without recapturing or changing receipts')
+popup.OnShow({text={SetText=function(_,value)text=value end}})
+assert(text:find('Reload to save',1,true) and AZPCForeverSyncStatus.Counts().total>0,'real mailbox prompt includes captured session counts')
+print('PASS compact prompt Details integration: counts, original action buttons and immutable mailbox evidence')

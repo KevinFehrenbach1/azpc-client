@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.40"
+        version = "0.4.41"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -994,6 +994,49 @@ function Collect-ForeverTrades([string]$Text) {
     }
 }
 $script:ForeverUploadAttempt=[datetime]::MinValue
+# Numeric, read-only status for the addon's next login/reload. Never edits capture code.
+$script:ForeverStatusWriteAttempt=[datetime]::MinValue
+$script:ForeverLastUploadAt=0L
+$script:ForeverLastUploadCount=0
+function Save-ForeverUploadStatus([int]$Count) {
+    try {
+        $script:ForeverLastUploadAt=([DateTimeOffset]::UtcNow).ToUnixTimeSeconds()
+        $script:ForeverLastUploadCount=$Count
+        @{lastUploadAt=$script:ForeverLastUploadAt;lastUploadCount=$Count} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StateDir 'forever-upload-status.json') -Encoding UTF8
+    } catch { Write-Log ('FOREVER STATUS NOTE: '+$_.Exception.Message) }
+}
+function Write-ForeverAddonStatus {
+    if(((Get-Date)-$script:ForeverStatusWriteAttempt).TotalSeconds -lt 30){return}
+    $script:ForeverStatusWriteAttempt=Get-Date
+    try {
+        if(-not $script:ForeverLastUploadAt) {
+            $saved=Join-Path $StateDir 'forever-upload-status.json'
+            if(Test-Path -LiteralPath $saved) {
+                $status=Get-Content -LiteralPath $saved -Raw -Encoding UTF8 | ConvertFrom-Json
+                if($status.lastUploadAt -gt 0 -and $status.lastUploadCount -ge 0){$script:ForeverLastUploadAt=[long]$status.lastUploadAt;$script:ForeverLastUploadCount=[int]$status.lastUploadCount}
+            }
+        }
+        $now=([DateTimeOffset]::UtcNow).ToUnixTimeSeconds()
+        $text='-- Last known watcher status; loaded at login/reload. No credentials.'+"`n"+'AZPCForeverWatcherStatus = {schema=1,checkedAt='+$now+',lastUploadAt='+[long]$script:ForeverLastUploadAt+',lastUploadCount='+[int]$script:ForeverLastUploadCount+'}'+"`n"
+        $targets=@(foreach($path in @($script:ForeverReadVersions.Keys)) {
+            $folder=(Get-Item -LiteralPath $path).Directory
+            while($folder -and $folder.Name -ne 'WTF'){$folder=$folder.Parent}
+            if($folder -and $folder.Parent){Join-Path $folder.Parent.FullName 'Interface\AddOns\AZPCForever\AZPCForever.lua'}
+        }) | Select-Object -Unique
+        foreach($target in $targets) {
+            # Update only the opt-in status section; never touch capture code.
+            if(-not(Test-Path -LiteralPath $target)){continue}
+            $source=[IO.File]::ReadAllText($target)
+            $pattern='(?s)-- AZPC WATCHER STATUS BEGIN\r?\n.*?-- AZPC WATCHER STATUS END'
+            if([regex]::Matches($source,$pattern).Count -ne 1){continue}
+            $block="-- AZPC WATCHER STATUS BEGIN`n"+$text+'-- AZPC WATCHER STATUS END'
+            $updated=[regex]::Replace($source,$pattern,[Text.RegularExpressions.MatchEvaluator]{param($match)$block})
+            [IO.File]::WriteAllText($target+'.tmp',$updated,(New-Object Text.UTF8Encoding($false)))
+            Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
+        }
+    } catch { Write-Log ('FOREVER STATUS NOTE: '+$_.Exception.Message) }
+}
+
 function Send-ForeverTrades([string]$ClientId,[string]$Token) {
     if(((Get-Date)-$script:ForeverUploadAttempt).TotalSeconds -lt 30){return}
     $script:ForeverUploadAttempt=Get-Date
@@ -1007,6 +1050,7 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
         $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 20
         if(-not $result.ok -or $result.accepted -ne $events.Count){throw 'Receiver did not acknowledge this trade batch.'}
         foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
+        Save-ForeverUploadStatus $events.Count
         Write-Log ('FOREVER TRADES UPLOADED: '+$events.Count+' confirmed mailbox records.')
     }catch{Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
 }
@@ -1032,6 +1076,7 @@ function Send-ForeverScans([string]$ClientId,[string]$Token) {
         $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/scans/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body $bytes -TimeoutSec 20
         if(-not $result.ok -or $result.accepted -ne $scan.observations.Count -or $result.uploadId -ne $file.BaseName){throw 'Receiver did not acknowledge this exact scan.'}
         Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII
+        Save-ForeverUploadStatus $scan.observations.Count
         Write-Log ('FOREVER SCAN UPLOADED: '+$result.accepted+' items | '+$scan.realm+'/'+$scan.faction+' | '+$result.market)
     } catch { Write-Log ('FOREVER SCAN UPLOAD PENDING: '+$_.Exception.Message+' Scan kept locally; retrying later.') }
 }
@@ -1097,6 +1142,7 @@ function Send-ForeverCrafting([string]$ClientId,[string]$Token) {
         if(-not $result.ok -or $result.accepted -ne $records.Count -or @($result.recordIds).Count -ne $records.Count){throw 'Receiver did not acknowledge this crafting batch.'}
         for($i=0;$i -lt $records.Count;$i++){if($result.recordIds[$i] -ne $records[$i].recordId){throw 'Receiver acknowledged a different crafting identity.'}}
         foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
+        Save-ForeverUploadStatus $records.Count
         Write-Log ('FOREVER CRAFTING UPLOADED: '+$records.Count+' recipes/crafts/vendor records.')
     }catch{Write-Log ('FOREVER CRAFTING UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
 }
@@ -1205,6 +1251,7 @@ while ($true) {
         Send-ForeverCrafting $privateClientId $watcherToken
         Sync-ForeverMaterialCommands $privateClientId $watcherToken $WowRoot
         Send-ForeverScans $privateClientId $watcherToken
+        Write-ForeverAddonStatus
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."
             try { $azpcFile = Find-AzpcSavedVariables $WowRoot } catch { $azpcFile=$null }
