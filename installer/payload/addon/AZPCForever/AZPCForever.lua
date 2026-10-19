@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.56"
+local addon, VERSION = ..., "0.2.57"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -3261,12 +3261,31 @@ function minimap.Invoke(action)
  elseif action=='hide' then return minimap.SetHidden(true)end
  return false
 end
+local function restoreMenuPosition()
+ local p=settings().menuPosition
+ menu:ClearAllPoints()
+ if type(p)=='table' and type(p.x)=='number' and type(p.y)=='number' and p.x==p.x and p.y==p.y and p.x>=0 and p.x<=1 and p.y>=0 and p.y<=1 and UIParent.GetWidth and UIParent.GetHeight then
+  menu:SetPoint('CENTER',UIParent,'BOTTOMLEFT',p.x*UIParent:GetWidth(),p.y*UIParent:GetHeight())
+ else menu:SetPoint('TOPRIGHT',button,'BOTTOMRIGHT',0,-4)end
+end
+local function saveMenuPosition()
+ local x,y=menu:GetCenter();local w,h=UIParent:GetWidth(),UIParent:GetHeight()
+ local scale=menu:GetEffectiveScale()/UIParent:GetEffectiveScale()
+ if not x or not y or w<=0 or h<=0 or scale<=0 then return end
+ x=x*scale/w;y=y*scale/h
+ if x==x and y==y and x>=0 and x<=1 and y>=0 and y<=1 then settings().menuPosition={x=x,y=y}end
+end
 function minimap.ToggleMenu()
  if combat()then notify('Open the AZPC menu after combat.');return false end
  if not button then return false end
  if not menu then
   menu=CreateFrame('Frame','AZPCForeverMinimapMenu',UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
   menu:SetSize(212,198);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
+  menu:SetMovable(true);menu:RegisterForDrag('LeftButton')
+  local moving=false
+  local function stopMoving()if moving then moving=false;menu:StopMovingOrSizing();saveMenuPosition()end end
+  menu:SetScript('OnDragStart',function()if not combat()then moving=true;menu:StartMoving()end end)
+  menu:SetScript('OnDragStop',stopMoving);menu:SetScript('OnHide',stopMoving)
   if menu.SetBackdrop then menu:SetBackdrop({bgFile='Interface/DialogFrame/UI-DialogBox-Background',edgeFile='Interface/DialogFrame/UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=20,insets={left=6,right=6,top=6,bottom=6}})end
   local title=menu:CreateFontString(nil,'OVERLAY','GameFontNormal');title:SetPoint('TOPLEFT',16,-17);title:SetText('|cff54dbd1AZPC|r')
   local close=CreateFrame('Button',nil,menu,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-2,-2)
@@ -3275,7 +3294,7 @@ function minimap.ToggleMenu()
   end
   menu:Hide();if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverMinimapMenu'end
  end
- if menu:IsShown()then menu:Hide()else menu:ClearAllPoints();menu:SetPoint('TOPRIGHT',button,'BOTTOMRIGHT',0,-4);menu:Show()end
+ if menu:IsShown()then menu:Hide()else restoreMenuPosition();menu:Show()end
  return true
 end
 function minimap.Initialize()
@@ -3310,7 +3329,7 @@ function minimap.Command(command)
  local action=(command or ''):lower():match('^%s*minimap%s*(.-)%s*$');if action==nil then return false end
  if action=='show'then minimap.SetHidden(false)
  elseif action=='hide'then minimap.SetHidden(true)
- elseif action=='reset'then minimap.SetAngle(225);minimap.SetHidden(false)
+ elseif action=='reset'then settings().menuPosition=nil;minimap.SetAngle(225);minimap.SetHidden(false)
  elseif action==''then minimap.SetHidden(not settings().hidden)
  else notify('/azpcf minimap show | hide | reset')end
  return true

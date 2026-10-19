@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "AZPC logo minimap menu for Crafting, Sync Status and Getting Started. Drag to move; /azpcf minimap show, hide or reset.",
+  "notes": "Movable minimap menu remembers its position across characters. Drag the menu title/background; /azpcf minimap reset restores placement.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.56"
+  "foreverAddonVersion": "0.2.57"
 }
