@@ -480,3 +480,30 @@ ProfessionsFrame:Hide();TradeSkillFrame=widget();TradeSkillFrame.DetailsFrame=wi
 emit('AUCTION_HOUSE_SHOW');assert(TradeSkillFrame.AZPCCraftSearchButton and TradeSkillFrame.AZPCCraftSearchButton:IsShown())
 TradeSkillFrame.AZPCCraftSearchButton:GetScript('OnClick')();assert(panel.name.text==shortcutRecipe.name)
 print('PASS: profession Craft Search exact recipe, AH-only visibility, filter reset, selection changes, combat/no-selection/closed guards and isolated Auctionator/legacy controls')
+
+-- Open Recipe delegates exact recipe navigation to Blizzard and never crafts/buys.
+local openedIds,craftCalls={},0
+C_TradeSkillUI.OpenRecipe=function(id)openedIds[#openedIds+1]=id end
+C_TradeSkillUI.CraftRecipe=function()craftCalls=craftCalls+1 end
+DoTradeSkill=function()craftCalls=craftCalls+1 end
+combat=false;p.Select(shortcutRecipe)
+assert(panel.openRecipe.text=='Open Recipe' and panel.openRecipe.enabled,'selected recipe enables navigation')
+local beforeOpen=grouped
+panel.openRecipe:GetScript('OnClick')()
+assert(#openedIds==1 and openedIds[1]==shortcutRecipe.recipeId,'open exact selected recipe through native API')
+p.Select(otherShortcut);beforeOpen=grouped;panel.openRecipe:GetScript('OnClick')()
+assert(#openedIds==2 and openedIds[2]==otherShortcut.recipeId,'cross-profession selection uses that recipe ID')
+assert(grouped==beforeOpen and craftCalls==0,'opening recipe triggers neither price queries nor crafting')
+assert(ProfessionsFrame.AuctionatorSearchButton==auctionatorSearch and auctionatorSearch:GetScript('OnClick')==auctionatorHandler,'recipe navigation never hooks Auctionator')
+combat=true;p.Select(shortcutRecipe);assert(not panel.openRecipe.enabled)
+assert(not p.OpenRecipe());assert(#openedIds==2,'combat blocks even stale button clicks');combat=false
+for _,change in ipairs({{character='Other'},{realm='Other realm'},{region=91},{faction='alliance'}})do
+ local foreign={};for k,v in pairs(shortcutRecipe)do foreign[k]=v end;for k,v in pairs(change)do foreign[k]=v end
+ assert(not p.OpenRecipe(foreign),'never navigate another character/market saved recipe')
+end
+assert(not p.OpenRecipe({recipeId=0}));assert(not p.OpenRecipe({recipeId=1.5}))
+C_TradeSkillUI.OpenRecipe=nil;p.Select(shortcutRecipe);assert(not panel.openRecipe.enabled and not p.OpenRecipe(),'unsupported client gives no misleading success')
+C_TradeSkillUI.OpenRecipe=function()return false end;assert(not p.OpenRecipe(),'native rejection is reported')
+C_TradeSkillUI.OpenRecipe=function()error('recipe unavailable')end;assert(not p.OpenRecipe(),'API errors are contained')
+assert(craftCalls==0 and #openedIds==2,'all navigation failures preserve explicit crafting control')
+print('PASS: Open Recipe native navigation, exact/cross-profession IDs, ownership, combat, unsupported/rejected/error guards, no automatic crafts or Auctionator changes')
