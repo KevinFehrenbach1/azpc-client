@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "First-time setup checklist with optional profession/bank steps, saved dismissal and acknowledged-upload guidance. /azpcf setup reopens it.",
+  "notes": "AZPC logo minimap menu for Crafting, Sync Status and Getting Started. Drag to move; /azpcf minimap show, hide or reset.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.55"
+  "foreverAddonVersion": "0.2.56"
 }

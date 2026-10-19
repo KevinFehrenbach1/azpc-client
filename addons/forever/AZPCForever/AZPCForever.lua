@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.55"
+local addon, VERSION = ..., "0.2.56"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -3204,6 +3204,123 @@ if SlashCmdList then local previous=SlashCmdList.AZPCFOREVER;SlashCmdList.AZPCFO
 end end
 end
 -- END AZPC FIRST RUN SETUP
+
+-- BEGIN AZPC MINIMAP MENU
+do
+AZPCForeverMinimap={}
+local minimap=AZPCForeverMinimap
+local button,menu
+local function settings()
+ AZPCForeverDB=AZPCForeverDB or {};local d=AZPCForeverDB
+ d.minimap=d.minimap or {};local s=d.minimap
+ if type(s.angle)~='number' or s.angle~=s.angle or math.abs(s.angle)>360000 then s.angle=225 end
+ s.angle=s.angle%360;return s
+end
+local function combat()return type(InCombatLockdown)=='function' and InCombatLockdown()end
+local function notify(text)if print then print('|cff54dbd1AZPC:|r '..text)end end
+local function position()
+ if not button or not Minimap then return end
+ local a=settings().angle*math.pi/180
+ local rx=(Minimap.GetWidth and Minimap:GetWidth() or 140)/2+9
+ local ry=(Minimap.GetHeight and Minimap:GetHeight() or 140)/2+9
+ button:ClearAllPoints();button:SetPoint('CENTER',Minimap,'CENTER',math.cos(a)*rx,math.sin(a)*ry)
+end
+function minimap.SetAngle(angle)
+ if type(angle)~='number' or angle~=angle or math.abs(angle)>360000 then return false end
+ settings().angle=angle%360;position();return true
+end
+local function angleFor(x,y)
+ if x==0 then return y>=0 and 90 or 270 end
+ local a=math.atan(y/x)*180/math.pi;if x<0 then a=a+180 end;return a%360
+end
+local function drag()
+ if combat()then if button then button:SetScript('OnUpdate',nil)end;return end
+ if type(GetCursorPosition)~='function' or not Minimap.GetCenter then return end
+ local x,y=GetCursorPosition();local cx,cy=Minimap:GetCenter();if not cx or not cy then return end
+ local scale=Minimap.GetEffectiveScale and Minimap:GetEffectiveScale() or 1
+ if not scale or scale<=0 then return end
+ minimap.SetAngle(angleFor(x/scale-cx,y/scale-cy))
+end
+-- Palette and rectangles sampled from the user-supplied AZPC diamond emblem.
+-- Rendered once at creation; no texture files, timers, history reads or network calls.
+local logoColors={'cbab72','35a7a4','6e633d','095d5f','403d22','15322c','013638','161c14','061a1e','03181c','071214','041216','041015','041014','021117','010a0f'}
+local logoRects={{15,3,1,1,7},{16,3,1,1,5},{17,3,1,1,6},{14,4,1,1,7},{15,4,1,1,3},{16,4,2,1,1},{18,4,1,1,4},{19,4,1,1,7},{13,5,1,1,7},{14,5,1,1,3},{15,5,1,1,1},{16,5,2,1,3},{18,5,1,1,1},{19,5,1,1,4},{20,5,1,1,7},{12,6,1,1,7},{13,6,1,1,3},{14,6,1,1,1},{15,6,1,1,3},{18,6,1,1,3},{19,6,1,1,1},{20,6,1,1,4},{21,6,1,1,7},{11,7,1,1,4},{12,7,1,1,3},{13,7,1,1,1},{14,7,1,1,3},{16,7,1,1,6},{19,7,1,1,3},{20,7,1,1,1},{21,7,1,1,4},{22,7,1,1,7},{10,8,1,1,4},{11,8,1,1,3},{12,8,1,1,1},{13,8,1,1,3},{20,8,1,1,3},{21,8,1,1,1},{22,8,1,1,4},{23,8,1,1,7},{9,9,1,1,4},{10,9,1,1,3},{11,9,1,1,1},{12,9,1,1,5},{16,9,1,1,6},{21,9,1,1,3},{22,9,1,1,1},{23,9,1,3,2},{24,9,1,1,4},{25,9,1,1,7},{8,10,1,1,4},{9,10,1,1,3},{10,10,1,1,1},{11,10,1,1,5},{16,10,1,3,1},{17,10,1,1,5},{21,10,1,1,7},{22,10,1,4,2},{24,10,2,3,2},{26,10,1,2,7},{7,11,1,1,7},{8,11,1,1,3},{9,11,1,1,1},{10,11,1,1,5},{15,11,1,1,3},{17,11,1,3,1},{20,11,1,1,7},{21,11,1,3,2},{6,12,1,1,7},{7,12,1,2,3},{8,12,1,1,1},{9,12,1,1,5},{14,12,1,1,6},{15,12,1,3,1},{18,12,1,1,5},{19,12,1,1,7},{20,12,1,1,4},{23,12,1,1,1},{26,12,1,1,2},{27,12,1,1,7},{5,13,1,1,7},{6,13,1,2,3},{14,13,1,1,3},{16,13,1,1,3},{18,13,1,2,1},{23,13,2,1,2},{25,13,1,1,4},{26,13,1,1,1},{27,13,1,1,3},{28,13,1,1,7},{4,14,1,1,7},{5,14,1,2,3},{14,14,1,2,1},{17,14,1,1,3},{19,14,1,1,6},{20,14,1,2,1},{21,14,1,1,3},{22,14,1,1,4},{23,14,1,1,2},{24,14,1,1,4},{26,14,1,2,5},{27,14,1,1,1},{28,14,1,2,3},{29,14,1,1,7},{3,15,1,1,6},{4,15,1,1,3},{6,15,2,1,5},{13,15,1,1,3},{15,15,1,1,6},{17,15,1,1,5},{18,15,1,1,3},{19,15,1,2,1},{22,15,1,1,7},{23,15,1,2,4},{27,15,1,3,5},{29,15,1,1,3},{30,15,1,2,6},{3,16,1,1,5},{4,16,1,1,1},{6,16,2,1,3},{13,16,1,2,1},{14,16,1,2,3},{15,16,1,1,5},{16,16,3,1,1},{21,16,1,1,7},{22,16,1,2,4},{26,16,1,1,1},{28,16,1,1,5},{29,16,1,1,1},{4,17,2,1,3},{12,17,1,3,3},{15,17,1,1,1},{16,17,1,1,5},{17,17,1,1,3},{18,17,1,1,1},{20,17,2,3,4},{23,17,1,2,7},{28,17,1,1,3},{29,17,1,1,5},{4,18,1,2,7},{5,18,2,1,3},{10,18,1,1,3},{11,18,1,1,5},{13,18,1,1,3},{14,18,1,1,1},{15,18,1,1,3},{19,18,1,6,4},{22,18,1,3,2},{26,18,1,1,5},{27,18,1,1,3},{28,18,1,1,5},{29,18,1,1,7},{5,19,1,2,7},{6,19,1,1,3},{7,19,1,1,1},{9,19,1,1,3},{10,19,2,1,1},{13,19,1,1,1},{14,19,1,1,3},{17,19,2,2,4},{23,19,1,1,6},{25,19,1,1,5},{26,19,1,1,1},{27,19,1,1,5},{28,19,1,1,7},{6,20,1,2,7},{7,20,2,1,3},{9,20,1,1,1},{10,20,1,1,5},{11,20,1,1,3},{12,20,1,1,1},{13,20,1,1,3},{20,20,1,3,2},{21,20,1,2,4},{24,20,1,1,5},{25,20,1,1,1},{26,20,1,1,5},{27,20,1,1,7},{7,21,1,1,4},{8,21,1,1,3},{9,21,1,2,5},{12,21,1,1,5},{15,21,1,1,4},{16,21,1,1,7},{17,21,1,5,2},{18,21,1,1,4},{22,21,1,1,4},{23,21,1,1,3},{24,21,1,1,1},{25,21,1,1,5},{26,21,1,1,7},{6,22,1,2,4},{7,22,1,1,2},{8,22,1,2,4},{10,22,1,2,3},{13,22,2,1,7},{15,22,1,4,2},{16,22,1,4,4},{18,22,1,3,2},{22,22,1,2,3},{23,22,1,1,1},{24,22,1,1,5},{25,22,1,1,7},{7,23,1,1,4},{9,23,1,1,4},{11,23,1,1,1},{12,23,1,1,6},{13,23,2,1,4},{20,23,1,1,4},{21,23,1,1,3},{23,23,1,1,5},{24,23,1,1,4},{9,24,1,1,7},{10,24,1,1,4},{11,24,2,1,3},{14,24,1,1,4},{20,24,1,1,3},{21,24,1,1,1},{22,24,1,1,5},{23,24,1,2,4},{31,24,1,1,7},{10,25,1,1,7},{11,25,1,1,4},{12,25,1,1,3},{13,25,1,1,1},{18,25,1,1,4},{19,25,1,1,5},{20,25,1,1,1},{21,25,1,1,5},{22,25,1,1,4},{24,25,1,2,7},{25,25,3,1,4},{28,25,4,1,2},{11,26,1,1,7},{12,26,1,1,4},{13,26,2,1,3},{15,26,1,1,6},{16,26,2,1,7},{18,26,2,1,3},{20,26,1,1,5},{21,26,1,1,4},{22,26,2,1,7},{25,26,2,1,7},{27,26,3,1,4},{30,26,2,1,2},{12,27,2,1,7},{14,27,1,1,3},{15,27,1,1,1},{17,27,1,1,5},{18,27,1,1,1},{19,27,1,1,5},{20,27,1,1,7},{13,28,2,1,7},{15,28,1,1,5},{16,28,1,1,1},{17,28,1,1,3},{18,28,1,1,5},{19,28,1,1,7},{20,28,1,1,6},{14,29,2,1,7},{16,29,2,1,5},{18,29,1,1,7},{16,30,2,1,7}}
+local function drawLogo(owner)
+ for _,r in ipairs(logoRects)do
+  local hex=logoColors[r[5]];local red=tonumber(hex:sub(1,2),16)/255;local green=tonumber(hex:sub(3,4),16)/255;local blue=tonumber(hex:sub(5,6),16)/255
+  local t=owner:CreateTexture(nil,'ARTWORK');t:SetSize(r[3]*0.75,r[4]*0.75);t:SetPoint('TOPLEFT',4+r[1]*0.75,-4-r[2]*0.75)
+  if t.SetColorTexture then t:SetColorTexture(red,green,blue,1)else t:SetTexture('Interface/Buttons/WHITE8X8');t:SetVertexColor(red,green,blue,1)end
+ end
+end
+function minimap.Invoke(action)
+ if combat()then notify('Open the AZPC menu after combat.');return false end
+ if menu then menu:Hide()end
+ if action=='crafting' and AZPCForeverProfession and AZPCForeverProfession.Show then AZPCForeverProfession.Show();return true
+ elseif action=='sync' and AZPCForeverSyncStatus then return AZPCForeverSyncStatus.Show()
+ elseif action=='setup' and AZPCForeverSetup then return AZPCForeverSetup.Show()
+ elseif action=='hide' then return minimap.SetHidden(true)end
+ return false
+end
+function minimap.ToggleMenu()
+ if combat()then notify('Open the AZPC menu after combat.');return false end
+ if not button then return false end
+ if not menu then
+  menu=CreateFrame('Frame','AZPCForeverMinimapMenu',UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
+  menu:SetSize(212,198);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
+  if menu.SetBackdrop then menu:SetBackdrop({bgFile='Interface/DialogFrame/UI-DialogBox-Background',edgeFile='Interface/DialogFrame/UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=20,insets={left=6,right=6,top=6,bottom=6}})end
+  local title=menu:CreateFontString(nil,'OVERLAY','GameFontNormal');title:SetPoint('TOPLEFT',16,-17);title:SetText('|cff54dbd1AZPC|r')
+  local close=CreateFrame('Button',nil,menu,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-2,-2)
+  for i,row in ipairs({{'Crafting','crafting'},{'Sync Status','sync'},{'Getting Started','setup'},{'Hide minimap icon','hide'}})do
+   local action=row[2];local b=CreateFrame('Button',nil,menu,'UIPanelButtonTemplate');b:SetSize(180,28);b:SetPoint('TOPLEFT',16,-43-(i-1)*34);b:SetText(row[1]);b:SetScript('OnClick',function()minimap.Invoke(action)end)
+  end
+  menu:Hide();if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverMinimapMenu'end
+ end
+ if menu:IsShown()then menu:Hide()else menu:ClearAllPoints();menu:SetPoint('TOPRIGHT',button,'BOTTOMRIGHT',0,-4);menu:Show()end
+ return true
+end
+function minimap.Initialize()
+ if button then return true end
+ if not Minimap or not UIParent then return false end
+ button=CreateFrame('Button','AZPCForeverMinimapButton',Minimap)
+ button:SetSize(32,32);button:SetFrameStrata('MEDIUM');button:SetFrameLevel(Minimap:GetFrameLevel()+5);button:EnableMouse(true)
+ local background=button:CreateTexture(nil,'BACKGROUND');background:SetAllPoints();background:SetTexture('Interface/Minimap/UI-Minimap-Background')
+ drawLogo(button)
+ local ring=button:CreateTexture(nil,'OVERLAY');ring:SetTexture('Interface/Minimap/MiniMap-TrackingBorder');ring:SetSize(54,54);ring:SetPoint('TOPLEFT',-2,2)
+ button:SetHighlightTexture('Interface/Minimap/UI-Minimap-ZoomButton-Highlight')
+ button:RegisterForClicks('LeftButtonUp','RightButtonUp');button:RegisterForDrag('LeftButton')
+ local stopped=-10
+ button:SetScript('OnDragStart',function()if combat()then return end;if menu then menu:Hide()end;button:SetScript('OnUpdate',drag)end)
+ button:SetScript('OnDragStop',function()button:SetScript('OnUpdate',nil);stopped=GetTime and GetTime() or -10 end)
+ button:SetScript('OnClick',function()if GetTime and GetTime()-stopped<0.15 then return end;minimap.ToggleMenu()end)
+ button:SetScript('OnEnter',function()
+  if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(button,'ANCHOR_LEFT');GameTooltip:AddLine('AZPC',0.33,0.86,0.82);GameTooltip:AddLine('Click: Crafting, Sync Status, Getting Started',1,1,1);GameTooltip:AddLine('Drag to move. /azpcf minimap hide to hide.',0.7,0.7,0.7);GameTooltip:Show()end
+ end)
+ button:SetScript('OnLeave',function()if GameTooltip then GameTooltip:Hide()end end)
+ position();if settings().hidden then button:Hide()else button:Show()end;return true
+end
+function minimap.SetHidden(hidden)
+ settings().hidden=hidden==true
+ minimap.Initialize()
+ if button then if hidden then button:SetScript('OnUpdate',nil);button:Hide()else position();button:Show()end end
+ if menu then menu:Hide()end
+ if hidden then notify('Minimap icon hidden. /azpcf minimap show restores it.')end
+ return true
+end
+function minimap.Command(command)
+ local action=(command or ''):lower():match('^%s*minimap%s*(.-)%s*$');if action==nil then return false end
+ if action=='show'then minimap.SetHidden(false)
+ elseif action=='hide'then minimap.SetHidden(true)
+ elseif action=='reset'then minimap.SetAngle(225);minimap.SetHidden(false)
+ elseif action==''then minimap.SetHidden(not settings().hidden)
+ else notify('/azpcf minimap show | hide | reset')end
+ return true
+end
+local events=CreateFrame('Frame');events:RegisterEvent('PLAYER_LOGIN');events:SetScript('OnEvent',function()minimap.Initialize()end)
+if SlashCmdList then local previous=SlashCmdList.AZPCFOREVER;SlashCmdList.AZPCFOREVER=function(command)
+ if minimap.Command(command)then return elseif previous then return previous(command)end
+end end
+end
+-- END AZPC MINIMAP MENU
 
 -- AZPC WATCHER STATUS BEGIN
 AZPCForeverWatcherStatus = nil
