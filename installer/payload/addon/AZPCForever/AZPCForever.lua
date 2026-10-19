@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.54"
+local addon, VERSION = ..., "0.2.55"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -3098,6 +3098,113 @@ local events=CreateFrame('Frame');events:RegisterEvent('ADDON_LOADED');events:Se
 
 end
 -- END AZPC SYNC DETAILS
+-- BEGIN AZPC FIRST RUN SETUP
+do
+AZPCForeverSetup={}
+local setup=AZPCForeverSetup
+local panel,labels,reload
+local autoPending=false
+local function now()return GetServerTime and GetServerTime() or time()end
+local function combat()return type(InCombatLockdown)=='function' and InCombatLockdown()end
+local function character()
+ local name=UnitName and UnitName('player');local realm=GetRealmName and GetRealmName();local guid=UnitGUID and UnitGUID('player')
+ if not name or name=='' or not realm or realm=='' or not guid then return end
+ return name,realm,guid..'|'..realm..'|'..tostring(currentRegion())
+end
+local function state()
+ local name,realm,key=character();if not key then return end
+ AZPCForeverDB=AZPCForeverDB or {};local d=AZPCForeverDB
+ d.onboarding=d.onboarding or {schema=1,characters={}};d.onboarding.characters=d.onboarding.characters or {}
+ if not d.onboarding.characters[key]then
+  local c=d.crafting or {};local veteran=#(d.trades or {})>0 or next(c.recipes or {})~=nil or #(c.crafts or {})>0 or #(c.materialEvents or {})>0
+  d.onboarding.characters[key]={startedAt=now(),existingHistory=veteran}
+ end
+ return d.onboarding.characters[key],name,realm
+end
+function setup.Progress()
+ local s,name,realm=state();if not s then return end
+ local c=(AZPCForeverDB or {}).crafting or {};local professions={};local seen={}
+ for _,r in pairs(c.recipes or {})do if r.character==name and r.realm==realm and r.region==currentRegion() and type(r.profession)=='string' and r.profession~='' then seen[r.profession]=true end end
+ local supported=type(GetProfessions)=='function' and type(GetProfessionInfo)=='function'
+ if supported then
+  local ids={GetProfessions()};for _,id in pairs(ids)do
+   local title,_,_,_,_,_,skill=GetProfessionInfo(id)
+   if title and skill~=182 and skill~=393 and skill~=356 and skill~=794 then professions[#professions+1]={name=title,seen=seen[title]==true}end
+  end
+ end
+ table.sort(professions,function(a,b)return a.name<b.name end)
+ local recipeDone=false;local recipeText
+ if supported and #professions>0 then
+  local missing={};for _,p in ipairs(professions)do if not p.seen then missing[#missing+1]=p.name end end
+  recipeDone=#missing==0;recipeText=recipeDone and 'Saved recipes found for each detected crafting profession.' or 'Open: '..table.concat(missing,', ')..'. Then refresh this checklist.'
+ elseif supported then recipeDone=true;recipeText='Optional: no crafting professions detected. Learn one whenever you like.'
+ else
+  local found={};for title in pairs(seen)do found[#found+1]=title end;table.sort(found)
+  recipeText=#found>0 and 'Recipes found: '..table.concat(found,', ')..'. Open any other professions you use.' or 'Optional: open each crafting profession you use, then refresh.'
+  recipeDone=false
+ end
+ local bankDone=false
+ for _,r in ipairs(c.materialEvents or {})do if r.kind=='inventory_observation' and r.confirmation=='bags_and_character_bank_observed' and r.character==name and r.realm==realm and r.region==currentRegion() then bankDone=true;break end end
+ local w=AZPCForeverWatcherStatus;local acknowledged=type(w)=='table' and w.schema==1 and type(w.lastUploadAt)=='number' and w.lastUploadAt>0
+ local uploaded=acknowledged and w.lastUploadAt>=s.startedAt
+ return {
+  {done=true,title='Character detected',detail=name..' - '..realm},
+  {done=recipeDone,title='Open your crafting professions (optional)',detail=recipeText},
+  {done=bankDone,title='Open your character bank (optional)',detail=bankDone and 'A confirmed bag and character-bank observation is saved.' or 'Visit your banker to record stored materials. Then refresh.'},
+  {done=acknowledged,title='Connect your AZPC account in the Launcher',detail=acknowledged and 'This PC has an acknowledged upload. Account connection worked at that time.' or 'Open AZPC Launcher, connect your account and start the watcher.'},
+  {done=uploaded,title='Reload and confirm your first upload',detail=uploaded and 'Watcher acknowledged an upload after setup began. Check your character on My Trades.' or 'Reload to save, let the watcher upload, then reload to load its confirmation.'}
+ },s
+end
+local function refresh()
+ if not panel then return end
+ local rows=setup.Progress();if not rows then return end
+ for i,row in ipairs(rows)do labels[i].title:SetText((row.done and '|cff66dd99[Done]|r ' or '|cffffcc66[Next]|r ')..row.title);labels[i].detail:SetText(row.detail)end
+ reload:SetEnabled(not combat())
+end
+function setup.Show()
+ if combat()then if print then print('AZPC: Open /azpcf setup after combat.')end;return false end
+ if not UIParent then return false end
+ local rows,s=setup.Progress();if not rows then return false end
+ if not panel then
+  panel=CreateFrame('Frame','AZPCForeverSetupWindow',UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
+  panel:SetSize(620,555);panel:SetPoint('CENTER');panel:SetFrameStrata('DIALOG');panel:SetClampedToScreen(true)
+  if panel.SetBackdrop then panel:SetBackdrop({bgFile='Interface\\DialogFrame\\UI-DialogBox-Background',edgeFile='Interface\\DialogFrame\\UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=24,insets={left=7,right=7,top=7,bottom=7}})end
+  panel:EnableMouse(true);panel:SetMovable(true);panel:RegisterForDrag('LeftButton');panel:SetScript('OnDragStart',panel.StartMoving);panel:SetScript('OnDragStop',panel.StopMovingOrSizing)
+  local function text(value,x,y,width,font)
+   local f=panel:CreateFontString(nil,'OVERLAY',font or 'GameFontHighlight');f:SetPoint('TOPLEFT',x,y);f:SetWidth(width);f:SetJustifyH('LEFT');f:SetText(value);return f
+  end
+  text('|cff54dbd1AZPC|r  |  Getting Started',26,-27,550,'GameFontNormalLarge')
+  text('Your character, recipes and trades stay together in your AZPC account.',26,-57,565,'GameFontHighlightSmall')
+  local close=CreateFrame('Button',nil,panel,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-4,-4)
+  labels={};for i=1,5 do local y=-96-(i-1)*70;labels[i]={title=text('',26,y,565,'GameFontNormal'),detail=text('',45,y-24,545,'GameFontHighlightSmall')}end
+  text('Dashboard: forever.azpc.market/my-trades\nOptional steps can wait. Reopen this checklist with /azpcf setup.',26,-453,565,'GameFontDisableSmall')
+  local function button(title,x,width,fn)local b=CreateFrame('Button',nil,panel,'UIPanelButtonTemplate');b:SetSize(width,30);b:SetPoint('BOTTOMLEFT',x,24);b:SetText(title);b:SetScript('OnClick',fn);return b end
+  button('Refresh checklist',26,174,refresh)
+  reload=button('Reload to Save',218,174,function()if not combat() and type(ReloadUI)=='function'then ReloadUI()end end)
+  button('Later',410,174,function()panel:Hide()end)
+  panel:SetScript('OnShow',refresh);panel:SetScript('OnHide',function()local current=state();if current then current.dismissed=true end end)
+  if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverSetupWindow'end
+ end
+ s.prompted=true;autoPending=false;panel:Show();refresh();return true
+end
+function setup.MaybePrompt()
+ local s=state();if not s or s.existingHistory or s.dismissed or s.prompted then return end
+ if combat()then autoPending=true;return end
+ setup.Show()
+end
+local f=CreateFrame('Frame');f:RegisterEvent('PLAYER_LOGIN');f:RegisterEvent('PLAYER_REGEN_ENABLED')
+f:SetScript('OnEvent',function(_,event)
+ if event=='PLAYER_LOGIN' then
+  local fn=function()local ok,err=pcall(setup.MaybePrompt);if not ok and print then print('AZPC setup: '..tostring(err))end end
+  if C_Timer and type(C_Timer.After)=='function'then C_Timer.After(3,fn)else fn()end
+ elseif autoPending then setup.MaybePrompt()end
+end)
+if SlashCmdList then local previous=SlashCmdList.AZPCFOREVER;SlashCmdList.AZPCFOREVER=function(command)
+ if (command or ''):lower():match('^%s*setup%s*$')then return setup.Show()elseif previous then return previous(command)end
+end end
+end
+-- END AZPC FIRST RUN SETUP
+
 -- AZPC WATCHER STATUS BEGIN
 AZPCForeverWatcherStatus = nil
 -- AZPC WATCHER STATUS END
