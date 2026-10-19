@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: lua5.1 watcher/tests/forever-sync-status.lua
       - run: lua5.1 watcher/tests/forever-addon.lua
       - run: lua5.1 watcher/tests/forever-tooltips.lua
       - run: lua5.1 watcher/tests/forever-profession.lua
@@ -50,6 +51,9 @@ jobs:
       - name: Check automatic data migration, backups and evidence guards
         shell: powershell
         run: ./launcher/tests/Repair.Tests.ps1
+      - name: Check read-only addon sync status
+        shell: powershell
+        run: ./watcher/tests/SyncStatus.Tests.ps1
       - name: Check Forever crafting upload and retry handling
         shell: powershell
         run: ./watcher/tests/Crafting.Tests.ps1
@@ -156,5 +160,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.53 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.53 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.53 - Open selected recipe for crafting" --notes "Add Open Recipe beneath the craft quantity controls in AZPC Crafting. Use Blizzard recipe navigation to open the selected profession recipe, ready for the player to press Create or Create All. No automatic crafting or buying. Guard unavailable APIs, combat and other character/market recipes. Watcher stays 0.4.40; TBC stays 0.4.29; launcher stays 0.2.21."
+          if gh release view forever-addon-v0.2.54 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.54 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.54 - Sync details and saved watcher status" --notes "Keep the existing compact reload reminder and add Details plus /azpcf sync. Show incremental session sales, returns, purchases and loot/craft counts. Watcher 0.4.41 supplies last known check-in and acknowledged batch status for login/reload; never claims a live connection or that pending activity uploaded. Capture, deduplication and cost calculation logic unchanged. TBC addon stays 0.4.29; launcher stays 0.2.21."

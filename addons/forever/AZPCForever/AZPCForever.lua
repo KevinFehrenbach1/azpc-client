@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.53"
+local addon, VERSION = ..., "0.2.54"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -65,7 +65,9 @@ end
 if type(StaticPopupDialogs)=='table' then
     StaticPopupDialogs[popupKey]={
         text='Auction data recorded!\n\nReloading saves your latest data so the AZPC Watcher can sync it to your account dashboard at azpc.market.\n\nYour watcher must be running and connected. Reload now?',
-        button1='Reload now',button2='Later',timeout=0,whileDead=true,hideOnEscape=true,preferredIndex=3,
+        button1='Reload now',button2='Later',button3='Details',
+        OnAlt=function()if AZPCForeverSyncStatus then AZPCForeverSyncStatus.Show()end end,
+        OnShow=function(self)if AZPCForeverSyncStatus and self.text then self.text:SetText(AZPCForeverSyncStatus.CompactText())end end,timeout=0,whileDead=true,hideOnEscape=true,preferredIndex=3,
         OnAccept=function()
             if inCombat() then dirty=true;queued=true;return end
             if type(ReloadUI)=='function' then ReloadUI() end
@@ -235,7 +237,8 @@ local captureTrades
 local mailboxReceipts
 SlashCmdList.AZPCFOREVER=function(command)
     if perf.Command(command)then return end
-    if command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
+    if command == "sync" then if AZPCForeverSyncStatus then AZPCForeverSyncStatus.Show()end
+    elseif command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
     elseif command == "materials" then AZPCForeverProfession.Show()
     elseif command == "crafts" then AZPCForeverCrafting.Status()
     elseif command == "mail" then
