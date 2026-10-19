@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.52"
+local addon, VERSION = ..., "0.2.53"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1939,6 +1939,24 @@ do
         end
         return out
     end
+    local function canOpenRecipe(recipe)
+        local id=recipe and tonumber(recipe.recipeId)
+        if not id or id<=0 or id>2147483647 or id~=math.floor(id)then return false end
+        if recipe.character and recipe.character~=(UnitName('player')or '')then return false end
+        if recipe.realm and recipe.realm~=(GetRealmName()or '')then return false end
+        if recipe.region and recipe.region~=currentRegion()then return false end
+        if recipe.faction and recipe.faction~=(UnitFactionGroup('player')or ''):lower()then return false end
+        return C_TradeSkillUI and type(C_TradeSkillUI.OpenRecipe)=='function'and not(InCombatLockdown and InCombatLockdown())
+    end
+    local function openRecipe(recipe)
+        recipe=recipe or selected
+        if not canOpenRecipe(recipe)then notify('Select your recipe and open it outside combat. Recipe navigation may be unavailable in this client.');return false end
+        -- Blizzard opens the profession and selects the recipe, including delayed
+        -- cross-profession loading. Never invoke a craft or a Create button here.
+        local ok,result=pcall(C_TradeSkillUI.OpenRecipe,tonumber(recipe.recipeId))
+        if not ok or result==false then notify('Could not open that recipe. Open its profession once and try again.');return false end
+        return true
+    end
     local function readSelection()
         local modern=ProfessionsFrame and (not ProfessionsFrame.IsShown or ProfessionsFrame:IsShown())and ProfessionsFrame.CraftingPage
         local form=modern and modern.SchematicForm
@@ -2423,6 +2441,8 @@ do
         crafts:ClearAllPoints();crafts:SetPoint('TOPRIGHT',-12,-15);crafts:SetJustifyH('RIGHT');crafts:SetText('Crafts')
         panel.minus=uiButton(panel,'-',24,25);panel.minus:SetPoint('TOPRIGHT',-91,-34)
         panel.plus=uiButton(panel,'+',24,25);panel.plus:SetPoint('TOPRIGHT',-12,-34)
+        panel.openRecipe=uiButton(panel,'Open Recipe',104,20,true);panel.openRecipe:SetPoint('TOPRIGHT',-12,-60)
+        panel.openRecipe:SetScript('OnClick',function()openRecipe()end)
         panel.batch=CreateFrame('EditBox',nil,panel,'BackdropTemplate');panel.batch:SetSize(49,25);panel.batch:SetPoint('TOPRIGHT',-39,-34)
         surface(panel.batch,0.035,0.045,0.045,{0.34,0.31,0.24})
         panel.batch:SetFontObject(GameFontHighlight);panel.batch:SetJustifyH('CENTER');panel.batch:SetAutoFocus(false);panel.batch:SetNumeric(true);panel.batch:SetMaxLetters(3)
@@ -2480,6 +2500,7 @@ do
         p.buyMissing:SetText('Buy missing materials')
         p.buyMissing:SetEnabled((not purchaseQueue or purchaseQueue.ready~=nil or not purchaseQueue.waiting) and auctionOpen and selected~=nil and selected.materialsKnown==true and not purchaseAttempt)
         p.cancelBuying:SetEnabled(purchaseQueue~=nil)
+        p.openRecipe:SetEnabled(canOpenRecipe(selected)==true)
         p.name:SetText(selected and selected.name or 'Choose a recipe')
         p.subtitle:SetText(selected and ((selected.profession or 'Saved recipe')..' • Creates '..(selected.outputMin or '?')..(selected.outputMax and selected.outputMax~=selected.outputMin and ('–'..selected.outputMax)or ''))or 'Select a learned recipe from the list.')
         p.icon:SetTexture(itemIcon(selected and selected.outputItemId))
@@ -2717,7 +2738,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
