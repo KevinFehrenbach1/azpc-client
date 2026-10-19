@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Clarify setup: create an account at azpc.market/login first, then connect it in AZPC Launcher and start the watcher.",
+  "notes": "Item tooltips show saved bag and bank counts across characters on the current realm/faction, with observation ages and unknown banks.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.58"
+  "foreverAddonVersion": "0.2.59"
 }

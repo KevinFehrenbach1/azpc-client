@@ -22,5 +22,23 @@ realm='Launch';text=hover();assert(text:find('AZPC Auction / each: No data',1,tr
 stamp=stamp+21601;text=hover();assert(text:find('(stale)',1,true));assert(text:find('AZPC Est. profit / each: No data',1,true));stamp=stamp-21601
 local postCall;TooltipDataProcessor={AddTooltipPostCall=function(_,fn)postCall=fn end};Enum={TooltipDataType={Item=1}};install();GameTooltip.lines={};GameTooltip.hooks.OnTooltipCleared(GameTooltip);postCall(GameTooltip,{id=2318});assert(table.concat(GameTooltip.lines,'\n'):find('AZPC Auction / each',1,true));local n=#GameTooltip.lines;postCall(GameTooltip,{id='secret'});assert(#GameTooltip.lines==n)
 GetCoinTextureString=nil;text=hover();assert(text:find('UI-SilverIcon',1,true));assert(not text:find('UI-GoldIcon',1,true));
+-- Ownership reads snapshots only, and indexes historical bank evidence in bounded timer slices.
+local queue={};C_Timer={After=function(_,fn)queue[#queue+1]=fn end}
+local function drain()local count=0;while #queue>0 do local fn=table.remove(queue,1);fn();count=count+1;assert(count<100)end;return count end
+local owner='90|Classic Beta PvP 2|horde|Wet'
+AZPCForeverDB.bagStates={[owner]={[2318]={quantity=4,recordedAt=stamp-60}},['90|Classic Beta PvP 2|horde|Phillip']={[2318]={quantity=2,recordedAt=stamp-120}},['90|Other Realm|horde|Wrong']={[2318]={quantity=999,recordedAt=stamp}}}
+local events={};for i=1,250 do events[i]={kind='free'}end
+local function bank(q,at)return {kind='inventory_observation',confirmation='bags_and_character_bank_observed',region=90,realm=realm,faction='horde',character='Wet',itemId=2318,bagQuantity=3,bankQuantity=q,observedAt=at*1000}end
+events[#events+1]=bank(20,stamp-86400);events[#events+1]=bank(50,stamp-172800)
+AZPCForeverDB.crafting.materialEvents=events
+install();hover();assert(drain()==3,'bank indexing yields every 100 historical records')
+text=hover();assert(text:find('AZPC Owned (saved): 26 known',1,true));assert(text:find('Wet: 4 bags / 20 bank',1,true));assert(text:find('Phillip: 2 bags / bank unknown',1,true));assert(text:find('bank 1d ago',1,true));assert(not text:find('Wrong',1,true))
+assert(#events==252 and events[251].bankQuantity==20,'display never changes evidence')
+events[#events+1]=bank(0,stamp);drain();text=hover();assert(text:find('Wet: 3 bags / 0 bank',1,true),'newer bank observation wins over old bags')
+-- New records are indexed after a hover/event request; no history replay in hover itself.
+events[#events+1]=bank(10,stamp+1);drain();stamp=stamp+2;text=hover();assert(text:find('Wet: 3 bags / 10 bank',1,true))
+realm='Other Realm';text=hover();assert(not text:find('Wet:',1,true));realm='Classic Beta PvP 2'
+AZPCForeverDB.crafting.materialEvents={};drain();text=hover();assert(text:find('Wet: 4 bags / bank unknown',1,true),'replaced history invalidates only the derived cache')
+print('PASS ownership: cross-character counts, realm isolation, saved ages, unknown banks, latest observations, bounded indexing, zero bank and immutable evidence')
 TooltipDataProcessor=nil;GameTooltip={HookScript=function()error('unsupported')end};ItemRefTooltip=nil;install()
 print('PASS: legacy/modern hooks, price age, exact unit cost/profit, free/unknown, market/character isolation, stale/secret guards and deduplication')
