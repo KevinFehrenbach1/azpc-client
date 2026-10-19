@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Explicit farmed/free source declarations, confirmed mail cost transfers and private round-trip sync.",
+  "notes": "First-time setup checklist with optional profession/bank steps, saved dismissal and acknowledged-upload guidance. /azpcf setup reopens it.",
   "version": "0.5.00",
   "foreverAddonVersion": "0.2.55"
 }
