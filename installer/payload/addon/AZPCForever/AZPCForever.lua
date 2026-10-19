@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.58"
+local addon, VERSION = ..., "0.2.59"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1816,6 +1816,72 @@ do
         if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,1,0.82,0,r or 0.9,g or 0.95,b or 0.95)
         else tooltip:AddLine(label..': '..value,r or 0.9,g or 0.95,b or 0.95,true) end
     end
+
+    -- Read-only, bounded indexing of existing bank evidence; never replay the cost ledger on hover.
+    local bankIndex,bankEvents,bankCursor={},nil,0
+    local indexPending=false
+    local function validCount(n)return type(n)=='number' and n==n and n>=0 and n<=1000000 and n==math.floor(n)end
+    local function indexBanks()
+        indexPending=false
+        local events=AZPCForeverDB and AZPCForeverDB.crafting and AZPCForeverDB.crafting.materialEvents or {}
+        if events~=bankEvents or #events<bankCursor then bankEvents=events;bankCursor=0;bankIndex={}end
+        local stop=math.min(#events,bankCursor+100)
+        for i=bankCursor+1,stop do
+            local e=events[i]
+            if type(e)=='table' and e.kind=='inventory_observation' and e.confirmation=='bags_and_character_bank_observed' and validCount(e.bankQuantity) and validCount(e.bagQuantity) and type(e.observedAt)=='number' and e.observedAt>0 and type(e.character)=='string' and type(e.realm)=='string' and type(e.faction)=='string' and type(e.region)=='number' and type(e.itemId)=='number' then
+                local key=table.concat({e.region,e.realm,e.faction,e.character},'|')
+                bankIndex[key]=bankIndex[key]or{}
+                local old=bankIndex[key][e.itemId]
+                if not old or e.observedAt>=old.observedAt then bankIndex[key][e.itemId]=e end
+            end
+        end
+        bankCursor=stop
+        if bankCursor<#events and C_Timer and type(C_Timer.After)=='function' then indexPending=true;C_Timer.After(0.01,indexBanks)end
+    end
+    local function requestIndex()
+        if not indexPending and C_Timer and type(C_Timer.After)=='function' then indexPending=true;C_Timer.After(0.01,indexBanks)end
+    end
+    local function savedAge(at,now)
+        if type(at)~='number' or at~=at or at<=0 or at>now then return 'time unknown'end
+        local age=now-at
+        if age<60 then return 'just now'
+        elseif age<3600 then return math.floor(age/60)..'m ago'
+        elseif age<86400 then return math.floor(age/3600)..'h ago'
+        else return math.floor(age/86400)..'d ago'end
+    end
+    local function ownership(tooltip,itemId,realm,faction,now)
+        local db=AZPCForeverDB or {};local bags=db.bagStates or {};local prefix=table.concat({currentRegion(),realm,faction},'|')..'|'
+        local owners={}
+        for key in pairs(bags)do if type(key)=='string' and key:sub(1,#prefix)==prefix then owners[key]=true end end
+        for key,items in pairs(bankIndex)do if key:sub(1,#prefix)==prefix and items[itemId]then owners[key]=true end end
+        local rows,total={},0
+        for key in pairs(owners)do
+            local states=bags[key];local bag=type(states)=='table' and states[itemId];local bank=bankIndex[key]and bankIndex[key][itemId]
+            local b=bag and validCount(bag.quantity)and bag.quantity or nil
+            local bagAt=bag and bag.recordedAt
+            if bank and (not bagAt or bank.observedAt/1000>bagAt)then b=bank.bagQuantity;bagAt=bank.observedAt/1000 end
+            -- Absent items in a complete saved bag map have no saved bag copies.
+            if b==nil and type(states)=='table' then b=0 end
+            local n=bank and bank.bankQuantity
+            if (b or 0)+(n or 0)>0 then
+                rows[#rows+1]={name=key:sub(#prefix+1),bags=b,bank=n,bagAt=bagAt,bankAt=bank and bank.observedAt/1000}
+                total=total+(b or 0)+(n or 0)
+            end
+        end
+        table.sort(rows,function(a,b)return a.name<b.name end)
+        add(tooltip,'AZPC Owned (saved)',#rows>0 and tostring(total)..' known' or (bankCursor<#(bankEvents or {})and 'Loading saved counts' or 'No saved copies'))
+        for _,r in ipairs(rows)do
+            add(tooltip,r.name,(r.bags~=nil and r.bags..' bags' or 'bags unknown')..' / '..(r.bank~=nil and r.bank..' bank' or 'bank unknown'))
+            tooltip:AddLine('  Saved: bags '..savedAge(r.bagAt,now)..'; bank '..savedAge(r.bankAt,now),0.6,0.6,0.6)
+        end
+        tooltip:AddLine('Current realm/faction; saved counts may have changed.',0.55,0.55,0.55)
+        requestIndex()
+    end
+    if type(CreateFrame)=='function' then
+        local observer=CreateFrame('Frame')
+        for _,event in ipairs({'PLAYER_LOGIN','BAG_UPDATE_DELAYED','BANKFRAME_CLOSED'})do observer:RegisterEvent(event)end
+        observer:SetScript('OnEvent',requestIndex)
+    end
     local function append(tooltip,itemId)
         itemId=number(itemId)
         if not itemId or itemId<=0 or not tooltip or type(tooltip.AddLine)~='function' then return end
@@ -1846,6 +1912,7 @@ do
             add(tooltip,'AZPC Est. profit / each*',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
             tooltip:AddLine('*After 5% AH cut; excludes deposit.',0.55,0.55,0.55)
         else add(tooltip,'AZPC Est. profit / each','No data',0.65,0.65,0.65) end
+        ownership(tooltip,itemId,realm,faction,now)
         if type(tooltip.Show)=='function' then tooltip:Show() end
     end
     local function clear(tooltip)tooltip.azpcForeverItem=nil end

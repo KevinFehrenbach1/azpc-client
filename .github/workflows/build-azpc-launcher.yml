@@ -162,5 +162,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.58 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.58 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.58 - Clear account setup instructions" --notes "Getting Started explains creating an account at azpc.market/login before connecting it in AZPC Launcher. Text-only addon change; watcher 0.4.41 and TBC 0.4.29 unchanged."
+          if gh release view forever-addon-v0.2.59 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.59 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.59 - Already Owned item tooltips" --notes "Item tooltips show saved bag and bank counts across characters on the current realm and faction. Separate saved ages distinguish stale counts and unknown banks. Historical bank observations are indexed in bounded background batches. No new capture scans or purchase changes. Watcher 0.4.41 and TBC 0.4.29 unchanged."
