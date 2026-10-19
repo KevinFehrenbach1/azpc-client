@@ -162,5 +162,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.57 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.57 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.57 - Remember minimap menu position" --notes "Drag the minimap menu title or background to move it. Position persists across characters and adapts to screen dimensions. Reset using /azpcf minimap reset. Capture and cost code unchanged. Watcher 0.4.41; TBC addon 0.4.29."
+          if gh release view forever-addon-v0.2.58 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.58 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.58 - Clear account setup instructions" --notes "Getting Started explains creating an account at azpc.market/login before connecting it in AZPC Launcher. Text-only addon change; watcher 0.4.41 and TBC 0.4.29 unchanged."

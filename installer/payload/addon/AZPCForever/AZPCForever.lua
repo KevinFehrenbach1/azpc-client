@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.57"
+local addon, VERSION = ..., "0.2.58"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -3151,8 +3151,8 @@ function setup.Progress()
   {done=true,title='Character detected',detail=name..' - '..realm},
   {done=recipeDone,title='Open your crafting professions (optional)',detail=recipeText},
   {done=bankDone,title='Open your character bank (optional)',detail=bankDone and 'A confirmed bag and character-bank observation is saved.' or 'Visit your banker to record stored materials. Then refresh.'},
-  {done=acknowledged,title='Connect your AZPC account in the Launcher',detail=acknowledged and 'This PC has an acknowledged upload. Account connection worked at that time.' or 'Open AZPC Launcher, connect your account and start the watcher.'},
-  {done=uploaded,title='Reload and confirm your first upload',detail=uploaded and 'Watcher acknowledged an upload after setup began. Check your character on My Trades.' or 'Reload to save, let the watcher upload, then reload to load its confirmation.'}
+  {done=acknowledged,title='Create your AZPC account, then connect the Launcher',detail=acknowledged and 'This PC has an acknowledged upload. Account connection worked at that time.' or 'Go to azpc.market/login to create your account. Then connect it in AZPC Launcher and start the watcher.'},
+  {done=uploaded,title='Reload and confirm your first upload',detail=uploaded and 'Upload confirmed. Sign in at azpc.market, then open My Trades to see your character.' or 'Reload to save, let the watcher upload, then reload to load its confirmation.'}
  },s
 end
 local function refresh()
@@ -3174,7 +3174,7 @@ function setup.Show()
    local f=panel:CreateFontString(nil,'OVERLAY',font or 'GameFontHighlight');f:SetPoint('TOPLEFT',x,y);f:SetWidth(width);f:SetJustifyH('LEFT');f:SetText(value);return f
   end
   text('|cff54dbd1AZPC|r  |  Getting Started',26,-27,550,'GameFontNormalLarge')
-  text('Your character, recipes and trades stay together in your AZPC account.',26,-57,565,'GameFontHighlightSmall')
+  text('First, create your account at azpc.market/login. Then connect it in AZPC Launcher.',26,-57,565,'GameFontHighlightSmall')
   local close=CreateFrame('Button',nil,panel,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-4,-4)
   labels={};for i=1,5 do local y=-96-(i-1)*70;labels[i]={title=text('',26,y,565,'GameFontNormal'),detail=text('',45,y-24,545,'GameFontHighlightSmall')}end
   text('Dashboard: forever.azpc.market/my-trades\nOptional steps can wait. Reopen this checklist with /azpcf setup.',26,-453,565,'GameFontDisableSmall')

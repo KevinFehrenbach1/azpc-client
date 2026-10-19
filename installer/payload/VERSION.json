@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Movable minimap menu remembers its position across characters. Drag the menu title/background; /azpcf minimap reset restores placement.",
+  "notes": "Clarify setup: create an account at azpc.market/login first, then connect it in AZPC Launcher and start the watcher.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.57"
+  "foreverAddonVersion": "0.2.58"
 }
