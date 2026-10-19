@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: lua5.1 watcher/tests/forever-minimap.lua
       - run: lua5.1 watcher/tests/forever-setup.lua
       - run: lua5.1 watcher/tests/forever-sync-status.lua
       - run: lua5.1 watcher/tests/forever-addon.lua
@@ -161,5 +162,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.55 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.55 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.55 - First-time setup checklist" --notes "Add a dismissible per-character Getting Started checklist and /azpcf setup. Existing users are not automatically interrupted. Read existing recipes and confirmed bank evidence; account/upload status requires a watcher acknowledgement and shows its limited scope. Optional profession/bank steps, explicit refresh and reload, combat deferral. No capture, cost, buying or mailbox changes. Watcher stays 0.4.41; TBC addon stays 0.4.29; launcher stays 0.2.21."
+          if gh release view forever-addon-v0.2.56 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.56 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.56 - AZPC logo minimap menu" --notes "Add a draggable minimap icon using the supplied AZPC gold/teal diamond emblem, embedded without extra asset files. Click for Crafting, Sync Status and Getting Started; position and hidden preference persist. Restore with /azpcf minimap show, hide or reset. No capture, cost or auction purchase changes. Watcher stays 0.4.41; TBC addon stays 0.4.29; launcher stays 0.2.21."
