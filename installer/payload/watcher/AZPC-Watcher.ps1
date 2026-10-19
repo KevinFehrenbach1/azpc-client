@@ -1021,12 +1021,17 @@ function Write-ForeverAddonStatus {
         $targets=@(foreach($path in @($script:ForeverReadVersions.Keys)) {
             $folder=(Get-Item -LiteralPath $path).Directory
             while($folder -and $folder.Name -ne 'WTF'){$folder=$folder.Parent}
-            if($folder -and $folder.Parent){Join-Path $folder.Parent.FullName 'Interface\AddOns\AZPCForever\AZPCForeverStatus.lua'}
+            if($folder -and $folder.Parent){Join-Path $folder.Parent.FullName 'Interface\AddOns\AZPCForever\AZPCForever.lua'}
         }) | Select-Object -Unique
         foreach($target in $targets) {
-            # Only installations which ship this optional status file opt in.
+            # Update only the opt-in status section; never touch capture code.
             if(-not(Test-Path -LiteralPath $target)){continue}
-            [IO.File]::WriteAllText($target+'.tmp',$text,(New-Object Text.UTF8Encoding($false)))
+            $source=[IO.File]::ReadAllText($target)
+            $pattern='(?s)-- AZPC WATCHER STATUS BEGIN\r?\n.*?-- AZPC WATCHER STATUS END'
+            if([regex]::Matches($source,$pattern).Count -ne 1){continue}
+            $block="-- AZPC WATCHER STATUS BEGIN`n"+$text+'-- AZPC WATCHER STATUS END'
+            $updated=[regex]::Replace($source,$pattern,[Text.RegularExpressions.MatchEvaluator]{param($match)$block})
+            [IO.File]::WriteAllText($target+'.tmp',$updated,(New-Object Text.UTF8Encoding($false)))
             Move-Item -LiteralPath ($target+'.tmp') -Destination $target -Force
         }
     } catch { Write-Log ('FOREVER STATUS NOTE: '+$_.Exception.Message) }

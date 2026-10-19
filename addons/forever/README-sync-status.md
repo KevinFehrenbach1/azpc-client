@@ -11,10 +11,10 @@ The panel reads appended records incrementally and never captures mail, rebuilds
 costs, changes receipts or resets deduplication. The session count resets after
 login/reload; zero does NOT mean all saved records have uploaded.
 
-Watcher status is an optional, numeric-only Lua file loaded BEFORE the addon.
+Watcher status is an optional, numeric-only section in the existing addon file.
 Watcher 0.4.41 writes it at most every 30 seconds in discovered Forever addon
-installations which already ship the file. It never writes SavedVariables or
-changes the main addon file for this feature. Successful upload branches record
+installations which ship the explicitly marked status section. It never writes
+SavedVariables or changes code outside that status section. Successful upload branches record
 the last acknowledged batch only AFTER server acknowledgement and local sent
 markers; offline/wrong acknowledgements cannot create a successful status.
 No token, client ID, account ID or character data is included.

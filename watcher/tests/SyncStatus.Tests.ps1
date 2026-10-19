@@ -8,8 +8,8 @@ try {
  $addon=Join-Path $client 'Interface/AddOns/AZPCForever'
  New-Item -ItemType Directory -Force -Path (Split-Path $sv),$addon | Out-Null
  Set-Content -LiteralPath $sv -Value 'original saved evidence'
- $main=Join-Path $addon 'AZPCForever.lua';Set-Content -LiteralPath $main -Value 'original capture code'
- $target=Join-Path $addon 'AZPCForeverStatus.lua';Set-Content -LiteralPath $target -Value 'AZPCForeverWatcherStatus=nil'
+ $main=Join-Path $addon 'AZPCForever.lua'
+ $target=$main;Set-Content -LiteralPath $main -Value "original capture code`n-- AZPC WATCHER STATUS BEGIN`nAZPCForeverWatcherStatus=nil`n-- AZPC WATCHER STATUS END`noriginal footer"
  $script:ForeverReadVersions=@{};$script:ForeverReadVersions[$sv]='verified'
  Save-ForeverUploadStatus 12
  Write-ForeverAddonStatus
@@ -17,13 +17,13 @@ try {
  Assert ($text -match 'schema=1,checkedAt=\d+,lastUploadAt=\d+,lastUploadCount=12') 'Confirmed upload count and numeric times reach optional status file'
  Assert ($text -notmatch 'token|clientId|userId') 'Addon status contains no credentials or account identifiers'
  Assert ((Get-Content -LiteralPath $sv -Raw).Trim() -eq 'original saved evidence') 'Status never writes SavedVariables'
- Assert ((Get-Content -LiteralPath $main -Raw).Trim() -eq 'original capture code') 'Status never modifies capture code'
+ Assert (([regex]::Replace((Get-Content -LiteralPath $main -Raw),'(?s)-- AZPC WATCHER STATUS BEGIN.*?-- AZPC WATCHER STATUS END','STATUS')).Trim() -eq "original capture code`nSTATUS`noriginal footer") 'Status leaves capture code byte-for-byte outside its section'
  $script:ForeverLastUploadAt=0L;$script:ForeverLastUploadCount=0;$script:ForeverStatusWriteAttempt=[datetime]::MinValue
  Write-ForeverAddonStatus
  Assert ((Get-Content -LiteralPath $target -Raw) -match 'lastUploadCount=12') 'Last acknowledged upload survives watcher restart'
- Remove-Item -LiteralPath $target;$script:ForeverStatusWriteAttempt=[datetime]::MinValue
+ Set-Content -LiteralPath $target -Value 'old addon with no status section';$script:ForeverStatusWriteAttempt=[datetime]::MinValue
  Write-ForeverAddonStatus
- Assert (-not(Test-Path -LiteralPath $target)) 'Older addon installations without status file are untouched'
+ Assert ((Get-Content -LiteralPath $target -Raw).Trim() -eq 'old addon with no status section') 'Older addon installations without status section are untouched'
  # Existing transport tests verify failures/wrong acknowledgements stay queued.
  # Only successful acknowledgement branches call Save-ForeverUploadStatus.
  $source=Get-Content (Join-Path $PSScriptRoot '../../installer/payload/watcher/AZPC-Watcher.ps1') -Raw

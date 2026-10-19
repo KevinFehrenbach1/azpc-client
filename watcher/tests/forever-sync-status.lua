@@ -14,7 +14,8 @@ function CreateFrame(_,name)
  return f
 end
 AZPCForeverDB={trades={{tradeExport='old'}},crafting={crafts={},materialEvents={},vendorEvents={}}}
-assert(loadfile('addons/forever/AZPCForever/AZPCForeverSync.lua'))()
+local file=assert(io.open('addons/forever/AZPCForever/AZPCForever.lua','r'));local source=file:read('*a');file:close()
+assert((loadstring or load)(assert(source:match('%-%- BEGIN AZPC SYNC DETAILS\n(.-)%-%- END AZPC SYNC DETAILS'))))()
 local s=AZPCForeverSyncStatus;s.Initialize();assert(s.Counts().total==0)
 local original=AZPCForeverDB.trades[1]
 for _,kind in ipairs({'sell','expired','buy','inventory_snapshot','listing_snapshot'})do AZPCForeverDB.trades[#AZPCForeverDB.trades+1]={tradeExport='AZPCFTRADE|2|id|'..kind..'|2589|Cloth'}end

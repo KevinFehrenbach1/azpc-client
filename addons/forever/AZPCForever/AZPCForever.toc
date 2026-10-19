@@ -4,8 +4,6 @@
 ## Author: Kevin Fehrenbach
 ## Version: 0.2.54
 ## SavedVariables: AZPCForeverDB
-AZPCForeverStatus.lua
-AZPCForeverSync.lua
 AZPCForever.lua
 
 
