@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Load the owning profession before requesting the popup batch and show preparation or failure states.",
+  "notes": "Close the craft popup after the planned number of successful crafts in the normal profession window.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.74"
+  "foreverAddonVersion": "0.2.75"
 }

@@ -690,26 +690,28 @@ assert(p.StartScanAll());p.StopScanAll();assert(not p.ScanAllState())
 assert(p.StartScanAll());combat=true;p.AdvanceScanAll(1);assert(not p.ScanAllState());combat=false
 assert(p.StartScanAll());emit('AUCTION_HOUSE_CLOSED');assert(not p.ScanAllState()and not p.StartScanAll());emit('AUCTION_HOUSE_SHOW')
 print('PASS scan all: all learned recipes despite filters, sequential dispatch, throttle, progress, completion, explicit stop, combat and AH closure')
--- Buying remembers the exact recipe/batch; readiness is bags-only and requires a user click.
+-- Popup follows successful crafts from the normal profession UI, not requests or cast starts.
 held[2589]=6;local planned=nativeRecords[301]
-assert(p.BuyMissing(planned,3));assert(p.CraftPlan()and p.CraftPlan().batch==3)
-local prompt=AZPCForeverCraftReady;assert(prompt.shown and prompt.craft.enabled)
-held[2589]=5;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.CraftPlanned(),'insufficient actual bags cannot craft')
-held[2589]=6;combat=true;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.CraftPlanned());combat=false
-local actualCasts={};local nativeForm={currentRecipeInfo={recipeID=302}}
-ProfessionsFrame={IsShown=function()return true end,CraftingPage={SchematicForm=nativeForm}}
-C_TradeSkillUI.OpenRecipe=function()error('popup must not open a profession menu')end
-C_TradeSkillUI.CraftRecipe=function(id,n)actualCasts[#actualCasts+1]={id=id,n=n};emit('UNIT_SPELLCAST_START','player','test-cast',id)end
-emit('TRADE_SKILL_SHOW');p.RefreshCraftPlan();assert(#actualCasts==0,'bag/profession events never craft')
-assert(p.CraftPlanned());assert(#actualCasts==1 and actualCasts[1].id==301 and actualCasts[1].n==3,'one click starts only the planned native batch')
-assert(not p.CraftPlan()and not prompt.shown and not p.CraftPlanned(),'consumed prompt cannot double craft')
+local openedRecipe,nativeCraftCalls=nil,0
+C_TradeSkillUI.OpenRecipe=function(id)openedRecipe=id end
+C_TradeSkillUI.CraftRecipe=function()nativeCraftCalls=nativeCraftCalls+1 end
+assert(p.BuyMissing(planned,3));local prompt=AZPCForeverCraftReady
+assert(prompt.shown and prompt.craft.text=='Open Recipe')
+prompt.craft:GetScript('OnClick')();assert(openedRecipe==301 and nativeCraftCalls==0,'popup only opens the recipe; native crafting remains user controlled')
+emit('UNIT_SPELLCAST_START','player','cast-1',301);assert(p.CraftPlan().completedCasts==nil and prompt.shown,'start is not completion')
+emit('UNIT_SPELLCAST_FAILED','player','cast-1',301);emit('UNIT_SPELLCAST_INTERRUPTED','player','cast-1',301)
+emit('UNIT_SPELLCAST_SUCCEEDED','other','cast-1',301);emit('UNIT_SPELLCAST_SUCCEEDED','player','other-recipe',302)
+assert(p.CraftPlan().completedCasts==nil,'failed and unrelated crafts do not count')
+emit('UNIT_SPELLCAST_SUCCEEDED','player','cast-1',301);assert(p.CraftPlan().completedCasts==1 and prompt.shown and prompt.detail.text:find('1 / 3',1,true))
+emit('UNIT_SPELLCAST_SUCCEEDED','player','cast-1',301);assert(p.CraftPlan().completedCasts==1,'duplicate cast event cannot overcount')
+emit('UNIT_SPELLCAST_SUCCEEDED','player','cast-2',301);assert(p.CraftPlan().completedCasts==2 and prompt.shown)
+emit('UNIT_SPELLCAST_SUCCEEDED','player','cast-3',301);assert(not p.CraftPlan()and not prompt.shown,'popup closes only after full planned batch')
 assert(p.BuyMissing(planned,2));assert(p.CraftPlan().batch==2)
 assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
 assert(AZPCForeverProfession.CraftPlan().batch==2,'plan survives reload')
 local planName=UnitName;UnitName=function()return 'Other'end;assert(not AZPCForeverProfession.CraftPlan());UnitName=planName
 prompt.later:GetScript('OnClick')();assert(not p.CraftPlan(),'Dismiss clears the pending batch')
-print('PASS craft prompt: exact planned quantity, insufficient bags/combat guards, no background crafts, explicit native batch, no repeated craft, reload persistence and character isolation')
-
+print('PASS completed batch popup: manual native crafts, progress, start/failure/unrelated guards, duplicate cast GUIDs, final completion, reload and character isolation')
 -- Craft popup position is shared account-wide, normalized for UI scale, and restored on reload.
 assert(p.BuyMissing(planned,2));prompt=AZPCForeverCraftReady
 UIParent.GetWidth=function()return 1920 end;UIParent.GetHeight=function()return 1080 end;UIParent.GetEffectiveScale=function()return 1 end
@@ -729,38 +731,12 @@ AZPCForeverProfession.RefreshCraftPlan();assert(AZPCForeverCraftReady.anchor[2]=
 print('PASS craft popup drag: combat guard, normalized UI scaling, shared account save, reload restore and invalid position fallback')
 
 
--- Profession data must be ready before requesting the craft batch.
-assert(p.BuyMissing(planned,2))
-local recipeLoaded=false;local changing=false;local opened,requested=0,0;local windowOpen=false
-ProfessionsFrame={IsShown=function()return windowOpen end}
-C_TradeSkillUI.GetRecipeInfo=function()if recipeLoaded then return {learned=true}end end
-C_TradeSkillUI.IsDataSourceChanging=function()return changing end
-C_TradeSkillUI.OpenRecipe=function(id)assert(id==301);opened=opened+1;recipeLoaded=true;windowOpen=true end
-C_TradeSkillUI.CraftRecipe=function(id,n)requested=requested+1;assert(id==301 and n==2)end
-assert(p.CraftPlanned()and opened==1 and requested==1 and p.CraftPlan(),'same click loads profession and requests batch when ready')
-assert(not p.CraftPlanned()and requested==1 and not prompt.craft.enabled,'in-flight double click blocked')
-emit('UNIT_SPELLCAST_START','other','cast',301);assert(p.CraftPlan())
-emit('UNIT_SPELLCAST_START','player','cast',302);assert(p.CraftPlan(),'unrelated casts cannot consume plan')
-emit('UNIT_SPELLCAST_FAILED','player','cast',301);assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('could not start',1,true),'failed start preserves plan with visible reason')
-assert(p.CraftPlanned());local requestTimer=timeouts[#timeouts];requestTimer();assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('did not start',1,true),'timeout preserves plan without retry')
-C_TradeSkillUI.CraftRecipe=function()error('restricted or unavailable')end
-assert(not p.CraftPlanned()and p.CraftPlan()and prompt.craft.enabled,'native exception preserves plan')
-C_TradeSkillUI.CraftRecipe=function()return false end
-assert(not p.CraftPlanned()and p.CraftPlan(),'native rejection preserves plan')
--- Asynchronous load waits for a fresh hardware click instead of crafting from a data event.
-recipeLoaded=false;changing=true
-C_TradeSkillUI.OpenRecipe=function()opened=opened+1 end
-C_TradeSkillUI.CraftRecipe=function()requested=requested+1 end
-local beforePrepare=requested
-assert(p.CraftPlanned()and requested==beforePrepare and not prompt.craft.enabled and prompt.detail.text:find('Preparing',1,true))
-assert(not p.CraftPlanned(),'repeat preparation click blocked')
-recipeLoaded=true;changing=false;emit('TRADE_SKILL_LIST_UPDATE')
-assert(prompt.craft.enabled and requested==beforePrepare,'ready event enables click but never crafts')
-assert(p.CraftPlanned()and requested==beforePrepare+1)
-emit('UNIT_SPELLCAST_SUCCEEDED','player','cast',301);assert(not p.CraftPlan(),'matching instant craft confirms plan')
-requestTimer();assert(not p.CraftPlan(),'old timeout cannot restore or repeat consumed plan')
-assert(p.BuyMissing(planned,2));recipeLoaded=false;changing=true
-assert(p.CraftPlanned());timeouts[#timeouts]();assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('did not finish loading',1,true),'preparation timeout preserves plan and explains failure')
-C_TradeSkillUI.OpenRecipe=function()return false end
-assert(not p.CraftPlanned()and p.CraftPlan(),'failed open does not craft or lose plan')
-print('PASS popup craft preparation: synchronous one-click load/craft, asynchronous readiness with fresh click, no event craft, failures/timeouts visible, cast confirmation, duplicate guard and no plan loss')
+-- Partial completion and cast deduplication survive reload without changing the plan quantity.
+assert(p.BuyMissing(planned,2));emit('UNIT_SPELLCAST_SUCCEEDED','player','persisted-cast',301)
+assert(p.CraftPlan().completedCasts==1)
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+local resumed=AZPCForeverProfession;resumed.RefreshCraftPlan();local resumedPrompt=AZPCForeverCraftReady
+resumed.PlannedCraftEvent('UNIT_SPELLCAST_SUCCEEDED','player','persisted-cast',301);assert(resumed.CraftPlan().completedCasts==1 and resumedPrompt.shown)
+resumed.PlannedCraftEvent('UNIT_SPELLCAST_SUCCEEDED','player','last-cast',301);assert(not resumed.CraftPlan()and not resumedPrompt.shown)
+assert(nativeCraftCalls==0,'popup completion tracking never invokes crafting')
+print('PASS partial batch restore: saved count and cast IDs survive reload; final manual craft dismisses popup without native craft requests')
