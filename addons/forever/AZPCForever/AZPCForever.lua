@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.76"
+local addon, VERSION = ..., "0.2.77"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2844,6 +2844,85 @@ do
         elseif value<0 then return text,1,0.4,0.4 end
         return text,0.65,0.7,0.7
     end
+
+    -- WoW addons cannot write arbitrary CSV files. Offer copyable, paginated CSV instead.
+    local exportHeader='Recipe ID,Recipe,Item ID,Output Quantity,Material Cost Copper,Sale Unit Copper,Net Sale Copper,Estimated Profit Copper,Quote Time,Status'
+    local function exportField(value)
+        local v=tostring(value==nil and '' or value):gsub('[\r\n]+',' ')
+        return '"'..v:gsub('"','""')..'"'
+    end
+    local function exportCraftingRows()
+        local rows=catalog(filterProfession,filterText,favoritesOnly(),craftableOnly())
+        local chunks,current={},{exportHeader}
+        local length=#exportHeader
+        local function flush()
+            if #current>1 then chunks[#chunks+1]=table.concat(current,'\n')end
+            current={exportHeader};length=#exportHeader
+        end
+        for _,recipe in ipairs(rows)do
+            local q=completedQuotes[recipeKey(recipe)]
+            local now=GetServerTime and GetServerTime()or time()
+            local valid=q and q.at and now>=q.at and now-q.at<=21600
+            local output=valid and q.prices and q.prices[recipe.outputItemId]
+            local profit=sortProfit(recipe)
+            local total
+            if profit~=nil then
+                total=0
+                for _,reagent in ipairs(recipe.reagents or {})do
+                    total=total+(q.prices[reagent.itemId]or 0)*reagent.quantity
+                end
+            end
+            local qty=recipe.outputMin==recipe.outputMax and recipe.outputMin or nil
+            local net=profit and output and qty and math.floor(output*95/100)*qty or nil
+            local values={recipe.recipeId,recipe.name,recipe.outputItemId,qty,total,output,net,profit,valid and q.at or nil,profit~=nil and 'Complete' or 'No data'}
+            local fields={}
+            for i=1,10 do fields[i]=exportField(values[i])end
+            local line=table.concat(fields,',')
+            if length+#line+1>12000 and #current>1 then flush()end
+            current[#current+1]=line;length=length+#line+1
+        end
+        flush()
+        return chunks,#rows
+    end
+    local function showCraftingExport()
+        local chunks,count=exportCraftingRows()
+        if #chunks==0 then notify('No recipes match your current filters.');return end
+        if not page.exportDialog then
+            local frame=CreateFrame('Frame','AZPCForeverCraftingExport',UIParent,'BackdropTemplate')
+            frame:SetSize(610,380);frame:SetPoint('CENTER');frame:SetFrameStrata('DIALOG')
+            surface(frame,0.025,0.04,0.045,{0.34,0.31,0.24});frame:EnableMouse(true);frame:SetMovable(true)
+            frame:RegisterForDrag('LeftButton');frame:SetScript('OnDragStart',frame.StartMoving);frame:SetScript('OnDragStop',frame.StopMovingOrSizing)
+            font(frame,'GameFontNormalLarge',16,-18,500):SetText('AZPC Crafting CSV Export')
+            frame.help=font(frame,'GameFontHighlightSmall',16,-50,570)
+            frame.help:SetText('Select and copy (Ctrl+C). Paste into a .csv file. Copy every part in order.')
+            frame.part=font(frame,'GameFontHighlightSmall',16,-76,570)
+            local scroll=CreateFrame('ScrollFrame',nil,frame,'UIPanelScrollFrameTemplate')
+            scroll:SetPoint('TOPLEFT',16,-102);scroll:SetPoint('BOTTOMRIGHT',-36,48)
+            local edit=CreateFrame('EditBox',nil,scroll)
+            edit:SetMultiLine(true);edit:SetAutoFocus(false);edit:SetFontObject(ChatFontNormal)
+            edit:SetWidth(545);edit:SetMaxLetters(0)
+            edit:SetScript('OnEscapePressed',function()frame:Hide()end)
+            scroll:SetScrollChild(edit);frame.edit=edit
+            frame.previous=uiButton(frame,'Previous',94,26);frame.previous:SetPoint('BOTTOMLEFT',16,12)
+            frame.next=uiButton(frame,'Next',94,26);frame.next:SetPoint('LEFT',frame.previous,'RIGHT',8,0)
+            frame.selectAll=uiButton(frame,'Select All',104,26);frame.selectAll:SetPoint('LEFT',frame.next,'RIGHT',8,0)
+            frame.close=uiButton(frame,'Close',94,26);frame.close:SetPoint('BOTTOMRIGHT',-16,12)
+            frame.close:SetScript('OnClick',function()frame:Hide()end)
+            frame.selectAll:SetScript('OnClick',function()edit:SetFocus();edit:HighlightText()end)
+            local function showPart()
+                edit:SetText(frame.chunks[frame.index]or'');edit:SetHeight(math.max(230,edit:GetStringHeight()+18))
+                edit:SetFocus();edit:HighlightText()
+                frame.part:SetText('Recipes: '..frame.count..' | Part '..frame.index..' of '..#frame.chunks)
+                frame.previous:SetEnabled(frame.index>1);frame.next:SetEnabled(frame.index<#frame.chunks)
+            end
+            frame.previous:SetScript('OnClick',function()frame.index=frame.index-1;showPart()end)
+            frame.next:SetScript('OnClick',function()frame.index=frame.index+1;showPart()end)
+            frame.showPart=showPart;page.exportDialog=frame
+        end
+        local dialog=page.exportDialog
+        dialog.chunks=chunks;dialog.count=count;dialog.index=1;dialog:Show();dialog.showPart()
+    end
+
     local function sortRecipes(rows,mode,bagCounts)
         local ranked,values={},{}
         for i,r in ipairs(rows)do
@@ -3224,13 +3303,14 @@ do
         end
         page.filtersButton:SetScript('OnClick',function()page.menu:Hide();if page.filters:IsShown()then page.filters:Hide()else page.filters:Show()end end)
         page.canCraft:SetScript('OnClick',function(self)setCraftableOnly(self:GetChecked()==true);page.filters:Hide()end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-162);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-162);scroll:SetPoint('BOTTOMLEFT',12,68);scroll:SetWidth(204)
         page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={};page.categoryRows={}
         page.empty=font(page,'GameFontHighlightSmall',18,-180,194)
         page.count=font(page,'GameFontDisableSmall',12,-142,200)
         page.scanAll=uiButton(page,'Scan All Recipes',142,24);page.scanAll:SetPoint('BOTTOMLEFT',12,8);page.scanAll:SetScript('OnClick',startBatch)
         page.stopAll=uiButton(page,'Stop',62,24);page.stopAll:SetPoint('BOTTOMLEFT',158,8);page.stopAll:SetScript('OnClick',stopBatch)
+        page.exportButton=uiButton(page,'Export CSV',104,24);page.exportButton:SetPoint('BOTTOMLEFT',12,36);page.exportButton:SetScript('OnClick',showCraftingExport)
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         local ageElapsed=0
