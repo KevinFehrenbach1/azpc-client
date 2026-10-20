@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.68"
+local addon, VERSION = ..., "0.2.69"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2649,15 +2649,15 @@ do
         panel.minus:SetScript('OnClick',function()if purchaseQueue then cancelQueue()end;quantity=math.max(1,quantity-1);render()end)
         panel.plus:SetScript('OnClick',function()if purchaseQueue then cancelQueue()end;quantity=math.min(999,quantity+1);render()end)
         panel.headerRule=panel:CreateTexture(nil,'BORDER');panel.headerRule:SetTexture('Interface/Buttons/WHITE8X8');panel.headerRule:SetVertexColor(0.45,0.36,0.20,0.65);panel.headerRule:SetHeight(1);panel.headerRule:SetPoint('TOPLEFT',14,-82);panel.headerRule:SetPoint('TOPRIGHT',-14,-82)
-        panel.market=uiText(panel,'GameFontHighlightSmall',16,-98,410)
-        panel.buyMissing=uiButton(panel,'Buy missing materials',190,28,true);panel.buyMissing:SetPoint('BOTTOMRIGHT',-14,108)
+        panel.market=uiText(panel,'GameFontHighlightSmall',16,-124,330)
+        panel.buyMissing=uiButton(panel,'Buy missing materials',190,28,true);panel.buyMissing:SetPoint('TOPLEFT',14,-90)
         panel.buyMissing:SetScript('OnClick',function()buyMissing(selected,quantity)end)
-        panel.cancelBuying=uiButton(panel,'Stop',62,28);panel.cancelBuying:SetPoint('TOPRIGHT',-14,-90)
+        panel.cancelBuying=uiButton(panel,'Stop',62,28);panel.cancelBuying:SetPoint('TOPLEFT',210,-90)
         panel.cancelBuying:SetScript('OnClick',function()cancelQueue();render()end)
-        panel.searchAll=uiButton(panel,'Scan prices',190,28);panel.searchAll:SetPoint('BOTTOMRIGHT',-14,68)
+        panel.searchAll=uiButton(panel,'Scan prices',138,32,true);panel.searchAll:SetPoint('TOPRIGHT',-14,-91)
         panel.searchAll:SetScript('OnClick',function()installQueryHooks();searchAll()end)
         local headings={{'Material',0,126},{'Need',128,34},{'Bags',166,34},{'Missing',204,52},{'Unit price',264,70},{'Total',338,70}}
-        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-119);panel.tableHeader:SetPoint('TOPRIGHT',-14,-119);panel.tableHeader:SetHeight(26)
+        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-137);panel.tableHeader:SetPoint('TOPRIGHT',-14,-137);panel.tableHeader:SetHeight(26)
         surface(panel.tableHeader,0.065,0.065,0.055,{0.25,0.23,0.17})
         panel.columnHeaders={}
         for _,h in ipairs(headings)do
@@ -2666,19 +2666,19 @@ do
             if h[1]=='Missing'then text:SetTextColor(1,0.79,0.3)end
             text:SetText(h[1]);panel.columnHeaders[h[1]]=text
         end
-        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-148);scroll:SetPoint('BOTTOMRIGHT',-30,166)
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-166);scroll:SetPoint('BOTTOMRIGHT',-30,166)
         panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(498,1);scroll:SetScrollChild(panel.child);panel.rows={}
-        local help=uiText(panel,'GameFontNormalSmall',0,0,282);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Cost and value')
+        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing opens a quantity and price confirmation. Quantities scale with crafts and bags.')
         panel.cards={}
         for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
-            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(282,24);card:SetPoint('BOTTOMLEFT',14,118-(i-1)*27)
-            card:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});card:SetBackdropColor(0.04,0.045,0.043,0.15)
-            card.title=uiText(card,'GameFontNormalSmall',8,-5,154)
+            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(160,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*166,47)
+            surface(card,0.04,0.045,0.043,{0.45,0.36,0.20})
+            card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
             card.title:SetText(label)
-            card.value=uiText(card,'GameFontNormalLarge',164,-4,110,'RIGHT');card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',13)
+            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',16)
             card.value:SetHeight(24)
             if card.value.SetWordWrap then card.value:SetWordWrap(false)end
-            card.helper=uiText(panel,'GameFontDisableSmall',0,0,282);card.helper:ClearAllPoints();card.helper:SetPoint('BOTTOMLEFT',14,43);if i~=1 then card.helper:Hide()end
+            card.helper=uiText(card,'GameFontDisableSmall',10,-66,144)
             panel.cards[i]=card
         end
         panel.cost=panel.cards[1].value;panel.missing=panel.cards[1].helper

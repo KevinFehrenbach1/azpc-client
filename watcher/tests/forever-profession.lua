@@ -258,7 +258,7 @@ page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);asse
 print('PASS: unified scan action, aligned quantity/price fields, editable batch and search placeholder')
 
 assert(AZPCForeverCraftingPage.professionArrow,'profession dropdown uses a native texture instead of an unsupported glyph')
-assert(panel.iconBorder and not panel.cards[1].azpcSheen,'item framing is preserved while summary rows are flat')
+assert(panel.iconBorder and panel.cards[1].azpcSheen,'three bordered summary cards are restored')
 assert(not panel.cost.text:find('UI-GoldIcon',1,true),'small values omit zero gold denomination')
 print('PASS: native dropdown arrow, framed item header, card surface details and compact coin denominations')
 
@@ -458,7 +458,7 @@ recipeButton:GetScript('OnHide')(recipeButton);assert(not tooltipShown,'hidden i
 assert(grouped==beforeHover,'hovering never sends an AH query')
 GameTooltip=nil;assert(pcall(panel.itemHover:GetScript('OnEnter'),panel.itemHover),'missing tooltip API is harmless')
 for _,card in ipairs(panel.cards)do
- assert(card.value.fontSize==13 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
+ assert(card.value.fontSize==16 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
 end
 print('PASS: output/material/recipe tooltips, dynamic reused rows, ownership, passive hover and compact non-wrapping summary values')
 
