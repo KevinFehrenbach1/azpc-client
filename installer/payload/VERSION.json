@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Star learned recipes and filter Favorites in AZPC Crafting. Favorites and filter persist per character across reloads.",
+  "notes": "Crop favorite recipe icons to a single clean star instead of the full reputation icon sheet.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.62"
+  "foreverAddonVersion": "0.2.63"
 }

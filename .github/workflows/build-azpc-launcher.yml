@@ -163,5 +163,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.62 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.62 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.62 - Favorite recipes" --notes "Star recipes in AZPC Crafting, then choose Favorites to see saved picks. Favorites combine with profession and text filters and persist per character across reloads. Star/filter clicks do not start price scans. The profession Craft Search shortcut clears Favorites so the requested recipe remains visible. Existing scan, purchase, capture and cost flows preserved. Watcher 0.4.41 and TBC 0.4.29 unchanged."
+          if gh release view forever-addon-v0.2.63 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.63 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.63 - Clean favorite stars" --notes "Crop the reputation texture sheet to one star per recipe. Favorites behavior, saved selections and scan/buy logic unchanged. Watcher 0.4.41 and TBC 0.4.29 unchanged."

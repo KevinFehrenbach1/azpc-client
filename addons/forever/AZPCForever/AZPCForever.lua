@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.62"
+local addon, VERSION = ..., "0.2.63"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2767,7 +2767,7 @@ do
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
                 button.name=font(button,'GameFontHighlightSmall',37,-12,135)
                 button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(26,30);button.favorite:SetPoint('TOPRIGHT',-2,-4)
-                button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(18,18);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar')
+                button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(18,18);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar');button.favoriteIcon:SetTexCoord(0,0.5,0,0.5)
                 button.favorite:SetScript('OnClick',function()toggleFavorite(button.recipe)end)
                 button.favorite:SetScript('OnEnter',function(self)if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(self,'ANCHOR_RIGHT');GameTooltip:AddLine(isFavorite(button.recipe)and'Remove from Favorites'or'Add to Favorites',1,0.82,0.35);GameTooltip:Show()end end)
                 button.favorite:SetScript('OnLeave',function()if GameTooltip then GameTooltip:Hide()end end)
