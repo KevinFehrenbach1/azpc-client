@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Item tooltips show saved bag and bank counts across characters on the current realm/faction, with observation ages and unknown banks.",
+  "notes": "Compact tooltips: useful values only, teal heading, Shift-hover details, Auctionator and Bagnon duplicate suppression with fallbacks.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.59"
+  "foreverAddonVersion": "0.2.60"
 }
