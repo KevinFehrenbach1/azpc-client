@@ -549,6 +549,12 @@ full=false;results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};emit(
 full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');local repaired=p.Quote(recipe,1)
 assert(repaired.ahCost==410 and repaired.salePrice==600 and repaired.rows[1].unit==oldUnit and repaired.quoteAt==oldAt,'merge only clicked material and preserve retained quote age')
 assert(not retryRow.retryButton.shown and retryRow.unit.shown and retryRow.button.text=='Buy','successful retry restores regular price and Buy action')
+-- Publish a complete quote using the same production scan path as the material Retry tests.
+assert(p.SearchAll(recipe));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}};full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+local profit=p.Quote(recipe,1).ahProfit;assert(profit~=nil)
+local unpriced={name='AAA no scan',recipeId=99999,materialsKnown=true,reagents=recipe.reagents,outputItemId=2996,outputMin=1,outputMax=1}
+ranked=p.SortRecipes({unpriced,recipe},'profit',{});assert(ranked[1]==recipe,'complete quotes rank before unknown even if name sorts later')
+local oldTime=moneyNow;moneyNow=moneyNow+21601;ranked=p.SortRecipes({recipe,unpriced},'profit',{});assert(ranked[1]==unpriced,'stale quotes are unknown and use name tie-break');moneyNow=oldTime
 missingQuote();oldAt=p.Quote(recipe,1).quoteAt;assert(p.RetryMaterial(2320));results={};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1 and p.Quote(recipe,1).quoteAt==oldAt,'empty exact result cannot invent a price or refresh other values')
 assert(p.RetryMaterial(2320));results={{itemKey={itemID=999},minPrice=1,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1,'unrelated results rejected')
 assert(p.RetryMaterial(2320));for _,fn in ipairs(timeouts)do fn()end;assert(p.Quote(recipe,1).pricedMaterials==1,'timeout preserves quote')
@@ -647,3 +653,24 @@ assert(page.recipeRows[1].craftCount.text~='Missing materials','compact list omi
 assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
 assert(AZPCForeverProfession.CategoryClosed(nativeGroups[1].key),'category collapse persists per character')
 print('PASS native layout: category metadata/order, compact collapse/search behavior, Filters popup, saved preferences, no queries and unchanged captured recipe evidence')
+
+-- Sorting uses complete cached quotes, is stable and never queries or mutates capture data.
+p.SetCraftableOnly(false);p.SetFavoritesOnly(false)
+local beforeSort=#retryQueries
+assert(p.SortMode()=='name'and not p.SetSortMode('invalid'))
+local a={name='Alpha',recipeId=9001,materialsKnown=true,reagents={{itemId=2589,quantity=2}}}
+local b={name='Beta',recipeId=9002,materialsKnown=true,reagents={{itemId=2589,quantity=1}}}
+local u={name='Unknown',recipeId=9003,materialsKnown=false,reagents={}}
+local original={a,u,b};held[2589]=6
+local ranked=p.SortRecipes(original,'craftable',{});assert(ranked[1]==b and ranked[2]==a and ranked[3]==u and original[2]==u)
+held[2589]=0;ranked=p.SortRecipes({u,b,a},'craftable',{});assert(ranked[1]==a and ranked[2]==b and ranked[3]==u,'known zero sorts ahead of unknown')
+held[2589]=6
+local afterScan=#retryQueries
+assert(p.SetSortMode('profit')and p.SortMode()=='profit');assert(page.sortButton.text=='Sort: Estimated profit')
+assert(p.SetSortMode('craftable'));page.sortOptions[1]:GetScript('OnClick')();assert(p.SortMode()=='name'and not page.filters.shown)
+assert(p.SetSortMode('profit'))
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+assert(AZPCForeverProfession.SortMode()=='profit','sort persists per character')
+local oldName=UnitName;UnitName=function()return 'Other'end;assert(AZPCForeverProfession.SortMode()=='name');UnitName=oldName
+assert(#retryQueries==afterScan,'sort controls and restored preferences never query AH')
+print('PASS recipe sorting: ranked bag counts, unknown/zero, complete vs missing/stale quotes, passive controls, stable source order and saved character preference')
