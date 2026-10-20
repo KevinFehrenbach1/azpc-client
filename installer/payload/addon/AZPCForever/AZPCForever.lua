@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.64"
+local addon, VERSION = ..., "0.2.65"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2188,6 +2188,16 @@ do
         scan.prices=prices;scan.available=available
         if api(C_AuctionHouse,'HasFullBrowseResults')==true then
             scan.waiting=false;scan.complete=true;scan.at=GetServerTime and GetServerTime() or time()
+            if scan.single then
+                -- A targeted retry updates one item without refreshing the age of retained prices.
+                local base=scan.base;local merged,stock={},{}
+                for id,value in pairs(base.prices)do merged[id]=value end
+                for id,value in pairs(base.available)do stock[id]=value end
+                if prices[scan.single]then merged[scan.single]=prices[scan.single];stock[scan.single]=available[scan.single]end
+                completedQuotes[scan.key]={at=base.at,prices=merged,available=stock}
+                scan.status=prices[scan.single]and'Material price refreshed; other prices retained.'or'No listings found. Retry or scan all prices.'
+                if render then render()end;return
+            end
             -- Publish one completed snapshot; partial and unrelated searches never erase it.
             completedQuotes[scan.key]={at=scan.at,prices=scan.prices,available=scan.available}
             local found,total=0,0;for id in pairs(scan.ids)do total=total+1;if scan.prices[id]then found=found+1 end end
@@ -2241,6 +2251,26 @@ do
         end
     end
     local purchaseQueue,purchaseAttempt,advancePurchase,pendingQuantity,showReadyPopup,buyMissing
+    local function retryMaterial(itemId)
+        if not auctionOpen or not selected or not selected.materialsKnown or purchaseQueue or purchaseAttempt or(scan and scan.waiting)then return false end
+        if InCombatLockdown and InCombatLockdown()then notify('Retry after combat.');return false end
+        local found=false;for _,m in ipairs(selected.reagents or{})do if m.itemId==itemId then found=true;break end end
+        local key=recipeKey(selected);local previous=completedQuotes[key]
+        local now=GetServerTime and GetServerTime()or time()
+        if not found or not previous or now<previous.at or now-previous.at>21600 then notify('Scan all prices first to refresh this recipe.');return false end
+        if previous.prices[itemId]then return false end
+        if not C_AuctionHouse or type(C_AuctionHouse.SearchForItemKeys)~='function'or type(C_AuctionHouse.GetBrowseResults)~='function'then return false end
+        if api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then notify('The AH is busy. Retry shortly.');return false end
+        installQueryHooks();pendingAuto=nil
+        local itemKey=api(C_AuctionHouse,'MakeItemKey',itemId)or{itemID=itemId,itemLevel=0,itemSuffix=0,battlePetSpeciesID=0}
+        scan={key=key,ids={[itemId]=true},keys={itemKey},prices={},available={},waiting=true,single=itemId,base=previous,status='Retrying missing material price...'}
+        local current=scan;ownQuery=true
+        local ok=pcall(C_AuctionHouse.SearchForItemKeys,scan.keys,{{sortOrder=Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0,reverseSort=false}})
+        ownQuery=false
+        if not ok then stopScan('Material retry unavailable. Try again.');if render then render()end;return false end
+        if C_Timer and C_Timer.After then C_Timer.After(20,function()if scan==current and scan.waiting then stopScan('Material retry timed out. Try again.');if render then render()end end end)end
+        if render then render()end;return true
+    end
     local function tryMissingScan()
         if not scan or not scan.waiting or not scan.retryPending then return end
         if not auctionOpen or scan.key~=recipeKey(selected)or purchaseQueue or purchaseAttempt
@@ -2652,6 +2682,8 @@ do
                 row.bags=uiText(row,'GameFontHighlightSmall',166,-16,34,'CENTER')
                 row.missing=uiText(row,'GameFontHighlightSmall',204,-16,52,'CENTER')
                 row.unit=uiText(row,'GameFontHighlightSmall',264,-16,70,'RIGHT')
+                row.retryButton=uiButton(row,'Retry',62,26);row.retryButton:SetPoint('TOPLEFT',272,-10)
+                row.retryButton:SetScript('OnClick',function()retryMaterial(row.material.itemId)end)
                 row.total=uiText(row,'GameFontHighlightSmall',338,-16,70,'RIGHT')
                 row.button=uiButton(row,'Buy',62,26,true);row.button:SetPoint('TOPLEFT',430,-10)
                 row.button:SetScript('OnClick',function()buyMaterial(row.material)end);p.rows[i]=row
@@ -2659,7 +2691,15 @@ do
             row.material=m;row.icon:SetTexture(itemIcon(m.itemId));row.label:SetText(m.name)
             row.need:SetText(m.needed);row.bags:SetText(m.held~=nil and m.held or 'No data');row.missing:SetText(m.missing~=nil and m.missing or 'No data')
             row.missing:SetTextColor(m.missing and m.missing>0 and 1 or 0.55,m.missing and m.missing>0 and 0.78 or 0.63,0.4)
-            row.unit:SetText(money(m.unit));row.total:SetText(m.available and m.available<m.needed and 'Short stock' or money(m.lineCost))
+            local unpriced=data.quoteAt~=nil and m.unit==nil
+            if unpriced then
+                surface(row,0.12,0.085,0.025,{0.55,0.36,0.1});row.label:SetTextColor(1,0.8,0.35)
+                row.unit:Hide();row.retryButton:Show();row.total:SetText('No price');row.total:SetTextColor(1,0.8,0.35)
+                row.retryButton:SetEnabled(data.quoteFresh and auctionOpen and not purchaseQueue and not purchaseAttempt and not(scan and scan.waiting)and not(InCombatLockdown and InCombatLockdown()))
+            else
+                surface(row,0.035,0.047,0.049,{0.11,0.14,0.14});row.label:SetTextColor(0.9,0.95,0.95)
+                row.retryButton:Hide();row.unit:Show();row.unit:SetText(money(m.unit));row.total:SetText(m.available and m.available<m.needed and 'Short stock'or money(m.lineCost));row.total:SetTextColor(0.9,0.95,0.95)
+            end
             row.button:SetText(pendingQuantity(m.itemId)>0 and 'In mail' or 'Buy')
             row.button:SetEnabled(pendingQuantity(m.itemId)==0 and not purchaseQueue and auctionOpen and m.missing~=nil and m.missing>0 and not(scan and scan.waiting));row:Show()
         end
@@ -2923,7 +2963,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
