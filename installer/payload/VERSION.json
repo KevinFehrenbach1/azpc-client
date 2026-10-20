@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Sort recipes by name, estimated profit or craftable bag count using existing scan data.",
+  "notes": "Scan all learned recipes sequentially and offer a click-to-craft planned batch after material delivery.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.70"
+  "foreverAddonVersion": "0.2.71"
 }

@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.70"
+local addon, VERSION = ..., "0.2.71"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1976,6 +1976,7 @@ end
 do
     local panel,selected,quantity,auctionOpen,elapsed=nil,nil,1,false,0
     local scan,render,ownQuery,pendingAuto
+    local batchScan,onMaterialsOrdered,refreshCraftPlan
     local completedQuotes={}
     local page,ensurePage,refreshBrowser
     local filterProfession,filterText=nil,''
@@ -2146,6 +2147,7 @@ do
         return table.concat(parts,'|')
     end
     local function stopScan(reason)
+        batchScan=nil
         if scan and scan.waiting then scan.waiting=false;scan.status=reason or 'Search cancelled' end
     end
     local function quote(recipe,batch)
@@ -2249,7 +2251,8 @@ do
         else scan.more=true;scan.status='Loading remaining results…' end
         if render then render()end
     end
-    local function searchAll(recipe)
+    local function searchAll(recipe,fromBatch)
+        if not fromBatch then batchScan=nil end
         pendingAuto=nil -- a manual scan supersedes any deferred selection
         recipe=recipe or selected
         if not recipe or not recipe.materialsKnown or #(recipe.reagents or {})==0 then notify('Select a recipe with fixed materials first.');return false end
@@ -2264,7 +2267,8 @@ do
             end
         end
         for _,m in ipairs(recipe.reagents)do add(m.itemId)end;add(recipe.outputItemId)
-        stopScan()
+        local queued=fromBatch and batchScan
+        stopScan();batchScan=queued
         scan={key=recipeKey(recipe),ids=ids,keys=keys,prices={},available={},waiting=true,status='Searching all materials and output…'}
         local current=scan
         local sorts={{sortOrder=Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0,reverseSort=false}}
@@ -2312,7 +2316,7 @@ do
     end
     local function tryMissingScan()
         if not scan or not scan.waiting or not scan.retryPending then return end
-        if not auctionOpen or scan.key~=recipeKey(selected)or purchaseQueue or purchaseAttempt
+        if not auctionOpen or (scan.key~=recipeKey(selected)and not(batchScan and batchScan.active and scan.key==batchScan.key))or purchaseQueue or purchaseAttempt
             or (InCombatLockdown and InCombatLockdown())then
             stopScan('Price scan interrupted. Scan prices again.');return
         end
@@ -2414,6 +2418,7 @@ do
             end
             q.index=q.index+1
         end
+        if onMaterialsOrdered and q.recipe then onMaterialsOrdered(q.recipe,q.batch)end
         purchaseQueue=nil;queueStatus('Materials ordered. Collect purchased materials from your mailbox.');if render then render()end
     end
     local function readPurchaseDepth(id)
@@ -2525,7 +2530,7 @@ do
             if row.held==nil then notify('Bag quantity: No data.');return false end
             if byId[row.itemId]then byId[row.itemId].needed=byId[row.itemId].needed+row.needed else local entry={itemId=row.itemId,needed=row.needed};byId[row.itemId]=entry;rows[#rows+1]=entry end
         end
-        purchaseQueue={rows=rows,index=1};advancePurchase();return true
+        purchaseQueue={rows=rows,index=1,recipe=recipe,batch=data.batch};advancePurchase();return true
     end
     local function purchaseEvent(event,id,total)
         local a=purchaseAttempt
@@ -2694,7 +2699,7 @@ do
     end
     render=function()
         local p=create();if not p then return end
-        if scan and scan.key~=recipeKey(selected)then stopScan('Recipe changed. Scan prices again.');scan=nil end
+        if scan and scan.key~=recipeKey(selected)and not batchScan then stopScan('Recipe changed. Scan prices again.');scan=nil end
         local data=quote(selected,quantity)
         p.buyMissing:SetText('Buy missing materials')
         p.buyMissing:SetEnabled((not purchaseQueue or purchaseQueue.ready~=nil or not purchaseQueue.waiting) and auctionOpen and selected~=nil and selected.materialsKnown==true and not purchaseAttempt)
@@ -2904,6 +2909,81 @@ do
         local professions={};for name in pairs(names)do professions[#professions+1]=name end;table.sort(professions)
         return rows,professions,bagCounts
     end
+    local function stopBatch()
+        if batchScan then stopScan('Scan all recipes stopped. Completed prices retained.')end
+        if refreshBrowser then refreshBrowser()end
+    end
+    local function startBatch()
+        if not auctionOpen or purchaseQueue or purchaseAttempt or(InCombatLockdown and InCombatLockdown())then notify('Open the AH outside combat and finish buying first.');return false end
+        local recipes={}
+        for _,r in ipairs(catalog())do
+            if r.materialsKnown and #(r.reagents or{})>0 and r.outputItemId then recipes[#recipes+1]=r end
+        end
+        if #recipes==0 then notify('Open your professions once to capture learned recipes first.');return false end
+        installQueryHooks();stopScan();pendingAuto=nil
+        batchScan={recipes=recipes,index=1,delay=0};if refreshBrowser then refreshBrowser()end;return true
+    end
+    local function advanceBatch(delta)
+        local b=batchScan;if not b then return end
+        if not auctionOpen or purchaseQueue or purchaseAttempt or(InCombatLockdown and InCombatLockdown())then stopBatch();return end
+        if b.active then
+            if scan and scan.waiting then return end
+            if not scan or not scan.complete or scan.key~=b.key then stopBatch();return end
+            b.index=b.index+1;b.active=false;b.delay=0
+            if b.index>#b.recipes then batchScan=nil;notify('All recipes scanned. Profit sorting now uses available prices.');if refreshBrowser then refreshBrowser()end;return end
+        end
+        b.delay=b.delay+(delta or 0)
+        if b.delay<0.5 or api(C_AuctionHouse,'IsThrottledMessageSystemReady')==false then return end
+        local recipe=b.recipes[b.index]
+        if searchAll(recipe,true)then b.active=true;b.key=recipeKey(recipe);batchScan=b
+        else batchScan=nil end
+        if refreshBrowser then refreshBrowser()end
+    end
+    local craftPrompt
+    local function craftPlan()
+        local saved=favoriteScope(false);local plan=saved and saved.craftPlan
+        if type(plan)=='table'and ownedRecipe(plan.recipe)and number(plan.batch)and plan.batch>0 and plan.batch<=999 then return plan end
+    end
+    local function dismissCraftPlan()
+        local saved=favoriteScope(false);if saved then saved.craftPlan=nil end
+        if craftPrompt then craftPrompt:Hide()end
+    end
+    local function craftPlanned()
+        local plan=craftPlan()
+        if not plan or not canOpenRecipe(plan.recipe)or (craftableCount(plan.recipe)or 0)<plan.batch then return false end
+        if not openRecipe(plan.recipe)then return false end
+        local info=api(C_TradeSkillUI,'GetRecipeInfo',plan.recipe.recipeId)
+        if not info or info.learned~=true or api(C_TradeSkillUI,'IsTradeSkillLinked')or api(C_TradeSkillUI,'IsTradeSkillGuild')then notify('Open your own profession with this learned recipe first.');return false end
+        local current=readSelection()
+        local nativeOpen=(ProfessionsFrame and api(ProfessionsFrame,'IsShown'))or(TradeSkillFrame and api(TradeSkillFrame,'IsShown'))
+        if not nativeOpen or not current or current.recipeId~=plan.recipe.recipeId then notify('Profession is opening. Click Craft All again when the recipe is ready.');return false end
+        if type(C_TradeSkillUI.CraftRecipe)~='function'then notify('Crafting is unavailable in this client. Use the profession Craft All button.');return false end
+        local ok,result=pcall(C_TradeSkillUI.CraftRecipe,plan.recipe.recipeId,plan.batch)
+        if not ok or result==false then notify('Could not start crafting. Check your profession requirements and bag space.');return false end
+        dismissCraftPlan();return true
+    end
+    refreshCraftPlan=function()
+        local plan=craftPlan()
+        if not plan then if craftPrompt then craftPrompt:Hide()end;return end
+        if not UIParent then return end
+        if not craftPrompt then
+            craftPrompt=CreateFrame('Frame','AZPCForeverCraftReady',UIParent,'BackdropTemplate');craftPrompt:SetSize(304,132);craftPrompt:SetPoint('CENTER',0,140);surface(craftPrompt,0.035,0.05,0.05);craftPrompt:SetFrameStrata('DIALOG');craftPrompt:EnableMouse(true)
+            craftPrompt.title=uiText(craftPrompt,'GameFontNormal',14,-14,276)
+            craftPrompt.detail=uiText(craftPrompt,'GameFontHighlightSmall',14,-39,276);craftPrompt.detail:SetHeight(40)
+            craftPrompt.craft=uiButton(craftPrompt,'Craft All',150,26,true);craftPrompt.craft:SetPoint('BOTTOMLEFT',14,14);craftPrompt.craft:SetScript('OnClick',craftPlanned)
+            craftPrompt.later=uiButton(craftPrompt,'Dismiss',112,26);craftPrompt.later:SetPoint('BOTTOMRIGHT',-14,14);craftPrompt.later:SetScript('OnClick',dismissCraftPlan)
+        end
+        local enough=(craftableCount(plan.recipe)or 0)>=plan.batch
+        craftPrompt.title:SetText('AZPC • '..plan.recipe.name)
+        craftPrompt.detail:SetText(enough and('Materials ready for '..plan.batch..' craft(s). Click to open the recipe and start your batch.')or('Planned: '..plan.batch..' craft(s). Collect your purchased materials from the mailbox.'))
+        craftPrompt.craft:SetText('Craft All ('..plan.batch..')');craftPrompt.craft:SetEnabled(enough and not(InCombatLockdown and InCombatLockdown()))
+        craftPrompt:Show()
+    end
+    onMaterialsOrdered=function(recipe,batch)
+        local saved=favoriteScope(true);if not saved or not ownedRecipe(recipe)then return end
+        local copy={};for k,v in pairs(recipe)do copy[k]=v end
+        saved.craftPlan={recipe=copy,batch=batch};refreshCraftPlan()
+    end
     local restoringBrowser,restorePending=false,false
     local function saveBrowser(recipe)
         if restoringBrowser then return end
@@ -2961,6 +3041,7 @@ do
         if refreshBrowser then refreshBrowser()end
     end
     local function selectRecipe(recipe)
+        batchScan=nil
         stopScan('Recipe changed. Scan prices again.');scan=nil
         selected=recipe;quantity=1;tab='ah';restoredSelection=false;restorePending=false
         saveBrowser(recipe)
@@ -2987,6 +3068,9 @@ do
         local mode=sortMode();rows=sortRecipes(rows,mode,bagCounts)
         page.sortButton:SetText('Sort: '..sortLabels[mode])
         page.canCraft:SetChecked(craftOnly)
+        page.scanAll:SetText(batchScan and('Scanning '..batchScan.index..'/'..#batchScan.recipes)or'Scan All Recipes')
+        page.scanAll:SetEnabled(not batchScan and not purchaseQueue and not purchaseAttempt)
+        page.stopAll:SetEnabled(batchScan~=nil)
         page.profession:SetText(filterProfession or 'All professions')
         page.count:SetText(#rows..(only and ' favorites'or' recipes')..(craftOnly and ' | Craftable'or''))
         page.filtersButton:SetText(craftOnly and '|cff54dbd1Filters*|r'or'Filters')
@@ -3110,7 +3194,8 @@ do
         page.recipeRows={};page.menuRows={};page.categoryRows={}
         page.empty=font(page,'GameFontHighlightSmall',18,-180,194)
         page.count=font(page,'GameFontDisableSmall',12,-142,200)
-        local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Hover for details. Star to favorite.')
+        page.scanAll=uiButton(page,'Scan All Recipes',142,24);page.scanAll:SetPoint('BOTTOMLEFT',12,8);page.scanAll:SetScript('OnClick',startBatch)
+        page.stopAll=uiButton(page,'Stop',62,24);page.stopAll:SetPoint('BOTTOMLEFT',158,8);page.stopAll:SetScript('OnClick',stopBatch)
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         page:SetScript('OnShow',function()restoreBrowser();refreshBrowser();render()end)
@@ -3158,9 +3243,9 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,StartScanAll=startBatch,StopScanAll=stopBatch,AdvanceScanAll=advanceBatch,ScanAllState=function()return batchScan end,CraftPlan=craftPlan,CraftPlanned=craftPlanned,RefreshCraftPlan=refreshCraftPlan,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
+    for _,event in ipairs({'PLAYER_LOGIN','PLAYER_REGEN_ENABLED','PLAYER_REGEN_DISABLED','TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
         local ok=pcall(function()
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
@@ -3169,6 +3254,7 @@ do
             elseif event=='AUCTION_HOUSE_CLOSED' then auctionOpen=false;pendingAuto=nil;cancelQueue();stopScan('AH closed. Scan prices again.');
             elseif event=='AUCTION_HOUSE_BROWSE_RESULTS_UPDATED' or event=='AUCTION_HOUSE_BROWSE_RESULTS_ADDED' then readResults();openQueuedQuote() end
             purchaseEvent(event,id,total)
+            if event=='BAG_UPDATE_DELAYED'or event=='PLAYER_LOGIN'or event=='TRADE_SKILL_SHOW'or event=='TRADE_SKILL_LIST_UPDATE'or event=='PLAYER_REGEN_ENABLED'or event=='PLAYER_REGEN_DISABLED'then refreshCraftPlan()end
             if event=='AUCTION_HOUSE_THROTTLED_SYSTEM_READY' then tryAutoScan()end
             tryMissingScan()
             if scan and scan.waiting and scan.more and (not InCombatLockdown or not InCombatLockdown()) and api(C_AuctionHouse,'IsThrottledMessageSystemReady')~=false and type(C_AuctionHouse.RequestMoreBrowseResults)=='function'then
@@ -3182,6 +3268,7 @@ do
     end)
     local retryElapsed=0
     if UIParent then events:SetScript('OnUpdate',function(_,delta)
+        advanceBatch(delta)
         if scan and scan.waiting and scan.retryPending then
             retryElapsed=retryElapsed+delta
             if retryElapsed>=0.2 then retryElapsed=0;tryMissingScan();if render then render()end end
