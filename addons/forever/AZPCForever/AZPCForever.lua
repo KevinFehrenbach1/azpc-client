@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.72"
+local addon, VERSION = ..., "0.2.73"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2939,7 +2939,7 @@ do
         else batchScan=nil end
         if refreshBrowser then refreshBrowser()end
     end
-    local craftPrompt,craftPromptMoving
+    local craftPrompt,craftPromptMoving,craftRequest
     local function restoreCraftPosition()
         local db=AZPCForeverDB or{};local pos=db.craftPromptPosition
         craftPrompt:ClearAllPoints()
@@ -2964,22 +2964,38 @@ do
         if type(plan)=='table'and ownedRecipe(plan.recipe)and number(plan.batch)and plan.batch>0 and plan.batch<=999 then return plan end
     end
     local function dismissCraftPlan()
+        craftRequest=nil
         local saved=favoriteScope(false);if saved then saved.craftPlan=nil end
         if craftPrompt then craftPrompt:Hide()end
     end
     local function craftPlanned()
         local plan=craftPlan()
-        if not plan or not canOpenRecipe(plan.recipe)or (craftableCount(plan.recipe)or 0)<plan.batch then return false end
-        if not openRecipe(plan.recipe)then return false end
+        if craftRequest or not plan or(InCombatLockdown and InCombatLockdown())or (craftableCount(plan.recipe)or 0)<plan.batch then return false end
+        if not C_TradeSkillUI or type(C_TradeSkillUI.CraftRecipe)~='function'then notify('Crafting is unavailable in this client.');return false end
         local info=api(C_TradeSkillUI,'GetRecipeInfo',plan.recipe.recipeId)
-        if not info or info.learned~=true or api(C_TradeSkillUI,'IsTradeSkillLinked')or api(C_TradeSkillUI,'IsTradeSkillGuild')then notify('Open your own profession with this learned recipe first.');return false end
-        local current=readSelection()
-        local nativeOpen=(ProfessionsFrame and api(ProfessionsFrame,'IsShown'))or(TradeSkillFrame and api(TradeSkillFrame,'IsShown'))
-        if not nativeOpen or not current or current.recipeId~=plan.recipe.recipeId then notify('Profession is opening. Click Craft All again when the recipe is ready.');return false end
-        if type(C_TradeSkillUI.CraftRecipe)~='function'then notify('Crafting is unavailable in this client. Use the profession Craft All button.');return false end
+        if (info and info.learned==false)or api(C_TradeSkillUI,'IsTradeSkillLinked')or api(C_TradeSkillUI,'IsTradeSkillGuild')then notify('Use your own learned recipe to craft this batch.');return false end
+        -- A hardware click requests the exact saved recipe/count directly. No UI
+        -- selection, menu navigation, deferred craft, or automatic retry is needed.
+        local request={plan=plan};craftRequest=request
         local ok,result=pcall(C_TradeSkillUI.CraftRecipe,plan.recipe.recipeId,plan.batch)
-        if not ok or result==false then notify('Could not start crafting. Check your profession requirements and bag space.');return false end
-        dismissCraftPlan();return true
+        if not ok or result==false then
+            if craftRequest==request then craftRequest=nil end
+            notify('Could not start crafting. Open your profession once and try Craft All again.');refreshCraftPlan();return false
+        end
+        if craftRequest==request and C_Timer and C_Timer.After then C_Timer.After(5,function()
+            if craftRequest~=request then return end
+            craftRequest=nil;notify('Crafting did not start. Open your profession once, check its requirements, then try Craft All again.');refreshCraftPlan()
+        end)end
+        refreshCraftPlan();return true
+    end
+    local function plannedCraftEvent(event,unit,castGuid,spellId)
+        local request=craftRequest
+        if not request or unit~='player'or spellId~=request.plan.recipe.recipeId then return end
+        if event=='UNIT_SPELLCAST_START'or event=='UNIT_SPELLCAST_SUCCEEDED'then
+            if craftPlan()==request.plan then dismissCraftPlan()else craftRequest=nil end
+        elseif event=='UNIT_SPELLCAST_FAILED'or event=='UNIT_SPELLCAST_INTERRUPTED'then
+            craftRequest=nil;notify('Crafting could not start. Your planned batch is still ready.');refreshCraftPlan()
+        end
     end
     refreshCraftPlan=function()
         local plan=craftPlan()
@@ -2998,8 +3014,8 @@ do
         end
         local enough=(craftableCount(plan.recipe)or 0)>=plan.batch
         craftPrompt.title:SetText('AZPC • '..plan.recipe.name)
-        craftPrompt.detail:SetText(enough and('Materials ready for '..plan.batch..' craft(s). Click to open the recipe and start your batch.')or('Planned: '..plan.batch..' craft(s). Collect your purchased materials from the mailbox.'))
-        craftPrompt.craft:SetText('Craft All ('..plan.batch..')');craftPrompt.craft:SetEnabled(enough and not(InCombatLockdown and InCombatLockdown()))
+        craftPrompt.detail:SetText(craftRequest and 'Starting your batch…'or enough and('Materials ready for '..plan.batch..' craft(s). Click Craft All to start the batch.')or('Planned: '..plan.batch..' craft(s). Collect your purchased materials from the mailbox.'))
+        craftPrompt.craft:SetText(craftRequest and 'Starting…'or('Craft All ('..plan.batch..')'));craftPrompt.craft:SetEnabled(not craftRequest and enough and not(InCombatLockdown and InCombatLockdown()))
         craftPrompt:Show()
     end
     onMaterialsOrdered=function(recipe,batch)
@@ -3266,11 +3282,12 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,StartScanAll=startBatch,StopScanAll=stopBatch,AdvanceScanAll=advanceBatch,ScanAllState=function()return batchScan end,CraftPlan=craftPlan,CraftPlanned=craftPlanned,RefreshCraftPlan=refreshCraftPlan,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,StartScanAll=startBatch,StopScanAll=stopBatch,AdvanceScanAll=advanceBatch,ScanAllState=function()return batchScan end,CraftPlan=craftPlan,CraftPlanned=craftPlanned,PlannedCraftEvent=plannedCraftEvent,RefreshCraftPlan=refreshCraftPlan,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
-    for _,event in ipairs({'PLAYER_LOGIN','PLAYER_REGEN_ENABLED','PLAYER_REGEN_DISABLED','TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
-    events:SetScript('OnEvent',function(_,event,id,total)
+    for _,event in ipairs({'UNIT_SPELLCAST_START','UNIT_SPELLCAST_SUCCEEDED','UNIT_SPELLCAST_FAILED','UNIT_SPELLCAST_INTERRUPTED','PLAYER_LOGIN','PLAYER_REGEN_ENABLED','PLAYER_REGEN_DISABLED','TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
+    events:SetScript('OnEvent',function(_,event,id,total,spellId)
         local ok=pcall(function()
+            plannedCraftEvent(event,id,total,spellId)
             if event=='TRADE_SKILL_SHOW' then professionOpen=true
             elseif event=='TRADE_SKILL_CLOSE' then professionOpen=false
             elseif event=='AUCTION_HOUSE_SHOW' then auctionOpen=true;ensurePage()
