@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Show color-coded per-craft profit estimates beneath recipe names using completed price scans.",
+  "notes": "Export crafting results as copyable CSV with existing profit estimates and scan prices.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.76"
+  "foreverAddonVersion": "0.2.77"
 }
