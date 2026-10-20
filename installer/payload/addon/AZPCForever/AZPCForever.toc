@@ -2,10 +2,6 @@
 ## Title: AZPC Forever
 ## Notes: Captures Forever auction prices, owned listings, bags and confirmed mailbox trading records, recipes and completed crafts.
 ## Author: Kevin Fehrenbach
-## Version: 0.2.69
+## Version: 0.2.70
 ## SavedVariables: AZPCForeverDB
 AZPCForever.lua
-
-
-
-
