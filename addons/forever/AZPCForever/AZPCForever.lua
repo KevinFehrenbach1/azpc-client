@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.67"
+local addon, VERSION = ..., "0.2.68"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2649,15 +2649,15 @@ do
         panel.minus:SetScript('OnClick',function()if purchaseQueue then cancelQueue()end;quantity=math.max(1,quantity-1);render()end)
         panel.plus:SetScript('OnClick',function()if purchaseQueue then cancelQueue()end;quantity=math.min(999,quantity+1);render()end)
         panel.headerRule=panel:CreateTexture(nil,'BORDER');panel.headerRule:SetTexture('Interface/Buttons/WHITE8X8');panel.headerRule:SetVertexColor(0.45,0.36,0.20,0.65);panel.headerRule:SetHeight(1);panel.headerRule:SetPoint('TOPLEFT',14,-82);panel.headerRule:SetPoint('TOPRIGHT',-14,-82)
-        panel.market=uiText(panel,'GameFontHighlightSmall',16,-124,330)
-        panel.buyMissing=uiButton(panel,'Buy missing materials',190,28,true);panel.buyMissing:SetPoint('TOPLEFT',14,-90)
+        panel.market=uiText(panel,'GameFontHighlightSmall',16,-98,410)
+        panel.buyMissing=uiButton(panel,'Buy missing materials',190,28,true);panel.buyMissing:SetPoint('BOTTOMRIGHT',-14,108)
         panel.buyMissing:SetScript('OnClick',function()buyMissing(selected,quantity)end)
-        panel.cancelBuying=uiButton(panel,'Stop',62,28);panel.cancelBuying:SetPoint('TOPLEFT',210,-90)
+        panel.cancelBuying=uiButton(panel,'Stop',62,28);panel.cancelBuying:SetPoint('TOPRIGHT',-14,-90)
         panel.cancelBuying:SetScript('OnClick',function()cancelQueue();render()end)
-        panel.searchAll=uiButton(panel,'Scan prices',138,32,true);panel.searchAll:SetPoint('TOPRIGHT',-14,-91)
+        panel.searchAll=uiButton(panel,'Scan prices',190,28);panel.searchAll:SetPoint('BOTTOMRIGHT',-14,68)
         panel.searchAll:SetScript('OnClick',function()installQueryHooks();searchAll()end)
         local headings={{'Material',0,126},{'Need',128,34},{'Bags',166,34},{'Missing',204,52},{'Unit price',264,70},{'Total',338,70}}
-        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-137);panel.tableHeader:SetPoint('TOPRIGHT',-14,-137);panel.tableHeader:SetHeight(26)
+        panel.tableHeader=CreateFrame('Frame',nil,panel,'BackdropTemplate');panel.tableHeader:SetPoint('TOPLEFT',14,-119);panel.tableHeader:SetPoint('TOPRIGHT',-14,-119);panel.tableHeader:SetHeight(26)
         surface(panel.tableHeader,0.065,0.065,0.055,{0.25,0.23,0.17})
         panel.columnHeaders={}
         for _,h in ipairs(headings)do
@@ -2666,19 +2666,19 @@ do
             if h[1]=='Missing'then text:SetTextColor(1,0.79,0.3)end
             text:SetText(h[1]);panel.columnHeaders[h[1]]=text
         end
-        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-166);scroll:SetPoint('BOTTOMRIGHT',-30,166)
+        local scroll=CreateFrame('ScrollFrame',nil,panel,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',14,-148);scroll:SetPoint('BOTTOMRIGHT',-30,166)
         panel.child=CreateFrame('Frame',nil,scroll);panel.child:SetSize(498,1);scroll:SetScrollChild(panel.child);panel.rows={}
-        local help=uiText(panel,'GameFontDisableSmall',0,0,520);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Buy missing opens a quantity and price confirmation. Quantities scale with crafts and bags.')
+        local help=uiText(panel,'GameFontNormalSmall',0,0,282);help:ClearAllPoints();help:SetPoint('BOTTOMLEFT',14,145);help:SetText('Cost and value')
         panel.cards={}
         for i,label in ipairs({'Material cost','AH sale price','Est. profit / craft'})do
-            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(160,90);card:SetPoint('BOTTOMLEFT',14+(i-1)*166,47)
-            surface(card,0.04,0.045,0.043,{0.45,0.36,0.20})
-            card.title=uiText(card,'GameFontNormalSmall',10,-10,144)
+            local card=CreateFrame('Frame',nil,panel,'BackdropTemplate');card:SetSize(282,24);card:SetPoint('BOTTOMLEFT',14,118-(i-1)*27)
+            card:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});card:SetBackdropColor(0.04,0.045,0.043,0.15)
+            card.title=uiText(card,'GameFontNormalSmall',8,-5,154)
             card.title:SetText(label)
-            card.value=uiText(card,'GameFontNormalLarge',10,-32,144);card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',16)
+            card.value=uiText(card,'GameFontNormalLarge',164,-4,110,'RIGHT');card.value:SetTextColor(0.92,0.94,0.91);typography(card.value,'GameFontHighlight',13)
             card.value:SetHeight(24)
             if card.value.SetWordWrap then card.value:SetWordWrap(false)end
-            card.helper=uiText(card,'GameFontDisableSmall',10,-66,144)
+            card.helper=uiText(panel,'GameFontDisableSmall',0,0,282);card.helper:ClearAllPoints();card.helper:SetPoint('BOTTOMLEFT',14,43);if i~=1 then card.helper:Hide()end
             panel.cards[i]=card
         end
         panel.cost=panel.cards[1].value;panel.missing=panel.cards[1].helper
@@ -2806,6 +2806,35 @@ do
         if refreshBrowser then refreshBrowser()end
         return saved.recipes[id]==true
     end
+    local function categoryFor(recipe)
+        local c=recipe.browserCategory
+        if type(c)=='table'and type(c.name)=='string'and type(c.id)=='number'then return {key=(recipe.profession or'Other')..'|'..c.id,name=c.name,order=tonumber(c.order)or 9999}end
+        local info=api(C_TradeSkillUI,'GetRecipeInfo',recipe.recipeId)
+        local category=info and info.categoryID and api(C_TradeSkillUI,'GetCategoryInfo',info.categoryID)
+        if type(category)=='table'and type(category.name)=='string'then return {key=(recipe.profession or'Other')..'|'..info.categoryID,name=category.name,order=tonumber(category.uiOrder)or 9999}end
+        return {key=(recipe.profession or'Other')..'|other',name=recipe.profession or'Other recipes',order=9999}
+    end
+    local function recipeGroups(rows)
+        local groups,index={},{}
+        for _,r in ipairs(rows)do
+            local c=categoryFor(r);local g=index[c.key]
+            if not g then g={key=c.key,name=c.name,order=c.order,recipes={}};index[c.key]=g;groups[#groups+1]=g end
+            g.recipes[#g.recipes+1]=r
+        end
+        table.sort(groups,function(a,b)if a.order~=b.order then return a.order<b.order end;if a.name~=b.name then return a.name<b.name end;return a.key<b.key end)
+        return groups
+    end
+    local function categoryClosed(key)
+        local saved=favoriteScope(false)
+        return filterText==''and saved and type(saved.closedCategories)=='table'and saved.closedCategories[key]==true or false
+    end
+    local function toggleCategory(key)
+        if type(key)~='string'then return end
+        local saved=favoriteScope(true);if not saved then return end
+        if type(saved.closedCategories)~='table'then saved.closedCategories={}end
+        saved.closedCategories[key]=not saved.closedCategories[key]or nil
+        if refreshBrowser then refreshBrowser()end
+    end
     local function catalog(profession,query,onlyFavorites,onlyCraftable)
         local db=AZPCForeverDB or {};local merged,groups={},{}
         for _,group in pairs(db.professionCatalog or {})do
@@ -2868,6 +2897,10 @@ do
                 if not r then
                     r={recipeId=id,name=info.name,materialsKnown=false,reagents={},character=who.character,realm=who.realm,faction=who.faction,region=who.region}
                 end
+                -- Category metadata is presentation-only; never mutate capture records.
+                local copy={};for k,v in pairs(r)do copy[k]=v end;r=copy
+                local category=info.categoryID and api(C_TradeSkillUI,'GetCategoryInfo',info.categoryID)
+                if type(category)=='table'and type(category.name)=='string'then r.browserCategory={id=info.categoryID,name=category.name,order=category.uiOrder}end
                 r.profession=profession;recipes[#recipes+1]=r
             end
         end
@@ -2883,6 +2916,7 @@ do
         stopScan('Recipe changed. Scan prices again.');scan=nil
         selected=recipe;quantity=1;tab='ah';restoredSelection=false;restorePending=false
         saveBrowser(recipe)
+        if ownedRecipe(recipe)then local saved=favoriteScope(false);if saved and type(saved.closedCategories)=='table'then saved.closedCategories[categoryFor(recipe).key]=nil end end
         if refreshBrowser then refreshBrowser()end
         if render then render()end
         -- Only an explicit recipe selection starts a scan; refreshes stay passive.
@@ -2904,21 +2938,37 @@ do
         local rows,professions,bagCounts=catalog(filterProfession,filterText,only,craftOnly)
         page.canCraft:SetChecked(craftOnly)
         page.profession:SetText(filterProfession or 'All professions')
-        page.count:SetText(#rows..(only and ' favorite recipes'or' learned recipes'))
-        page.allRecipes:SetText(not only and '|cff54dbd1All recipes|r'or'All recipes')
+        page.count:SetText(#rows..(only and ' favorites'or' recipes')..(craftOnly and ' | Craftable'or''))
+        page.filtersButton:SetText(craftOnly and '|cff54dbd1Filters*|r'or'Filters')
+        page.allRecipes:SetText(not only and '|cff54dbd1All|r'or'All')
         page.favorites:SetText(only and '|cffffd25aFavorites|r'or'Favorites')
         for _,button in ipairs(page.recipeRows)do button:Hide()end
+        for _,header in pairs(page.categoryRows)do header:Hide()end
+        local positions,y={},0
+        for _,group in ipairs(recipeGroups(rows))do
+            local header=page.categoryRows[group.key]
+            if not header then
+                header=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');header:SetSize(204,22)
+                header:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8',edgeFile='Interface/Tooltips/UI-Tooltip-Border',edgeSize=8});header:SetBackdropColor(0.13,0.095,0.035,1);header:SetBackdropBorderColor(0.45,0.32,0.12)
+                header.label=font(header,'GameFontNormalSmall',7,-5,172);header.symbol=font(header,'GameFontNormalSmall',184,-5,16)
+                header:SetScript('OnClick',function()toggleCategory(header.key)end);page.categoryRows[group.key]=header
+            end
+            header.key=group.key;header.label:SetText(group.name);header.symbol:SetText(categoryClosed(group.key)and'+'or'-')
+            header:ClearAllPoints();header:SetPoint('TOPLEFT',0,-y);header:Show();y=y+25
+            if not categoryClosed(group.key)then for _,recipe in ipairs(group.recipes)do positions[recipe]=y;y=y+26 end end
+            y=y+5
+        end
         for i,recipe in ipairs(rows)do
             local button=page.recipeRows[i]
             if not button then
-                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(204,38);button:SetPoint('TOPLEFT',0,-(i-1)*40)
+                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(204,25)
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
-                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',7,0)
-                button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
-                button.name=font(button,'GameFontHighlightSmall',37,-6,135)
-                button.craftCount=font(button,'GameFontDisableSmall',37,-24,135)
-                button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(26,30);button.favorite:SetPoint('TOPRIGHT',-2,-4)
-                button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(18,18);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar');button.favoriteIcon:SetTexCoord(0,0.5,0,0.5)
+                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(16,16);button.icon:SetPoint('LEFT',10,0)
+                button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(25,25);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
+                button.name=font(button,'GameFontHighlightSmall',32,-7,118);typography(button.name,'GameFontHighlightSmall',11);if button.name.SetWordWrap then button.name:SetWordWrap(false)end
+                button.craftCount=font(button,'GameFontHighlightSmall',151,-7,26);button.craftCount:SetJustifyH('RIGHT')
+                button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(24,25);button.favorite:SetPoint('TOPRIGHT',0,0)
+                button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(14,14);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar');button.favoriteIcon:SetTexCoord(0,0.5,0,0.5)
                 button.favorite:SetScript('OnClick',function()toggleFavorite(button.recipe)end)
                 button.favorite:SetScript('OnEnter',function(self)if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(self,'ANCHOR_RIGHT');GameTooltip:AddLine(isFavorite(button.recipe)and'Remove from Favorites'or'Add to Favorites',1,0.82,0.35);GameTooltip:Show()end end)
                 button.favorite:SetScript('OnLeave',function()if GameTooltip then GameTooltip:Hide()end end)
@@ -2928,16 +2978,16 @@ do
             end
             button.recipe=recipe;button.name:SetText(recipe.name)
             local available=craftableCount(recipe,bagCounts)
-            button.craftCount:SetText(available and available>0 and ('Can craft '..available)or available==0 and 'Missing materials'or'Count unavailable')
+            button.craftCount:SetText(available and available>0 and ('['..available..']')or'')
             if available and available>0 then button.craftCount:SetTextColor(0.48,0.88,0.62)else button.craftCount:SetTextColor(0.55,0.6,0.6)end
             if isFavorite(recipe)then button.favoriteIcon:SetVertexColor(1,0.82,0.25,1)else button.favoriteIcon:SetVertexColor(0.45,0.48,0.48,0.65)end
             local active=selected and recipeKey(selected)==recipeKey(recipe)
-            surface(button,active and 0.025 or 0.04,active and 0.15 or 0.05,active and 0.15 or 0.05,active and {0.12,0.55,0.52} or {0.16,0.18,0.17})
+            button:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});button:SetBackdropColor(active and 0.23 or 0.025,active and 0.16 or 0.035,active and 0.035 or 0.035,active and 0.8 or 0.15)
             if active then button.accent:Show()else button.accent:Hide()end
             local icon=recipe.outputItemId and ((C_Item and api(C_Item,'GetItemIconByID',recipe.outputItemId)) or (GetItemIcon and GetItemIcon(recipe.outputItemId)))
-            button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
+            button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:ClearAllPoints();if positions[recipe]then button:SetPoint('TOPLEFT',0,-positions[recipe]);button:Show()else button:Hide()end
         end
-        page.listChild:SetHeight(math.max(1,#rows*40))
+        page.listChild:SetHeight(math.max(1,y))
         page.empty:SetText(#rows==0 and (craftOnly and 'No matching recipes ready to craft from your bags. Clear Can craft now to see all.'or only and (filterText~=''and'No matching favorites.'or'Star recipes to add them to Favorites. Choose All recipes to browse.')or filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
         for _,button in ipairs(page.menuRows)do button:Hide()end
         local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
@@ -2982,28 +3032,32 @@ do
         font(page,'GameFontNormalLarge',64,-13,160):SetText('RECIPES')
         page.profession=uiButton(page,'All professions',212,29);page.profession:SetPoint('TOPLEFT',12,-40)
         page.professionArrow=page.profession:CreateTexture(nil,'OVERLAY');page.professionArrow:SetTexture('Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up');page.professionArrow:SetSize(18,18);page.professionArrow:SetPoint('RIGHT',-5,0)
-        page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
+        page.profession:SetScript('OnClick',function()page.filters:Hide();if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
         page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(212,29);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);if page.search.SetFont then page.search:SetFont('Fonts/FRIZQT__.TTF',12,'')end;page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
         page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';saveBrowser();refreshBrowser()end)
         page.search:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
         page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
         page.placeholder=font(page.search,'GameFontDisableSmall',8,-8,182);page.placeholder:SetText('Search recipes…')
         page.search:HookScript('OnTextChanged',function(self)if self:GetText()==''then page.placeholder:Show()else page.placeholder:Hide()end end)
-        page.allRecipes=uiButton(page,'All recipes',102,25);page.allRecipes:SetPoint('TOPLEFT',12,-111);page.allRecipes:SetScript('OnClick',function()setFavoritesOnly(false)end)
-        page.favorites=uiButton(page,'Favorites',102,25);page.favorites:SetPoint('TOPLEFT',122,-111);page.favorites:SetScript('OnClick',function()setFavoritesOnly(true)end)
-        page.canCraft=CreateFrame('CheckButton',nil,page,'UICheckButtonTemplate');page.canCraft:SetSize(24,24);page.canCraft:SetPoint('TOPLEFT',10,-140)
-        font(page,'GameFontHighlightSmall',37,-147,180):SetText('Can craft now (bags)')
-        page.canCraft:SetScript('OnClick',function(self)setCraftableOnly(self:GetChecked()==true)end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-195);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        page.allRecipes=uiButton(page,'All',70,25);page.allRecipes:SetPoint('TOPLEFT',12,-111);page.allRecipes:SetScript('OnClick',function()setFavoritesOnly(false)end)
+        page.favorites=uiButton(page,'Favorites',72,25);page.favorites:SetPoint('TOPLEFT',86,-111);page.favorites:SetScript('OnClick',function()setFavoritesOnly(true)end)
+        page.filtersButton=uiButton(page,'Filters',62,25);page.filtersButton:SetPoint('TOPLEFT',162,-111)
+        page.filters=CreateFrame('Frame',nil,page,'BackdropTemplate');page.filters:SetSize(212,66);page.filters:SetPoint('TOPLEFT',12,-139);page.filters:SetFrameLevel(page:GetFrameLevel()+25);surface(page.filters,0.035,0.05,0.05);page.filters:EnableMouse(true);page.filters:Hide()
+        page.canCraft=CreateFrame('CheckButton',nil,page.filters,'UICheckButtonTemplate');page.canCraft:SetSize(24,24);page.canCraft:SetPoint('TOPLEFT',6,-9)
+        font(page.filters,'GameFontHighlightSmall',34,-16,170):SetText('Can craft now (bags)')
+        font(page.filters,'GameFontDisableSmall',10,-42,192):SetText('Green [n] = crafts from your bags')
+        page.filtersButton:SetScript('OnClick',function()page.menu:Hide();if page.filters:IsShown()then page.filters:Hide()else page.filters:Show()end end)
+        page.canCraft:SetScript('OnClick',function(self)setCraftableOnly(self:GetChecked()==true);page.filters:Hide()end)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-162);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
         page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
-        page.recipeRows={};page.menuRows={}
-        page.empty=font(page,'GameFontHighlightSmall',18,-215,194)
-        page.count=font(page,'GameFontDisableSmall',12,-174,200)
-        local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
+        page.recipeRows={};page.menuRows={};page.categoryRows={}
+        page.empty=font(page,'GameFontHighlightSmall',18,-180,194)
+        page.count=font(page,'GameFontDisableSmall',12,-142,200)
+        local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Hover for details. Star to favorite.')
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         page:SetScript('OnShow',function()restoreBrowser();refreshBrowser();render()end)
-        page:SetScript('OnHide',function()page.menu:Hide();cancelQueue();stopScan('Crafting tab closed. Scan prices again.')end)
+        page:SetScript('OnHide',function()page.menu:Hide();page.filters:Hide();cancelQueue();stopScan('Crafting tab closed. Scan prices again.')end)
         page.ready=true
         page:Hide();refreshBrowser()
         return true
@@ -3047,7 +3101,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)

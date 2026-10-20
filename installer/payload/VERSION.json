@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Can craft now filter and per-recipe craftable counts using current character bag materials only.",
+  "notes": "Blizzard-style crafting layout: collapsible native categories, compact recipe rows, aligned stars, Filters menu and flat cost/value summary. Open each profession once to refresh native categories.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.67"
+  "foreverAddonVersion": "0.2.68"
 }
