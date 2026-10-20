@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Start the planned batch directly from the craft popup click and preserve the plan until the game confirms a cast.",
+  "notes": "Load the owning profession before requesting the popup batch and show preparation or failure states.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.73"
+  "foreverAddonVersion": "0.2.74"
 }

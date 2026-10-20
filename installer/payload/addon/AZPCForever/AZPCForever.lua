@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.73"
+local addon, VERSION = ..., "0.2.74"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2939,7 +2939,7 @@ do
         else batchScan=nil end
         if refreshBrowser then refreshBrowser()end
     end
-    local craftPrompt,craftPromptMoving,craftRequest
+    local craftPrompt,craftPromptMoving,craftRequest,craftPreparation,craftProblem
     local function restoreCraftPosition()
         local db=AZPCForeverDB or{};local pos=db.craftPromptPosition
         craftPrompt:ClearAllPoints()
@@ -2964,27 +2964,47 @@ do
         if type(plan)=='table'and ownedRecipe(plan.recipe)and number(plan.batch)and plan.batch>0 and plan.batch<=999 then return plan end
     end
     local function dismissCraftPlan()
-        craftRequest=nil
+        craftRequest=nil;craftPreparation=nil;craftProblem=nil
         local saved=favoriteScope(false);if saved then saved.craftPlan=nil end
         if craftPrompt then craftPrompt:Hide()end
     end
+    local function craftPrepared(plan)
+        local windowOpen=(ProfessionsFrame and api(ProfessionsFrame,'IsShown'))or(TradeSkillFrame and api(TradeSkillFrame,'IsShown'))
+        if not windowOpen then return false end
+        if not plan or api(C_TradeSkillUI,'IsDataSourceChanging')==true or api(C_TradeSkillUI,'IsTradeSkillLinked')or api(C_TradeSkillUI,'IsTradeSkillGuild')then return false end
+        local info=api(C_TradeSkillUI,'GetRecipeInfo',plan.recipe.recipeId)
+        if not info or info.learned~=true then return false end
+        local profession=api(C_TradeSkillUI,'GetBaseProfessionInfo')
+        if profession and profession.professionName and plan.recipe.profession and profession.professionName~=plan.recipe.profession then return false end
+        return true
+    end
     local function craftPlanned()
         local plan=craftPlan()
-        if craftRequest or not plan or(InCombatLockdown and InCombatLockdown())or (craftableCount(plan.recipe)or 0)<plan.batch then return false end
+        if craftRequest or craftPreparation or not plan or(InCombatLockdown and InCombatLockdown())or (craftableCount(plan.recipe)or 0)<plan.batch then return false end
         if not C_TradeSkillUI or type(C_TradeSkillUI.CraftRecipe)~='function'then notify('Crafting is unavailable in this client.');return false end
-        local info=api(C_TradeSkillUI,'GetRecipeInfo',plan.recipe.recipeId)
-        if (info and info.learned==false)or api(C_TradeSkillUI,'IsTradeSkillLinked')or api(C_TradeSkillUI,'IsTradeSkillGuild')then notify('Use your own learned recipe to craft this batch.');return false end
-        -- A hardware click requests the exact saved recipe/count directly. No UI
-        -- selection, menu navigation, deferred craft, or automatic retry is needed.
+        craftProblem=nil
+        if not craftPrepared(plan)then
+            local preparation={plan=plan};craftPreparation=preparation
+            if not openRecipe(plan.recipe)then craftPreparation=nil;craftProblem='Could not load this recipe. Open its profession and try again.';refreshCraftPlan();return false end
+            if not craftPrepared(plan)then
+                if C_Timer and C_Timer.After then C_Timer.After(8,function()
+                    if craftPreparation~=preparation then return end
+                    craftPreparation=nil;craftProblem='Recipe did not finish loading. Open its profession and try again.';refreshCraftPlan()
+                end)end
+                refreshCraftPlan();return true
+            end
+            craftPreparation=nil
+        end
+        -- Invoke only within this click after the owning profession has loaded.
         local request={plan=plan};craftRequest=request
         local ok,result=pcall(C_TradeSkillUI.CraftRecipe,plan.recipe.recipeId,plan.batch)
         if not ok or result==false then
             if craftRequest==request then craftRequest=nil end
-            notify('Could not start crafting. Open your profession once and try Craft All again.');refreshCraftPlan();return false
+            craftProblem='Could not start crafting. Check the recipe in your profession, then try again.';notify(craftProblem);refreshCraftPlan();return false
         end
         if craftRequest==request and C_Timer and C_Timer.After then C_Timer.After(5,function()
             if craftRequest~=request then return end
-            craftRequest=nil;notify('Crafting did not start. Open your profession once, check its requirements, then try Craft All again.');refreshCraftPlan()
+            craftRequest=nil;craftProblem='Crafting did not start. Check the recipe in your profession, then try again.';notify(craftProblem);refreshCraftPlan()
         end)end
         refreshCraftPlan();return true
     end
@@ -2994,12 +3014,13 @@ do
         if event=='UNIT_SPELLCAST_START'or event=='UNIT_SPELLCAST_SUCCEEDED'then
             if craftPlan()==request.plan then dismissCraftPlan()else craftRequest=nil end
         elseif event=='UNIT_SPELLCAST_FAILED'or event=='UNIT_SPELLCAST_INTERRUPTED'then
-            craftRequest=nil;notify('Crafting could not start. Your planned batch is still ready.');refreshCraftPlan()
+            craftRequest=nil;craftProblem='Crafting could not start. Check your profession requirements and try again.';notify(craftProblem);refreshCraftPlan()
         end
     end
     refreshCraftPlan=function()
         local plan=craftPlan()
         if not plan then if craftPrompt then craftPrompt:Hide()end;return end
+        if craftPreparation and craftPreparation.plan==plan and craftPrepared(plan)then craftPreparation=nil;craftProblem=nil end
         if not UIParent then return end
         if not craftPrompt then
             craftPrompt=CreateFrame('Frame','AZPCForeverCraftReady',UIParent,'BackdropTemplate');craftPrompt:SetSize(304,132);craftPrompt:SetPoint('CENTER',0,140);surface(craftPrompt,0.035,0.05,0.05);craftPrompt:SetFrameStrata('DIALOG');craftPrompt:EnableMouse(true)
@@ -3014,13 +3035,14 @@ do
         end
         local enough=(craftableCount(plan.recipe)or 0)>=plan.batch
         craftPrompt.title:SetText('AZPC • '..plan.recipe.name)
-        craftPrompt.detail:SetText(craftRequest and 'Starting your batch…'or enough and('Materials ready for '..plan.batch..' craft(s). Click Craft All to start the batch.')or('Planned: '..plan.batch..' craft(s). Collect your purchased materials from the mailbox.'))
-        craftPrompt.craft:SetText(craftRequest and 'Starting…'or('Craft All ('..plan.batch..')'));craftPrompt.craft:SetEnabled(not craftRequest and enough and not(InCombatLockdown and InCombatLockdown()))
+        craftPrompt.detail:SetText(craftRequest and 'Starting your batch…'or craftPreparation and 'Preparing your recipe…'or craftProblem or enough and('Materials ready for '..plan.batch..' craft(s). Click Craft All to start the batch.')or('Planned: '..plan.batch..' craft(s). Collect your purchased materials from the mailbox.'))
+        craftPrompt.craft:SetText(craftRequest and 'Starting…'or craftPreparation and 'Preparing…'or('Craft All ('..plan.batch..')'));craftPrompt.craft:SetEnabled(not craftRequest and not craftPreparation and enough and not(InCombatLockdown and InCombatLockdown()))
         craftPrompt:Show()
     end
     onMaterialsOrdered=function(recipe,batch)
         local saved=favoriteScope(true);if not saved or not ownedRecipe(recipe)then return end
         local copy={};for k,v in pairs(recipe)do copy[k]=v end
+        craftRequest=nil;craftPreparation=nil;craftProblem=nil
         saved.craftPlan={recipe=copy,batch=batch};refreshCraftPlan()
     end
     local restoringBrowser,restorePending=false,false
