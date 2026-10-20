@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.60"
+local addon, VERSION = ..., "0.2.61"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -58,8 +58,14 @@ local function showReminder()
     timerPending=false
     if not queued then return end
     if inCombat() then return end
+    local cfg=AZPCForeverSettings;local mode=cfg and cfg.Get('reminders')or'popup'
+    if mode=='notification' then
+        if cfg and cfg.Notify()then queued=false;dirty=false end
+        return
+    end
     if type(StaticPopup_Show)~='function' or type(StaticPopupDialogs)~='table' then return end
     queued=false;dirty=false
+    if mode=='both' and cfg then cfg.Notify()end
     StaticPopup_Show(popupKey)
 end
 if type(StaticPopupDialogs)=='table' then
@@ -1907,6 +1913,8 @@ do
     local function append(tooltip,itemId)
         itemId=number(itemId)
         if not itemId or itemId<=0 or not tooltip or type(tooltip.AddLine)~='function' then return end
+        local cfg=AZPCForeverSettings
+        if cfg and cfg.Get('tooltips')=='off'then return end
         if tooltip.azpcForeverItem==itemId then return end
         tooltip.azpcForeverItem=itemId
         local db=AZPCForeverDB or {}
@@ -1914,7 +1922,7 @@ do
         local price=db.tooltipPrices and db.tooltipPrices[key] and db.tooltipPrices[key][itemId]
         local now=GetServerTime and GetServerTime() or time()
         local valid=price and number(price.unitCopper) and price.unitCopper>0 and number(price.observedAt) and price.observedAt<=now
-        local detailed=type(IsShiftKeyDown)=='function' and IsShiftKeyDown()
+        local detailed=cfg and cfg.Get('tooltips')=='detailed' or type(IsShiftKeyDown)=='function' and IsShiftKeyDown()
         local age=valid and now-price.observedAt
         if valid and (detailed or not otherAuctionPrice(itemId)) then
             add(tooltip,'Auction / each'..(age>3600 and ' (stale)' or ''),money(price.unitCopper))
@@ -1935,7 +1943,7 @@ do
             add(tooltip,'Est. profit / each',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
             if detailed then tooltip:AddLine('After 5% AH cut; excludes deposit.',0.55,0.55,0.55,true)end
         end
-        if detailed or not otherInventory()then ownership(tooltip,itemId,realm,faction,now,detailed)else requestIndex()end
+        if (not cfg or cfg.Get('ownership'))and(detailed or not otherInventory())then ownership(tooltip,itemId,realm,faction,now,detailed)else requestIndex()end
         if tooltip.azpcForeverHeading and not detailed then tooltip:AddLine('Hold Shift before hovering for AZPC details.',0.55,0.55,0.55,true)end
         if type(tooltip.Show)=='function' then tooltip:Show() end
     end
@@ -3349,6 +3357,7 @@ function minimap.Invoke(action)
  if action=='crafting' and AZPCForeverProfession and AZPCForeverProfession.Show then AZPCForeverProfession.Show();return true
  elseif action=='sync' and AZPCForeverSyncStatus then return AZPCForeverSyncStatus.Show()
  elseif action=='setup' and AZPCForeverSetup then return AZPCForeverSetup.Show()
+ elseif action=='settings' and AZPCForeverSettings then return AZPCForeverSettings.Show()
  elseif action=='hide' then return minimap.SetHidden(true)end
  return false
 end
@@ -3371,7 +3380,7 @@ function minimap.ToggleMenu()
  if not button then return false end
  if not menu then
   menu=CreateFrame('Frame','AZPCForeverMinimapMenu',UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
-  menu:SetSize(212,198);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
+  menu:SetSize(212,232);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
   menu:SetMovable(true);menu:RegisterForDrag('LeftButton')
   local moving=false
   local function stopMoving()if moving then moving=false;menu:StopMovingOrSizing();saveMenuPosition()end end
@@ -3380,7 +3389,7 @@ function minimap.ToggleMenu()
   if menu.SetBackdrop then menu:SetBackdrop({bgFile='Interface/DialogFrame/UI-DialogBox-Background',edgeFile='Interface/DialogFrame/UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=20,insets={left=6,right=6,top=6,bottom=6}})end
   local title=menu:CreateFontString(nil,'OVERLAY','GameFontNormal');title:SetPoint('TOPLEFT',16,-17);title:SetText('|cff54dbd1AZPC|r')
   local close=CreateFrame('Button',nil,menu,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-2,-2)
-  for i,row in ipairs({{'Crafting','crafting'},{'Sync Status','sync'},{'Getting Started','setup'},{'Hide minimap icon','hide'}})do
+  for i,row in ipairs({{'Crafting','crafting'},{'Sync Status','sync'},{'Getting Started','setup'},{'Settings','settings'},{'Hide minimap icon','hide'}})do
    local action=row[2];local b=CreateFrame('Button',nil,menu,'UIPanelButtonTemplate');b:SetSize(180,28);b:SetPoint('TOPLEFT',16,-43-(i-1)*34);b:SetText(row[1]);b:SetScript('OnClick',function()minimap.Invoke(action)end)
   end
   menu:Hide();if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverMinimapMenu'end
@@ -3403,7 +3412,7 @@ function minimap.Initialize()
  button:SetScript('OnDragStop',function()button:SetScript('OnUpdate',nil);stopped=GetTime and GetTime() or -10 end)
  button:SetScript('OnClick',function()if GetTime and GetTime()-stopped<0.15 then return end;minimap.ToggleMenu()end)
  button:SetScript('OnEnter',function()
-  if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(button,'ANCHOR_LEFT');GameTooltip:AddLine('AZPC',0.33,0.86,0.82);GameTooltip:AddLine('Click: Crafting, Sync Status, Getting Started',1,1,1);GameTooltip:AddLine('Drag to move. /azpcf minimap hide to hide.',0.7,0.7,0.7);GameTooltip:Show()end
+  if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(button,'ANCHOR_LEFT');GameTooltip:AddLine('AZPC',0.33,0.86,0.82);GameTooltip:AddLine('Click: Crafting, Sync Status, Setup, Settings',1,1,1);GameTooltip:AddLine('Drag to move. /azpcf minimap hide to hide.',0.7,0.7,0.7);GameTooltip:Show()end
  end)
  button:SetScript('OnLeave',function()if GameTooltip then GameTooltip:Hide()end end)
  position();if settings().hidden then button:Hide()else button:Show()end;return true
@@ -3432,6 +3441,107 @@ end end
 end
 -- END AZPC MINIMAP MENU
 
+-- BEGIN AZPC USER SETTINGS
+do
+AZPCForeverSettings={}
+local settings=AZPCForeverSettings
+local defaults={tooltips='compact',ownership=true,reminders='popup'}
+local choices={tooltips={compact=true,detailed=true,off=true},reminders={popup=true,notification=true,both=true}}
+local panel,notice,refresh
+local function combat()return type(InCombatLockdown)=='function' and InCombatLockdown()end
+function settings.Get(key)
+ local p=AZPCForeverDB and AZPCForeverDB.preferences
+ local v;if type(p)=='table'then v=p[key]end
+ if key=='ownership' then if type(v)=='boolean'then return v end
+ elseif choices[key]and choices[key][v]then return v end
+ return defaults[key]
+end
+function settings.Set(key,value)
+ if key=='ownership' then if type(value)~='boolean'then return false end
+ elseif not choices[key]or not choices[key][value]then return false end
+ AZPCForeverDB=AZPCForeverDB or{};if type(AZPCForeverDB.preferences)~='table'then AZPCForeverDB.preferences={}end
+ AZPCForeverDB.preferences[key]=value
+ if key=='reminders' and value=='popup' and notice then notice:Hide()end
+ if refresh then refresh()end;return true
+end
+local function frame(name,w,h,title)
+ local f=CreateFrame('Frame',name,UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
+ f:SetSize(w,h);f:SetPoint('CENTER');f:SetFrameStrata('DIALOG');f:SetClampedToScreen(true);f:EnableMouse(true);f:SetMovable(true);f:RegisterForDrag('LeftButton')
+ f:SetScript('OnDragStart',function(self)if not combat()then self:StartMoving()end end);f:SetScript('OnDragStop',f.StopMovingOrSizing)
+ if f.SetBackdrop then f:SetBackdrop({bgFile='Interface/DialogFrame/UI-DialogBox-Background',edgeFile='Interface/DialogFrame/UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=24,insets={left=7,right=7,top=7,bottom=7}})end
+ local label=f:CreateFontString(nil,'OVERLAY','GameFontNormalLarge');label:SetPoint('TOPLEFT',24,-24);label:SetText('|cff54dbd1AZPC|r  |  '..title)
+ local close=CreateFrame('Button',nil,f,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-3,-3)
+ if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]=name end
+ return f
+end
+local function text(f,value,x,y,width,font)
+ local t=f:CreateFontString(nil,'OVERLAY',font or 'GameFontHighlightSmall');t:SetPoint('TOPLEFT',x,y);t:SetWidth(width);t:SetJustifyH('LEFT');t:SetText(value);return t
+end
+local function button(f,title,x,y,width,fn)
+ local b=CreateFrame('Button',nil,f,'UIPanelButtonTemplate');b:SetSize(width,28);b:SetPoint('TOPLEFT',x,y);b:SetText(title);b:SetScript('OnClick',fn);return b
+end
+function settings.Notify()
+ if combat()or not UIParent then return false end
+ if not notice then
+  notice=frame('AZPCForeverReloadNotice',350,150,'Ready to sync')
+  notice:ClearAllPoints();notice:SetPoint('TOP',UIParent,'TOP',0,-100)
+  text(notice,'New auction data captured. Reload to save it for your watcher.',24,-55,300)
+  button(notice,'Reload to Save',24,-102,170,function()if not combat()and type(ReloadUI)=='function'then ReloadUI()end end)
+  button(notice,'Later',205,-102,115,function()notice:Hide()end)
+ end
+ notice:Show();return true
+end
+function settings.ResetPositions()
+ if combat()then return false end
+ for _,name in ipairs({'AZPCForeverSettingsWindow','AZPCForeverSyncWindow','AZPCForeverSetupWindow'})do
+  local f=_G[name];if f then f:StopMovingOrSizing();f:ClearAllPoints();f:SetPoint('CENTER',UIParent,'CENTER',0,0)end
+ end
+ if notice then notice:StopMovingOrSizing();notice:ClearAllPoints();notice:SetPoint('TOP',UIParent,'TOP',0,-100)end
+ if AZPCForeverMinimap then AZPCForeverMinimap.Command('minimap reset')end
+ return true
+end
+function settings.Show()
+ if combat()then if print then print('AZPC: Open settings after combat.')end;return false end
+ if not UIParent then return false end
+ if not panel then
+  panel=frame('AZPCForeverSettingsWindow',580,410,'Settings')
+  text(panel,'Shared across all characters on this WoW account/client.',24,-56,530)
+  local controls={}
+  local function options(key,title,rows,y)
+   text(panel,title,24,y,530,'GameFontNormal')
+   for i,row in ipairs(rows)do
+    local value=row[2];local b=button(panel,row[1],24+(i-1)*177,y-25,165,function()settings.Set(key,value)end)
+    controls[#controls+1]={button=b,key=key,value=value,label=row[1]}
+   end
+  end
+  options('tooltips','ITEM TOOLTIPS',{{'Compact','compact'},{'Detailed','detailed'},{'Off','off'}},-90)
+  text(panel,'Compact: useful values only. Hold Shift before hovering for details.',24,-150,530,'GameFontDisableSmall')
+  local owned=CreateFrame('CheckButton',nil,panel,'UICheckButtonTemplate');owned:SetSize(26,26);owned:SetPoint('TOPLEFT',22,-174)
+  text(panel,'Show saved ownership counts in AZPC tooltips',54,-181,490)
+  owned:SetScript('OnClick',function(self)settings.Set('ownership',self:GetChecked()==true)end)
+  options('reminders','RELOAD REMINDERS',{{'Popup','popup'},{'Small notification','notification'},{'Both','both'}},-225)
+  text(panel,'Reminders save nothing automatically. You choose when to reload.',24,-285,530,'GameFontDisableSmall')
+  button(panel,'Reset window positions',24,-335,245,function()settings.ResetPositions()end)
+  button(panel,'Done',345,-335,210,function()panel:Hide()end)
+  refresh=function()
+   for _,r in ipairs(controls)do r.button:SetText((settings.Get(r.key)==r.value and '|cff54dbd1[x]|r 'or'')..r.label)end
+   owned:SetChecked(settings.Get('ownership'))
+  end
+  panel:SetScript('OnShow',refresh)
+ end
+ panel:Show();refresh();return true
+end
+if SlashCmdList then
+ local previous=SlashCmdList.AZPCFOREVER
+ SlashCmdList.AZPCFOREVER=function(command)
+  if (command or''):lower():match('^%s*settings%s*$')then return settings.Show()
+  elseif previous then return previous(command)end
+ end
+end
+end
+-- END AZPC USER SETTINGS
+
 -- AZPC WATCHER STATUS BEGIN
 AZPCForeverWatcherStatus = nil
 -- AZPC WATCHER STATUS END
+
