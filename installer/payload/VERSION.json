@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Amber missing-price material rows with individual Retry buttons. Exact-item retries retain other recipe prices and their scan age.",
+  "notes": "Restore the last learned recipe, profession filter and recipe search per character when returning to AZPC Crafting. Restored selections prompt for a price refresh without starting a scan.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.65"
+  "foreverAddonVersion": "0.2.66"
 }
