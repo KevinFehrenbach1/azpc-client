@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Make the craft prompt draggable and remember its position across characters and reloads.",
+  "notes": "Start the planned batch directly from the craft popup click and preserve the plan until the game confirms a cast.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.72"
+  "foreverAddonVersion": "0.2.73"
 }

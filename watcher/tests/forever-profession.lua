@@ -29,7 +29,7 @@ held[2589]=nil;assert(p.Model(recipe,1).rows[1].missing==nil);held[2589]=5
 local calls,name=0,nil
 AuctionHouseFrame={SearchBar={SetSearchText=function(_,v)name=v end,StartSearch=function()calls=calls+1 end}}
 assert(p.Search({itemId=2589})==false and calls==0,'no queries away from AH')
-local function emit(event)for _,e in ipairs(events)do if e[event]then e.handler(e,event)end end end
+local function emit(event,...)for _,e in ipairs(events)do if e[event]then e.handler(e,event,...)end end end
 emit('AUCTION_HOUSE_SHOW');assert(calls==0,'opening AH must not search automatically')
 assert(p.Search({itemId=2589}) and calls==1 and name=='Linen Cloth','one explicit search')
 combat=true;assert(not p.Search({itemId=2589}) and calls==1);combat=false
@@ -698,8 +698,8 @@ held[2589]=5;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.Craf
 held[2589]=6;combat=true;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.CraftPlanned());combat=false
 local actualCasts={};local nativeForm={currentRecipeInfo={recipeID=302}}
 ProfessionsFrame={IsShown=function()return true end,CraftingPage={SchematicForm=nativeForm}}
-C_TradeSkillUI.OpenRecipe=function(id)nativeForm.currentRecipeInfo={recipeID=id}end
-C_TradeSkillUI.CraftRecipe=function(id,n)actualCasts[#actualCasts+1]={id=id,n=n}end
+C_TradeSkillUI.OpenRecipe=function()error('popup must not open a profession menu')end
+C_TradeSkillUI.CraftRecipe=function(id,n)actualCasts[#actualCasts+1]={id=id,n=n};emit('UNIT_SPELLCAST_START','player','test-cast',id)end
 emit('TRADE_SKILL_SHOW');p.RefreshCraftPlan();assert(#actualCasts==0,'bag/profession events never craft')
 assert(p.CraftPlanned());assert(#actualCasts==1 and actualCasts[1].id==301 and actualCasts[1].n==3,'one click starts only the planned native batch')
 assert(not p.CraftPlan()and not prompt.shown and not p.CraftPlanned(),'consumed prompt cannot double craft')
@@ -727,3 +727,26 @@ AZPCForeverDB.craftPromptPosition={x=0/0,y=0.5}
 assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
 AZPCForeverProfession.RefreshCraftPlan();assert(AZPCForeverCraftReady.anchor[2]==0 and AZPCForeverCraftReady.anchor[3]==140,'invalid position falls back safely')
 print('PASS craft popup drag: combat guard, normalized UI scaling, shared account save, reload restore and invalid position fallback')
+
+-- A closed/unselected profession window is not an artificial blocker to the direct native request.
+assert(p.BuyMissing(planned,2))
+ProfessionsFrame=nil;TradeSkillFrame=nil;C_TradeSkillUI.GetRecipeInfo=function()return nil end
+local requested=0
+C_TradeSkillUI.CraftRecipe=function(id,n)requested=requested+1;assert(id==301 and n==2)end
+assert(p.CraftPlanned()and requested==1 and p.CraftPlan(),'request is not treated as confirmed casting')
+assert(not p.CraftPlanned()and requested==1 and not prompt.craft.enabled,'in-flight double click blocked')
+emit('UNIT_SPELLCAST_START','other','cast',301);assert(p.CraftPlan())
+emit('UNIT_SPELLCAST_START','player','cast',302);assert(p.CraftPlan(),'unrelated casts cannot consume plan')
+emit('UNIT_SPELLCAST_FAILED','player','cast',301);assert(p.CraftPlan()and prompt.craft.enabled,'failed start preserves plan')
+assert(p.CraftPlanned());local requestTimer=timeouts[#timeouts];requestTimer();assert(p.CraftPlan()and prompt.craft.enabled,'timeout preserves plan without retry')
+C_TradeSkillUI.CraftRecipe=function()error('restricted or unavailable')end
+assert(not p.CraftPlanned()and p.CraftPlan()and prompt.craft.enabled,'native exception preserves plan')
+C_TradeSkillUI.CraftRecipe=function()return false end
+assert(not p.CraftPlanned()and p.CraftPlan(),'native rejection preserves plan')
+C_TradeSkillUI.GetRecipeInfo=function()return {learned=false}end
+assert(not p.CraftPlanned(),'known unlearned recipe rejected')
+C_TradeSkillUI.GetRecipeInfo=function()return {learned=true}end
+C_TradeSkillUI.CraftRecipe=function()end
+assert(p.CraftPlanned());emit('UNIT_SPELLCAST_SUCCEEDED','player','cast',301);assert(not p.CraftPlan(),'instant matching craft confirms plan')
+requestTimer();assert(not p.CraftPlan(),'old timeout cannot restore or repeat consumed plan')
+print('PASS direct popup craft: no menu/selection prerequisite, explicit exact batch request, confirmation events, double-click guard, unrelated cast isolation, timeout/error/rejection retention and no automatic retry')
