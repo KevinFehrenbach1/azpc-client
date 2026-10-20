@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.65"
+local addon, VERSION = ..., "0.2.66"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1979,6 +1979,7 @@ do
     local completedQuotes={}
     local page,ensurePage,refreshBrowser
     local filterProfession,filterText=nil,''
+    local restoredSelection=false
     local tab='ah'
     local function notify(text)print('|cff4cddd4AZPC:|r '..text)end
     local function api(object,name,...)
@@ -2160,6 +2161,7 @@ do
         if queue then text=queue.status;complete=false
         elseif scan and scan.waiting then text=(data.quoteAt and 'Refreshing prices... (showing last scan)'or'Scanning prices...');complete=false
         elseif pendingAuto then text='Waiting for AH...';complete=false
+        elseif restoredSelection then text='Scan prices to refresh';complete=false
         elseif not selected then text='Choose a recipe to scan prices';complete=false
         elseif not selected.materialsKnown then text='Recipe materials unavailable';complete=false end
         p.market:SetText(text or 'Scanning prices...')
@@ -2188,6 +2190,7 @@ do
         scan.prices=prices;scan.available=available
         if api(C_AuctionHouse,'HasFullBrowseResults')==true then
             scan.waiting=false;scan.complete=true;scan.at=GetServerTime and GetServerTime() or time()
+            restoredSelection=false
             if scan.single then
                 -- A targeted retry updates one item without refreshing the age of retained prices.
                 local base=scan.base;local merged,stock={},{}
@@ -2780,6 +2783,32 @@ do
         local professions={};for name in pairs(names)do professions[#professions+1]=name end;table.sort(professions)
         return rows,professions
     end
+    local restoringBrowser,restorePending=false,false
+    local function saveBrowser(recipe)
+        if restoringBrowser then return end
+        local saved=favoriteScope(true);if not saved then return end
+        if type(saved.browser)~='table'then saved.browser={}end
+        saved.browser.profession=filterProfession
+        saved.browser.query=filterText:sub(1,100)
+        if ownedRecipe(recipe)and type(recipe.recipeId)=='number'and recipe.recipeId>0 and recipe.recipeId==math.floor(recipe.recipeId)then saved.browser.recipeId=recipe.recipeId end
+    end
+    local function restoreBrowser()
+        -- Opening a tab must never interrupt an active, explicitly requested operation.
+        if scan and scan.waiting or pendingAuto or purchaseQueue or purchaseAttempt then return false end
+        local saved=favoriteScope(false);local browser=saved and saved.browser
+        if type(browser)~='table'then return false end
+        restoringBrowser=true
+        local all,professions=catalog()
+        filterProfession=nil
+        if type(browser.profession)=='string'then for _,name in ipairs(professions)do if name==browser.profession then filterProfession=name;break end end end
+        filterText=type(browser.query)=='string'and browser.query:sub(1,100)or''
+        selected=nil;quantity=1;scan=nil
+        if type(browser.recipeId)=='number'then for _,r in ipairs(all)do if r.recipeId==browser.recipeId then selected=r;break end end end
+        restoredSelection=selected~=nil;restorePending=type(browser.recipeId)=='number'and selected==nil
+        if page and page.search then page.search:SetText(filterText)end
+        restoringBrowser=false
+        return selected~=nil
+    end
     local function captureCatalog(ids)
         if type(ids)~='table' or not C_TradeSkillUI or api(C_TradeSkillUI,'IsTradeSkillLinked') or api(C_TradeSkillUI,'IsTradeSkillGuild') or api(C_TradeSkillUI,'IsNPCCrafting') then return end
         local base=api(C_TradeSkillUI,'GetBaseProfessionInfo')
@@ -2803,11 +2832,13 @@ do
         who.profession=profession;who.recipes=recipes;who.observedAt=GetServerTime and GetServerTime() or time()
         local key=table.concat({who.character,who.realm,who.faction,who.region,profession},'|')
         AZPCForeverDB.professionCatalog[key]=who
+        if restorePending then restoreBrowser()end
         if refreshBrowser then refreshBrowser()end
     end
     local function selectRecipe(recipe)
         stopScan('Recipe changed. Scan prices again.');scan=nil
-        selected=recipe;quantity=1;tab='ah'
+        selected=recipe;quantity=1;tab='ah';restoredSelection=false;restorePending=false
+        saveBrowser(recipe)
         if refreshBrowser then refreshBrowser()end
         if render then render()end
         -- Only an explicit recipe selection starts a scan; refreshes stay passive.
@@ -2864,7 +2895,7 @@ do
             local button=page.menuRows[i]
             if not button then
                 button=uiButton(page.menu,'',196,24);button:SetPoint('TOPLEFT',4,-4-(i-1)*25)
-                button:SetScript('OnClick',function()filterProfession=button.value;page.menu:Hide();refreshBrowser()end)
+                button:SetScript('OnClick',function()filterProfession=button.value;saveBrowser();page.menu:Hide();refreshBrowser()end)
                 page.menuRows[i]=button
             end
             button.value=i>1 and name or nil;button:SetText(name);button:Show()
@@ -2895,7 +2926,7 @@ do
         button:SetScript('OnClick',function()
             owner:SetDisplayMode(mode)
             if owner.SetTitle then owner:SetTitle('AZPC Crafting')end
-            refreshBrowser();render()
+            restoreBrowser();refreshBrowser();render()
         end)
         page.tabButton=button
         font(page,'GameFontNormalLarge',64,-13,160):SetText('RECIPES')
@@ -2903,7 +2934,7 @@ do
         page.professionArrow=page.profession:CreateTexture(nil,'OVERLAY');page.professionArrow:SetTexture('Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up');page.professionArrow:SetSize(18,18);page.professionArrow:SetPoint('RIGHT',-5,0)
         page.profession:SetScript('OnClick',function()if page.menu:IsShown()then page.menu:Hide()else page.menu:Show()end end)
         page.search=CreateFrame('EditBox',nil,page,'BackdropTemplate');page.search:SetSize(212,29);page.search:SetPoint('TOPLEFT',12,-76);surface(page.search,0.03,0.04,0.04,{0.34,0.31,0.24});page.search:SetFontObject(GameFontHighlightSmall);if page.search.SetFont then page.search:SetFont('Fonts/FRIZQT__.TTF',12,'')end;page.search:SetTextInsets(8,8,0,0);page.search:SetAutoFocus(false);page.search:SetMaxLetters(100)
-        page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';refreshBrowser()end)
+        page.search:SetScript('OnTextChanged',function(self)filterText=self:GetText()or '';saveBrowser();refreshBrowser()end)
         page.search:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
         page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
         page.placeholder=font(page.search,'GameFontDisableSmall',8,-8,182);page.placeholder:SetText('Search recipes…')
@@ -2918,7 +2949,7 @@ do
         local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
-        page:SetScript('OnShow',function()refreshBrowser();render()end)
+        page:SetScript('OnShow',function()restoreBrowser();refreshBrowser();render()end)
         page:SetScript('OnHide',function()page.menu:Hide();cancelQueue();stopScan('Crafting tab closed. Scan prices again.')end)
         page.ready=true
         page:Hide();refreshBrowser()
@@ -2963,7 +2994,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)

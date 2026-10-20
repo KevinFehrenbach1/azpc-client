@@ -571,7 +571,26 @@ assert(not p.IsFavorite(fav)and #p.Catalog(nil,'',true)==0 and page.empty.text:f
 page.allRecipes:GetScript('OnClick')();assert(not p.FavoritesOnly());page.recipeRows[1].favorite:GetScript('OnClick')();fav=page.recipeRows[1].recipe;assert(p.IsFavorite(fav))
 assert(grouped==beforeFavorite,'star and filter clicks never start price queries')
 p.SetFavoritesOnly(true)
+-- Browser selection and filters are restored passively after an AH reopen.
+p.Select(fav)
+local choices=page.menuRows
+for _,option in ipairs(choices)do if option.value==fav.profession then option:GetScript('OnClick')();break end end
+page.search:SetText(fav.name);page.search:GetScript('OnTextChanged')(page.search)
+emit('AUCTION_HOUSE_CLOSED');emit('AUCTION_HOUSE_SHOW')
+local queriesBeforeRestore=#retryQueries;p.Show()
+assert(panel.name.text==fav.name and page.search.text==fav.name and page.profession.text==fav.profession and p.FavoritesOnly(),'restore selection and all filters')
+assert(#retryQueries==queriesBeforeRestore and panel.market.text=='Scan prices to refresh','opening saved recipe never scans or claims fresh prices')
+local savedBrowser
+for _,scope in pairs(AZPCForeverDB.recipeFavorites)do if scope.browser and scope.browser.recipeId==fav.recipeId then savedBrowser=scope.browser end end
+assert(savedBrowser and savedBrowser.query==fav.name and savedBrowser.profession==fav.profession)
+local oldRecipe=savedBrowser.recipeId;savedBrowser.recipeId=99999999
+assert(not p.RestoreBrowser(),'removed/unknown recipe never restores a stale catalog object');assert(savedBrowser.recipeId==99999999,'temporary missing catalog does not erase saved choice');savedBrowser.recipeId=oldRecipe
+assert(p.RestoreBrowser())
+local oldWho=UnitName;UnitName=function()return 'Other'end;assert(not p.RestoreBrowser(),'other characters cannot restore this browser state');UnitName=oldWho
+assert(savedBrowser.recipeId==oldRecipe and #retryQueries==queriesBeforeRestore)
+print('PASS browser restore: selection, profession/search/favorites filters, AH reopen, no queries, refresh prompt, missing catalog preservation and character isolation')
 assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
 local restored=AZPCForeverProfession;assert(restored.IsFavorite(fav)and restored.FavoritesOnly(),'favorites and filter survive module reload')
+assert(restored.RestoreBrowser()and savedBrowser.query==fav.name,'browser state survives module reload without a scan');assert(#retryQueries==queriesBeforeRestore)
 assert(#(AZPCForeverDB.trades or{})==tradeCount and fav.name==recipeName,'favorites do not edit captured data')
 print('PASS favorites: stars, filtering/search/profession composition, no scans, empty/unstar behavior, per-character/realm/faction isolation, stable IDs and reload persistence')
