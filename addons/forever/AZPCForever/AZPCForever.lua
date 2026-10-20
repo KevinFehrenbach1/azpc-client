@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.75"
+local addon, VERSION = ..., "0.2.76"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2836,6 +2836,14 @@ do
         end
         return math.floor(output*95/100)*recipe.outputMin-total
     end
+    local function profitDisplay(recipe)
+        local value=sortProfit(recipe)
+        if value==nil then return 'No data',0.55,0.6,0.6 end
+        local text='Est. '..(value>0 and '+'or'')..money(value,9)
+        if value>0 then return text,0.48,0.88,0.62
+        elseif value<0 then return text,1,0.4,0.4 end
+        return text,0.65,0.7,0.7
+    end
     local function sortRecipes(rows,mode,bagCounts)
         local ranked,values={},{}
         for i,r in ipairs(rows)do
@@ -3098,6 +3106,7 @@ do
         for _,button in ipairs(page.recipeRows)do button:Hide()end
         for _,header in pairs(page.categoryRows)do header:Hide()end
         local positions,y={},0
+        page.nextProfitExpiry=nil
         local displayGroups=mode=='name'and recipeGroups(rows)or{{key='sort:'..mode,name=sortLabels[mode],recipes=rows}}
         for _,group in ipairs(displayGroups)do
             local header=page.categoryRows[group.key]
@@ -3109,19 +3118,21 @@ do
             end
             header.key=group.key;header.label:SetText(group.name);header.symbol:SetText(mode=='name'and(categoryClosed(group.key)and'+'or'-')or'')
             header:ClearAllPoints();header:SetPoint('TOPLEFT',0,-y);header:Show();y=y+25
-            if mode~='name'or not categoryClosed(group.key)then for _,recipe in ipairs(group.recipes)do positions[recipe]=y;y=y+26 end end
+            if mode~='name'or not categoryClosed(group.key)then for _,recipe in ipairs(group.recipes)do positions[recipe]=y;y=y+38 end end
             y=y+5
         end
         for i,recipe in ipairs(rows)do
             local button=page.recipeRows[i]
             if not button then
-                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(204,25)
+                button=CreateFrame('Button',nil,page.listChild,'BackdropTemplate');button:SetSize(204,37)
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
-                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(16,16);button.icon:SetPoint('LEFT',10,0)
+                button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(16,16);button.icon:SetPoint('TOPLEFT',10,-4)
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(25,25);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
                 button.name=font(button,'GameFontHighlightSmall',32,-7,118);typography(button.name,'GameFontHighlightSmall',11);if button.name.SetWordWrap then button.name:SetWordWrap(false)end
                 button.craftCount=font(button,'GameFontHighlightSmall',151,-7,26);button.craftCount:SetJustifyH('RIGHT')
-                button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(24,25);button.favorite:SetPoint('TOPRIGHT',0,0)
+                button.profit=font(button,'GameFontHighlightSmall',32,-22,145);typography(button.profit,'GameFontHighlightSmall',10);if button.profit.SetWordWrap then button.profit:SetWordWrap(false)end
+                button.profit:SetHeight(12)
+                button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(24,37);button.favorite:SetPoint('TOPRIGHT',0,0)
                 button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(14,14);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar');button.favoriteIcon:SetTexCoord(0,0.5,0,0.5)
                 button.favorite:SetScript('OnClick',function()toggleFavorite(button.recipe)end)
                 button.favorite:SetScript('OnEnter',function(self)if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(self,'ANCHOR_RIGHT');GameTooltip:AddLine(isFavorite(button.recipe)and'Remove from Favorites'or'Add to Favorites',1,0.82,0.35);GameTooltip:Show()end end)
@@ -3131,6 +3142,11 @@ do
                 page.recipeRows[i]=button
             end
             button.recipe=recipe;button.name:SetText(recipe.name)
+            local estimate,r,g,b=profitDisplay(recipe);button.profit:SetText(estimate);button.profit:SetTextColor(r,g,b)
+            local completed=completedQuotes[recipeKey(recipe)]
+            local expiry=completed and completed.at and completed.at+21601
+            local now=GetServerTime and GetServerTime()or time()
+            if expiry and expiry>now and(not page.nextProfitExpiry or expiry<page.nextProfitExpiry)then page.nextProfitExpiry=expiry end
             local available=craftableCount(recipe,bagCounts)
             button.craftCount:SetText(available and available>0 and ('['..available..']')or'')
             if available and available>0 then button.craftCount:SetTextColor(0.48,0.88,0.62)else button.craftCount:SetTextColor(0.55,0.6,0.6)end
@@ -3217,6 +3233,12 @@ do
         page.stopAll=uiButton(page,'Stop',62,24);page.stopAll:SetPoint('BOTTOMLEFT',158,8);page.stopAll:SetScript('OnClick',stopBatch)
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
+        local ageElapsed=0
+        page:SetScript('OnUpdate',function(_,delta)
+            ageElapsed=ageElapsed+delta;if ageElapsed<1 then return end;ageElapsed=0
+            local now=GetServerTime and GetServerTime()or time()
+            if page.nextProfitExpiry and now>=page.nextProfitExpiry then refreshBrowser()end
+        end)
         page:SetScript('OnShow',function()restoreBrowser();refreshBrowser();render()end)
         page:SetScript('OnHide',function()page.menu:Hide();page.filters:Hide();cancelQueue();stopScan('Crafting tab closed. Scan prices again.')end)
         page.ready=true
@@ -3262,7 +3284,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,StartScanAll=startBatch,StopScanAll=stopBatch,AdvanceScanAll=advanceBatch,ScanAllState=function()return batchScan end,CraftPlan=craftPlan,PlannedCraftEvent=plannedCraftEvent,RefreshCraftPlan=refreshCraftPlan,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,StartScanAll=startBatch,StopScanAll=stopBatch,AdvanceScanAll=advanceBatch,ScanAllState=function()return batchScan end,CraftPlan=craftPlan,PlannedCraftEvent=plannedCraftEvent,RefreshCraftPlan=refreshCraftPlan,ProfitDisplay=profitDisplay,SortRecipes=sortRecipes,SortMode=sortMode,SetSortMode=setSortMode,RecipeGroups=recipeGroups,ToggleCategory=toggleCategory,CategoryClosed=categoryClosed,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'UNIT_SPELLCAST_START','UNIT_SPELLCAST_SUCCEEDED','UNIT_SPELLCAST_FAILED','UNIT_SPELLCAST_INTERRUPTED','PLAYER_LOGIN','PLAYER_REGEN_ENABLED','PLAYER_REGEN_DISABLED','TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total,spellId)

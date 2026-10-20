@@ -552,9 +552,20 @@ assert(not retryRow.retryButton.shown and retryRow.unit.shown and retryRow.butto
 -- Publish a complete quote using the same production scan path as the material Retry tests.
 assert(p.SearchAll(recipe));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}};full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
 local profit=p.Quote(recipe,1).ahProfit;assert(profit~=nil)
+local display,red,green=p.ProfitDisplay(recipe);assert(display:find('Est. +',1,true)and green>red,'positive per-craft estimate is green')
+assert(profit==160 and display:find('60',1,true)and display:find('Silver',1,true),'matches existing single craft profit after AH cut')
+local unknownDisplay=p.ProfitDisplay({recipeId=999999});assert(unknownDisplay=='No data')
+
 local unpriced={name='AAA no scan',recipeId=99999,materialsKnown=true,reagents=recipe.reagents,outputItemId=2996,outputMin=1,outputMax=1}
 ranked=p.SortRecipes({unpriced,recipe},'profit',{});assert(ranked[1]==recipe,'complete quotes rank before unknown even if name sorts later')
 local oldTime=moneyNow;moneyNow=moneyNow+21601;ranked=p.SortRecipes({recipe,unpriced},'profit',{});assert(ranked[1]==unpriced,'stale quotes are unknown and use name tie-break');moneyNow=oldTime
+local rowProfitQueries=#retryQueries
+local displayTime=moneyNow;moneyNow=moneyNow+21601;assert(p.ProfitDisplay(recipe)=='No data','expired estimate is never shown as current');moneyNow=displayTime
+assert(p.SearchAll(recipe));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=100,totalQuantity=10}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+local loss,lossR,lossG=p.ProfitDisplay(recipe);assert(loss:find('Est. -',1,true)and lossR>lossG,'loss uses red and a minus sign')
+assert(p.SearchAll(recipe));results={{itemKey={itemID=2589},minPrice=190,totalQuantity=100},{itemKey={itemID=2320},minPrice=0,totalQuantity=100},{itemKey={itemID=2996},minPrice=400,totalQuantity=10}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.ProfitDisplay(recipe)=='No data','missing zero-price material is not a free material estimate')
+emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY');emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+print('PASS recipe row profit: same per-craft AH-cut math, gains/loss colors and signs, unknown/stale/missing data guards')
 missingQuote();oldAt=p.Quote(recipe,1).quoteAt;assert(p.RetryMaterial(2320));results={};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1 and p.Quote(recipe,1).quoteAt==oldAt,'empty exact result cannot invent a price or refresh other values')
 assert(p.RetryMaterial(2320));results={{itemKey={itemID=999},minPrice=1,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1,'unrelated results rejected')
 assert(p.RetryMaterial(2320));for _,fn in ipairs(timeouts)do fn()end;assert(p.Quote(recipe,1).pricedMaterials==1,'timeout preserves quote')
@@ -740,3 +751,7 @@ resumed.PlannedCraftEvent('UNIT_SPELLCAST_SUCCEEDED','player','persisted-cast',3
 resumed.PlannedCraftEvent('UNIT_SPELLCAST_SUCCEEDED','player','last-cast',301);assert(not resumed.CraftPlan()and not resumedPrompt.shown)
 assert(nativeCraftCalls==0,'popup completion tracking never invokes crafting')
 print('PASS partial batch restore: saved count and cast IDs survive reload; final manual craft dismisses popup without native craft requests')
+
+local row=page.recipeRows[1];assert(row.profit and row.profit.fontSize==10 and row.profit.wordWrap==false and row.profit.height==12)
+assert(page:GetScript('OnUpdate'),'visible price expiry refresh is installed')
+print('PASS row layout: compact secondary estimate with fixed height and no wrapping, existing star and craft counts retained')
