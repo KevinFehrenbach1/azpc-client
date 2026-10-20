@@ -50,8 +50,8 @@ print('PASS: batch math, missing quantities, unknown/stale profit, character iso
 UIParent={}
 local function widget()
  local w={scripts={},shown=true}
- for _,method in ipairs({'SetTexCoord','SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints','SetFont','SetShadowColor','SetShadowOffset'})do w[method]=function()end end
- function w:SetPoint(point,relative)assert(relative~=self,'a frame must never anchor to itself')end
+ for _,method in ipairs({'SetClampedToScreen','SetTexCoord','SetSize','SetPoint','SetFrameStrata','SetBackdrop','SetBackdropColor','SetBackdropBorderColor','SetMovable','EnableMouse','RegisterForDrag','SetWidth','SetJustifyH','SetScrollChild','SetHeight','StartMoving','StopMovingOrSizing','SetID','SetAutoFocus','SetMaxLetters','SetFrameLevel','ClearFocus','SetAlpha','SetFontString','SetTextColor','SetVertexColor','SetFontObject','SetNumeric','SetTextInsets','ClearAllPoints','SetFont','SetShadowColor','SetShadowOffset'})do w[method]=function()end end
+ function w:SetPoint(point,relative,anchor,x,y)assert(relative~=self,'a frame must never anchor to itself');self.anchor={point,relative,anchor,x,y}end
  function w:SetFont(_,size)self.fontSize=size end
  function w:SetWordWrap(value)self.wordWrap=value end
  function w:SetHeight(value)self.height=value end
@@ -709,3 +709,21 @@ assert(AZPCForeverProfession.CraftPlan().batch==2,'plan survives reload')
 local planName=UnitName;UnitName=function()return 'Other'end;assert(not AZPCForeverProfession.CraftPlan());UnitName=planName
 prompt.later:GetScript('OnClick')();assert(not p.CraftPlan(),'Dismiss clears the pending batch')
 print('PASS craft prompt: exact planned quantity, insufficient bags/combat guards, no background crafts, explicit native batch, no repeated craft, reload persistence and character isolation')
+
+-- Craft popup position is shared account-wide, normalized for UI scale, and restored on reload.
+assert(p.BuyMissing(planned,2));prompt=AZPCForeverCraftReady
+UIParent.GetWidth=function()return 1920 end;UIParent.GetHeight=function()return 1080 end;UIParent.GetEffectiveScale=function()return 1 end
+prompt.GetCenter=function()return 960,540 end;prompt.GetEffectiveScale=function()return 0.8 end
+local moving,stopped=0,0;prompt.StartMoving=function()moving=moving+1 end;prompt.StopMovingOrSizing=function()stopped=stopped+1 end
+combat=true;prompt:GetScript('OnDragStart')();prompt:GetScript('OnDragStop')();assert(moving==0 and not AZPCForeverDB.craftPromptPosition);combat=false
+prompt:GetScript('OnDragStart')();prompt:GetScript('OnDragStop')()
+assert(moving==1 and stopped==1 and AZPCForeverDB.craftPromptPosition.x==0.4 and AZPCForeverDB.craftPromptPosition.y==0.4)
+local sharedPosition=AZPCForeverDB.craftPromptPosition
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+AZPCForeverProfession.RefreshCraftPlan();local reloadedPrompt=AZPCForeverCraftReady
+assert(reloadedPrompt.anchor[2]==UIParent and reloadedPrompt.anchor[3]=='BOTTOMLEFT'and reloadedPrompt.anchor[4]==768 and reloadedPrompt.anchor[5]==432,'saved scaled center restored')
+assert(AZPCForeverDB.craftPromptPosition==sharedPosition,'position belongs to shared DB rather than character plan')
+AZPCForeverDB.craftPromptPosition={x=0/0,y=0.5}
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+AZPCForeverProfession.RefreshCraftPlan();assert(AZPCForeverCraftReady.anchor[2]==0 and AZPCForeverCraftReady.anchor[3]==140,'invalid position falls back safely')
+print('PASS craft popup drag: combat guard, normalized UI scaling, shared account save, reload restore and invalid position fallback')

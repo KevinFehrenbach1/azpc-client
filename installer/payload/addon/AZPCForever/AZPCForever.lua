@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.71"
+local addon, VERSION = ..., "0.2.72"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2939,7 +2939,26 @@ do
         else batchScan=nil end
         if refreshBrowser then refreshBrowser()end
     end
-    local craftPrompt
+    local craftPrompt,craftPromptMoving
+    local function restoreCraftPosition()
+        local db=AZPCForeverDB or{};local pos=db.craftPromptPosition
+        craftPrompt:ClearAllPoints()
+        local w,h=api(UIParent,'GetWidth'),api(UIParent,'GetHeight')
+        if type(pos)=='table'and type(pos.x)=='number'and type(pos.y)=='number'and pos.x==pos.x and pos.y==pos.y and pos.x>=0 and pos.x<=1 and pos.y>=0 and pos.y<=1 and w and h and w>0 and h>0 then
+            craftPrompt:SetPoint('CENTER',UIParent,'BOTTOMLEFT',pos.x*w,pos.y*h)
+        else craftPrompt:SetPoint('CENTER',0,140)end
+    end
+    local function stopCraftDrag()
+        if not craftPromptMoving then return end
+        craftPromptMoving=false;craftPrompt:StopMovingOrSizing()
+        local x,y=craftPrompt:GetCenter();local w,h=api(UIParent,'GetWidth'),api(UIParent,'GetHeight')
+        local scale=api(craftPrompt,'GetEffectiveScale');local parentScale=api(UIParent,'GetEffectiveScale')
+        if not x or not y or not w or not h or w<=0 or h<=0 or not scale or not parentScale or parentScale<=0 or scale<=0 then return end
+        x=x*scale/parentScale/w;y=y*scale/parentScale/h
+        if x==x and y==y and x>=0 and x<=1 and y>=0 and y<=1 then
+            AZPCForeverDB=AZPCForeverDB or{};AZPCForeverDB.craftPromptPosition={x=x,y=y};restoreCraftPosition()
+        end
+    end
     local function craftPlan()
         local saved=favoriteScope(false);local plan=saved and saved.craftPlan
         if type(plan)=='table'and ownedRecipe(plan.recipe)and number(plan.batch)and plan.batch>0 and plan.batch<=999 then return plan end
@@ -2968,6 +2987,10 @@ do
         if not UIParent then return end
         if not craftPrompt then
             craftPrompt=CreateFrame('Frame','AZPCForeverCraftReady',UIParent,'BackdropTemplate');craftPrompt:SetSize(304,132);craftPrompt:SetPoint('CENTER',0,140);surface(craftPrompt,0.035,0.05,0.05);craftPrompt:SetFrameStrata('DIALOG');craftPrompt:EnableMouse(true)
+            craftPrompt:SetMovable(true);craftPrompt:SetClampedToScreen(true);craftPrompt:RegisterForDrag('LeftButton')
+            craftPrompt:SetScript('OnDragStart',function()if not(InCombatLockdown and InCombatLockdown())then craftPromptMoving=true;craftPrompt:StartMoving()end end)
+            craftPrompt:SetScript('OnDragStop',stopCraftDrag);craftPrompt:SetScript('OnHide',stopCraftDrag)
+            restoreCraftPosition()
             craftPrompt.title=uiText(craftPrompt,'GameFontNormal',14,-14,276)
             craftPrompt.detail=uiText(craftPrompt,'GameFontHighlightSmall',14,-39,276);craftPrompt.detail:SetHeight(40)
             craftPrompt.craft=uiButton(craftPrompt,'Craft All',150,26,true);craftPrompt.craft:SetPoint('BOTTOMLEFT',14,14);craftPrompt.craft:SetScript('OnClick',craftPlanned)
