@@ -61,6 +61,8 @@ local function widget()
  function w:GetScript(event)return self.scripts[event]end
  function w:HookScript(event,fn)local old=self.scripts[event];self.scripts[event]=function(...)if old then old(...)end;fn(...)end end
  function w:CreateTexture()local t=widget();function t:SetTexture(v)self.texture=v end;return t end
+ function w:SetChecked(value)self.checked=value end
+ function w:GetChecked()return self.checked end
  function w:SetEnabled(value)self.enabled=value end
  function w:SetScript(event,fn)self.scripts[event]=fn end
  function w:Show()self.shown=true end
@@ -594,3 +596,33 @@ local restored=AZPCForeverProfession;assert(restored.IsFavorite(fav)and restored
 assert(restored.RestoreBrowser()and savedBrowser.query==fav.name,'browser state survives module reload without a scan');assert(#retryQueries==queriesBeforeRestore)
 assert(#(AZPCForeverDB.trades or{})==tradeCount and fav.name==recipeName,'favorites do not edit captured data')
 print('PASS favorites: stars, filtering/search/profession composition, no scans, empty/unstar behavior, per-character/realm/faction isolation, stable IDs and reload persistence')
+-- Craftable recipes use live player bag counts, never saved bank/alt positions.
+held[2589]=6;held[2320]=3
+local can={materialsKnown=true,reagents={{itemId=2589,quantity=2},{itemId=2320,quantity=1}}}
+assert(p.CraftableCount(can)==3,'limiting reagent determines whole crafts')
+local duplicate={materialsKnown=true,reagents={{itemId=2589,quantity=2},{itemId=2589,quantity=2}}};assert(p.CraftableCount(duplicate)==1,'repeated reagent requirements are combined')
+assert(p.CraftableCount({materialsKnown=false,reagents=can.reagents})==nil)
+assert(p.CraftableCount({materialsKnown=true,reagents={}})==nil)
+assert(p.CraftableCount({materialsKnown=true,reagents={{itemId=2589,quantity=0}}})==nil)
+held[2320]=nil;assert(p.CraftableCount(can)==nil,'unavailable bag count is not invented');held[2320]=0;assert(p.CraftableCount(can)==0,'zero in bags cannot use bank or alt stock');held[2320]=3
+local getCountBefore=GetItemCount;local callsById={}
+GetItemCount=function(id,bank,uses,reagentBank)assert(bank==false and uses==false and reagentBank==false,'never include banks');callsById[id]=(callsById[id]or 0)+1;return held[id]end
+local cache={};assert(p.CraftableCount(can,cache)==3 and p.CraftableCount(can,cache)==3);assert(callsById[2589]==1 and callsById[2320]==1,'one live count per unique reagent per refresh')
+GetInventoryItemID=function(_,slot)if slot==1 then return 2589 end end
+GetInventoryItemCount=function()return 1 end
+assert(p.CraftableCount(can)==2,'equipped copies do not count as bag materials')
+GetInventoryItemID=nil;GetInventoryItemCount=nil;GetItemCount=getCountBefore
+local beforeCraftFilter=#retryQueries;page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);page.menuRows[1]:GetScript('OnClick')();p.SetFavoritesOnly(false)
+page.canCraft.checked=true;page.canCraft:GetScript('OnClick')(page.canCraft)
+assert(p.CraftableOnly()and #p.Catalog(nil,'',false,true)==2,'ready filter excludes unresolved learned recipes')
+assert(page.recipeRows[1].craftCount.text=='Can craft 3')
+held[2589]=0;emit('BAG_UPDATE_DELAYED');assert(page.empty.text:find('No matching recipes ready',1,true),'bag changes refresh the ready filter')
+assert(#p.Catalog(nil,'',false,true)==0 and #retryQueries==beforeCraftFilter,'filtering and bag refresh never query AH')
+held[2589]=6;p.SetCraftableOnly(false);assert(not p.CraftableOnly())
+local readyRecipe=p.Catalog()[1];if not p.IsFavorite(readyRecipe)then p.ToggleFavorite(readyRecipe)end
+assert(#p.Catalog(readyRecipe.profession,readyRecipe.name,true,true)==1,'ready combines with favorites, profession and text search')
+p.SetCraftableOnly(true)
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+assert(AZPCForeverProfession.CraftableOnly(),'ready filter preference survives reload')
+local whoBefore=UnitName;UnitName=function()return 'Other'end;assert(not AZPCForeverProfession.CraftableOnly(),'ready preference is per character');UnitName=whoBefore
+print('PASS craftable: limiting/duplicate reagents, unknown/zero guards, bags-only counts, equipped exclusion, per-refresh cache, filter controls, passive bag refresh, combined filters and saved preference')

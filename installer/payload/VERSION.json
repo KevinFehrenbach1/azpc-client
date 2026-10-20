@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Restore the last learned recipe, profession filter and recipe search per character when returning to AZPC Crafting. Restored selections prompt for a price refresh without starting a scan.",
+  "notes": "Can craft now filter and per-recipe craftable counts using current character bag materials only.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.66"
+  "foreverAddonVersion": "0.2.67"
 }
