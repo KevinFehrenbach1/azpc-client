@@ -674,3 +674,38 @@ assert(AZPCForeverProfession.SortMode()=='profit','sort persists per character')
 local oldName=UnitName;UnitName=function()return 'Other'end;assert(AZPCForeverProfession.SortMode()=='name');UnitName=oldName
 assert(#retryQueries==afterScan,'sort controls and restored preferences never query AH')
 print('PASS recipe sorting: ranked bag counts, unknown/zero, complete vs missing/stale quotes, passive controls, stable source order and saved character preference')
+
+-- Sequential scan uses every learned recipe even when favorites/search hide them.
+AZPCForeverDB.professionCatalog={test={profession='Tailoring',character='Phillip',realm='Classic Beta PvP 2',faction='horde',region=90,recipes={nativeRecords[301],nativeRecords[302],nativeRecords[303]}}};AZPCForeverDB.crafting.recipes={}
+p.SetFavoritesOnly(true);page.search:SetText('No matching recipe');page.search:GetScript('OnTextChanged')(page.search)
+assert(p.StartScanAll());local batch=p.ScanAllState();assert(#batch.recipes==3)
+ready=false;local batchQueries=#retryQueries;p.AdvanceScanAll(1);assert(#retryQueries==batchQueries,'throttle prevents dispatch')
+ready=true;p.AdvanceScanAll(1);assert(#retryQueries==batchQueries+1 and p.ScanAllState().active)
+p.AdvanceScanAll(1);assert(#retryQueries==batchQueries+1,'only one search in flight')
+results={{itemKey={itemID=2589},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=100,totalQuantity=100}};full=true
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');p.AdvanceScanAll(0.5);assert(p.ScanAllState().index==2)
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');p.AdvanceScanAll(0.5);assert(p.ScanAllState().index==3)
+emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');p.AdvanceScanAll(0.5);assert(not p.ScanAllState()and page.scanAll.enabled)
+assert(p.StartScanAll());p.StopScanAll();assert(not p.ScanAllState())
+assert(p.StartScanAll());combat=true;p.AdvanceScanAll(1);assert(not p.ScanAllState());combat=false
+assert(p.StartScanAll());emit('AUCTION_HOUSE_CLOSED');assert(not p.ScanAllState()and not p.StartScanAll());emit('AUCTION_HOUSE_SHOW')
+print('PASS scan all: all learned recipes despite filters, sequential dispatch, throttle, progress, completion, explicit stop, combat and AH closure')
+-- Buying remembers the exact recipe/batch; readiness is bags-only and requires a user click.
+held[2589]=6;local planned=nativeRecords[301]
+assert(p.BuyMissing(planned,3));assert(p.CraftPlan()and p.CraftPlan().batch==3)
+local prompt=AZPCForeverCraftReady;assert(prompt.shown and prompt.craft.enabled)
+held[2589]=5;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.CraftPlanned(),'insufficient actual bags cannot craft')
+held[2589]=6;combat=true;p.RefreshCraftPlan();assert(not prompt.craft.enabled and not p.CraftPlanned());combat=false
+local actualCasts={};local nativeForm={currentRecipeInfo={recipeID=302}}
+ProfessionsFrame={IsShown=function()return true end,CraftingPage={SchematicForm=nativeForm}}
+C_TradeSkillUI.OpenRecipe=function(id)nativeForm.currentRecipeInfo={recipeID=id}end
+C_TradeSkillUI.CraftRecipe=function(id,n)actualCasts[#actualCasts+1]={id=id,n=n}end
+emit('TRADE_SKILL_SHOW');p.RefreshCraftPlan();assert(#actualCasts==0,'bag/profession events never craft')
+assert(p.CraftPlanned());assert(#actualCasts==1 and actualCasts[1].id==301 and actualCasts[1].n==3,'one click starts only the planned native batch')
+assert(not p.CraftPlan()and not prompt.shown and not p.CraftPlanned(),'consumed prompt cannot double craft')
+assert(p.BuyMissing(planned,2));assert(p.CraftPlan().batch==2)
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+assert(AZPCForeverProfession.CraftPlan().batch==2,'plan survives reload')
+local planName=UnitName;UnitName=function()return 'Other'end;assert(not AZPCForeverProfession.CraftPlan());UnitName=planName
+prompt.later:GetScript('OnClick')();assert(not p.CraftPlan(),'Dismiss clears the pending batch')
+print('PASS craft prompt: exact planned quantity, insufficient bags/combat guards, no background crafts, explicit native batch, no repeated craft, reload persistence and character isolation')
