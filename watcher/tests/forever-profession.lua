@@ -258,7 +258,7 @@ page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);asse
 print('PASS: unified scan action, aligned quantity/price fields, editable batch and search placeholder')
 
 assert(AZPCForeverCraftingPage.professionArrow,'profession dropdown uses a native texture instead of an unsupported glyph')
-assert(panel.iconBorder and panel.cards[1].azpcSheen,'item framing and card surface details are present')
+assert(panel.iconBorder and not panel.cards[1].azpcSheen,'item framing is preserved while summary rows are flat')
 assert(not panel.cost.text:find('UI-GoldIcon',1,true),'small values omit zero gold denomination')
 print('PASS: native dropdown arrow, framed item header, card surface details and compact coin denominations')
 
@@ -458,7 +458,7 @@ recipeButton:GetScript('OnHide')(recipeButton);assert(not tooltipShown,'hidden i
 assert(grouped==beforeHover,'hovering never sends an AH query')
 GameTooltip=nil;assert(pcall(panel.itemHover:GetScript('OnEnter'),panel.itemHover),'missing tooltip API is harmless')
 for _,card in ipairs(panel.cards)do
- assert(card.value.fontSize==16 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
+ assert(card.value.fontSize==13 and card.value.wordWrap==false and card.value.height==24,'compact one-line values stay clear of helper text')
 end
 print('PASS: output/material/recipe tooltips, dynamic reused rows, ownership, passive hover and compact non-wrapping summary values')
 
@@ -615,7 +615,7 @@ GetInventoryItemID=nil;GetInventoryItemCount=nil;GetItemCount=getCountBefore
 local beforeCraftFilter=#retryQueries;page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);page.menuRows[1]:GetScript('OnClick')();p.SetFavoritesOnly(false)
 page.canCraft.checked=true;page.canCraft:GetScript('OnClick')(page.canCraft)
 assert(p.CraftableOnly()and #p.Catalog(nil,'',false,true)==2,'ready filter excludes unresolved learned recipes')
-assert(page.recipeRows[1].craftCount.text=='Can craft 3')
+assert(page.recipeRows[1].craftCount.text=='[3]')
 held[2589]=0;emit('BAG_UPDATE_DELAYED');assert(page.empty.text:find('No matching recipes ready',1,true),'bag changes refresh the ready filter')
 assert(#p.Catalog(nil,'',false,true)==0 and #retryQueries==beforeCraftFilter,'filtering and bag refresh never query AH')
 held[2589]=6;p.SetCraftableOnly(false);assert(not p.CraftableOnly())
@@ -626,3 +626,24 @@ assert((loadstring or load)('return function(currentRegion,number)'..block..'end
 assert(AZPCForeverProfession.CraftableOnly(),'ready filter preference survives reload')
 local whoBefore=UnitName;UnitName=function()return 'Other'end;assert(not AZPCForeverProfession.CraftableOnly(),'ready preference is per character');UnitName=whoBefore
 print('PASS craftable: limiting/duplicate reagents, unknown/zero guards, bags-only counts, equipped exclusion, per-refresh cache, filter controls, passive bag refresh, combined filters and saved preference')
+-- Blizzard category names/order are UI metadata; capture evidence stays untouched.
+local nativeRecords={}
+for id,name in pairs({[301]='Bolt Sample',[302]='Linen Bag Sample',[303]='Specialty Bag Sample'})do nativeRecords[id]={recipeId=id,name=name,profession='Tailoring',character='Phillip',realm='Classic Beta PvP 2',faction='horde',region=90,materialsKnown=true,outputItemId=2996,reagents={{itemId=2589,quantity=2}},outputMin=1,outputMax=1}end
+C_TradeSkillUI={GetBaseProfessionInfo=function()return {professionName='Tailoring'}end,GetRecipeInfo=function(id)if nativeRecords[id]then return {name=nativeRecords[id].name,learned=true,categoryID=id-300}end end,GetCategoryInfo=function(id)return ({[1]={name='Reagents',uiOrder=1},[2]={name='Bags',uiOrder=2},[3]={name='Specialty Bags',uiOrder=3}})[id]end}
+AZPCForeverCrafting.ReadRecipe=function(id)return nativeRecords[id]end
+p.CaptureCatalog({301,302,303});assert(nativeRecords[301].browserCategory==nil,'presentation metadata must not mutate captured recipe records')
+p.SetCraftableOnly(false);p.SetFavoritesOnly(false)
+for _,option in ipairs(page.menuRows)do if option.value=='Tailoring'then option:GetScript('OnClick')();break end end
+page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search)
+local nativeGroups=p.RecipeGroups(p.Catalog('Tailoring'));assert(#nativeGroups==3 and nativeGroups[1].name=='Reagents'and nativeGroups[2].name=='Bags'and nativeGroups[3].name=='Specialty Bags','native category order')
+local reagentHeader=page.categoryRows[nativeGroups[1].key];assert(reagentHeader and reagentHeader.shown)
+local beforeCategories=#retryQueries;reagentHeader:GetScript('OnClick')();assert(p.CategoryClosed(nativeGroups[1].key));assert(not page.recipeRows[1].shown,'collapse hides only category recipe rows')
+page.search:SetText('Bolt');page.search:GetScript('OnTextChanged')(page.search);assert(page.recipeRows[1].shown and not p.CategoryClosed(nativeGroups[1].key),'search reveals matching rows inside collapsed categories')
+page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search);assert(p.CategoryClosed(nativeGroups[1].key),'clearing search restores saved collapsed state')
+page.filtersButton:GetScript('OnClick')();assert(page.filters.shown)
+page.canCraft.checked=true;page.canCraft:GetScript('OnClick')(page.canCraft);assert(p.CraftableOnly()and not page.filters.shown,'compact Filters popup keeps existing craftable functionality')
+assert(#retryQueries==beforeCategories,'category and filter controls never scan prices')
+assert(page.recipeRows[1].craftCount.text~='Missing materials','compact list omits repetitive missing-material subtitles')
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+assert(AZPCForeverProfession.CategoryClosed(nativeGroups[1].key),'category collapse persists per character')
+print('PASS native layout: category metadata/order, compact collapse/search behavior, Filters popup, saved preferences, no queries and unchanged captured recipe evidence')
