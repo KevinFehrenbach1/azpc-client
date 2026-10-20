@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Account-wide addon Settings: tooltip modes, ownership toggle, popup or small reload reminders, and reset window positions.",
+  "notes": "Star learned recipes and filter Favorites in AZPC Crafting. Favorites and filter persist per character across reloads.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.61"
+  "foreverAddonVersion": "0.2.62"
 }

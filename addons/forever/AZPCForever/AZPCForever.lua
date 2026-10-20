@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.61"
+local addon, VERSION = ..., "0.2.62"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2648,7 +2648,45 @@ do
     local function ownedRecipe(r)
         return type(r)=='table' and r.character==UnitName('player') and r.realm==GetRealmName() and r.faction==(UnitFactionGroup('player') or ''):lower() and r.region==currentRegion()
     end
-    local function catalog(profession,query)
+    local function favoriteScope(create)
+        local name,realm=UnitName('player'),GetRealmName()
+        local faction=(UnitFactionGroup('player')or''):lower()
+        if not name or name==''or not realm or realm==''or faction==''then return end
+        local owner=table.concat({currentRegion(),realm,faction,UnitGUID and UnitGUID('player')or name},'|')
+        local db=AZPCForeverDB
+        if not db and create then db={};AZPCForeverDB=db end
+        if not db then return end
+        if create and type(db.recipeFavorites)~='table'then db.recipeFavorites={}end
+        local scopes=type(db.recipeFavorites)=='table'and db.recipeFavorites
+        local saved=scopes and scopes[owner]
+        if create and type(saved)~='table'then saved={recipes={}};scopes[owner]=saved end
+        return type(saved)=='table'and saved or nil
+    end
+    local function isFavorite(recipe)
+        if not ownedRecipe(recipe)then return false end
+        local saved=favoriteScope(false)
+        return saved and type(saved.recipes)=='table'and saved.recipes[tostring(recipe.recipeId)]==true or false
+    end
+    local function favoritesOnly()
+        local saved=favoriteScope(false);return saved and saved.only==true or false
+    end
+    local function setFavoritesOnly(value)
+        if type(value)~='boolean'then return false end
+        local saved=favoriteScope(true);if not saved then return false end
+        saved.only=value
+        if page and page.recipeScroll and page.recipeScroll.SetVerticalScroll then page.recipeScroll:SetVerticalScroll(0)end
+        if refreshBrowser then refreshBrowser()end
+        return true
+    end
+    local function toggleFavorite(recipe)
+        if not ownedRecipe(recipe)or type(recipe.recipeId)~='number'or recipe.recipeId<=0 or recipe.recipeId~=math.floor(recipe.recipeId)then return false end
+        local saved=favoriteScope(true);if not saved then return false end
+        if type(saved.recipes)~='table'then saved.recipes={}end
+        local id=tostring(recipe.recipeId);saved.recipes[id]=not saved.recipes[id]or nil
+        if refreshBrowser then refreshBrowser()end
+        return saved.recipes[id]==true
+    end
+    local function catalog(profession,query,onlyFavorites)
         local db=AZPCForeverDB or {};local merged,groups={},{}
         for _,group in pairs(db.professionCatalog or {})do
             if ownedRecipe(group) then groups[group.profession]=true end
@@ -2663,7 +2701,7 @@ do
         query=(query or ''):lower()
         for _,r in pairs(merged)do
             local name=r.profession or 'Other recipes';names[name]=true
-            if (not profession or profession==name) and (query=='' or (r.name or ''):lower():find(query,1,true))then rows[#rows+1]=r end
+            if (not onlyFavorites or isFavorite(r))and(not profession or profession==name) and (query=='' or (r.name or ''):lower():find(query,1,true))then rows[#rows+1]=r end
         end
         table.sort(rows,function(a,b)return (a.name or ''):lower()<(b.name or ''):lower()end)
         local professions={};for name in pairs(names)do professions[#professions+1]=name end;table.sort(professions)
@@ -2713,9 +2751,12 @@ do
     end
     refreshBrowser=function()
         if not page or not page.ready then return end
-        local rows,professions=catalog(filterProfession,filterText)
+        local only=favoritesOnly()
+        local rows,professions=catalog(filterProfession,filterText,only)
         page.profession:SetText(filterProfession or 'All professions')
-        page.count:SetText(#rows..' learned recipes')
+        page.count:SetText(#rows..(only and ' favorite recipes'or' learned recipes'))
+        page.allRecipes:SetText(not only and '|cff54dbd1All recipes|r'or'All recipes')
+        page.favorites:SetText(only and '|cffffd25aFavorites|r'or'Favorites')
         for _,button in ipairs(page.recipeRows)do button:Hide()end
         for i,recipe in ipairs(rows)do
             local button=page.recipeRows[i]
@@ -2724,12 +2765,18 @@ do
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
                 button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',7,0)
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
-                button.name=font(button,'GameFontHighlightSmall',37,-12,161)
+                button.name=font(button,'GameFontHighlightSmall',37,-12,135)
+                button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(26,30);button.favorite:SetPoint('TOPRIGHT',-2,-4)
+                button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(18,18);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar')
+                button.favorite:SetScript('OnClick',function()toggleFavorite(button.recipe)end)
+                button.favorite:SetScript('OnEnter',function(self)if GameTooltip and GameTooltip.SetOwner then GameTooltip:SetOwner(self,'ANCHOR_RIGHT');GameTooltip:AddLine(isFavorite(button.recipe)and'Remove from Favorites'or'Add to Favorites',1,0.82,0.35);GameTooltip:Show()end end)
+                button.favorite:SetScript('OnLeave',function()if GameTooltip then GameTooltip:Hide()end end)
                 button:SetScript('OnClick',function()selectRecipe(button.recipe)end)
                 itemTooltip(button,function()return button.recipe and button.recipe.outputItemId end)
                 page.recipeRows[i]=button
             end
             button.recipe=recipe;button.name:SetText(recipe.name)
+            if isFavorite(recipe)then button.favoriteIcon:SetVertexColor(1,0.82,0.25,1)else button.favoriteIcon:SetVertexColor(0.45,0.48,0.48,0.65)end
             local active=selected and recipeKey(selected)==recipeKey(recipe)
             surface(button,active and 0.025 or 0.04,active and 0.15 or 0.05,active and 0.15 or 0.05,active and {0.12,0.55,0.52} or {0.16,0.18,0.17})
             if active then button.accent:Show()else button.accent:Hide()end
@@ -2737,7 +2784,7 @@ do
             button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
         end
         page.listChild:SetHeight(math.max(1,#rows*40))
-        page.empty:SetText(#rows==0 and (filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
+        page.empty:SetText(#rows==0 and (only and (filterText~=''and'No matching favorites.'or'Star recipes to add them to Favorites. Choose All recipes to browse.')or filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
         for _,button in ipairs(page.menuRows)do button:Hide()end
         local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
         for i,name in ipairs(options)do
@@ -2788,11 +2835,13 @@ do
         page.search:SetScript('OnEnterPressed',function(self)self:ClearFocus()end)
         page.placeholder=font(page.search,'GameFontDisableSmall',8,-8,182);page.placeholder:SetText('Search recipes…')
         page.search:HookScript('OnTextChanged',function(self)if self:GetText()==''then page.placeholder:Show()else page.placeholder:Hide()end end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');scroll:SetPoint('TOPLEFT',12,-134);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        page.allRecipes=uiButton(page,'All recipes',102,25);page.allRecipes:SetPoint('TOPLEFT',12,-111);page.allRecipes:SetScript('OnClick',function()setFavoritesOnly(false)end)
+        page.favorites=uiButton(page,'Favorites',102,25);page.favorites:SetPoint('TOPLEFT',122,-111);page.favorites:SetScript('OnClick',function()setFavoritesOnly(true)end)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-165);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
         page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={}
-        page.empty=font(page,'GameFontHighlightSmall',18,-155,194)
-        page.count=font(page,'GameFontDisableSmall',12,-114,200)
+        page.empty=font(page,'GameFontHighlightSmall',18,-185,194)
+        page.count=font(page,'GameFontDisableSmall',12,-144,200)
         local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
@@ -2828,6 +2877,7 @@ do
                 if InCombatLockdown and InCombatLockdown()then notify('Search after combat.');return end
                 local current=readSelection()
                 if not current then notify('Select a recipe in your profession window first.');return end
+                setFavoritesOnly(false)
                 showPage()
                 if page and page.ready and page:IsShown()then
                     filterProfession=current.profession;filterText=''
@@ -2840,7 +2890,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
@@ -3544,4 +3594,3 @@ end
 -- AZPC WATCHER STATUS BEGIN
 AZPCForeverWatcherStatus = nil
 -- AZPC WATCHER STATUS END
-
