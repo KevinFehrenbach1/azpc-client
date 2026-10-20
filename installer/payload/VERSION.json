@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Close the craft popup after the planned number of successful crafts in the normal profession window.",
+  "notes": "Show color-coded per-craft profit estimates beneath recipe names using completed price scans.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.75"
+  "foreverAddonVersion": "0.2.76"
 }
