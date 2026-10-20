@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Blizzard-style crafting layout: collapsible native categories, compact recipe rows, aligned stars, Filters menu and flat cost/value summary. Open each profession once to refresh native categories.",
+  "notes": "Restore the three bordered material-cost, AH-sale-price and estimated-profit panels while preserving the new categorized recipe browser.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.68"
+  "foreverAddonVersion": "0.2.69"
 }
