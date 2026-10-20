@@ -6,6 +6,7 @@ Minimap={GetWidth=function()return 140 end,GetHeight=function()return 140 end,Ge
 function InCombatLockdown()return combat end;function GetCursorPosition()return 400,200 end;function GetTime()return clock end
 AZPCForeverProfession={Show=function()calls.crafting=(calls.crafting or 0)+1 end}
 AZPCForeverSyncStatus={Show=function()calls.sync=(calls.sync or 0)+1;return true end}
+AZPCForeverSettings={Show=function()calls.settings=(calls.settings or 0)+1;return true end}
 AZPCForeverSetup={Show=function()calls.setup=(calls.setup or 0)+1;return true end}
 function CreateFrame(_,name)
  local f={name=name,scripts={},shown=true};frames[#frames+1]=f
@@ -28,6 +29,7 @@ assert(icon and icon.shown and icon.scripts.OnUpdate==nil,'no idle frame loop')
 assert(math.abs(icon.point[4])<0.001 and math.abs(icon.point[5]-79)<0.001,'saved angle restored')
 local created=textures;m.Initialize();m.SetHidden(false);assert(textures==created,'logo is built once')
 assert(m.Invoke('crafting') and m.Invoke('sync') and m.Invoke('setup'));assert(calls.crafting==1 and calls.sync==1 and calls.setup==1)
+assert(m.Invoke('settings')and calls.settings==1,'settings route opens panel')
 assert(m.ToggleMenu());local menu
 for _,f in ipairs(frames)do if f.name=='AZPCForeverMinimapMenu'then menu=f end end
 assert(menu and menu.shown and menu.point[1]=='TOPRIGHT','initial menu stays beside icon')

@@ -58,6 +58,12 @@ shift=true;text=hover();assert(text:find('Wet:',1,true)and text:find('Auction / 
 shift=false;AZPCForeverDB.crafting.costing.positions[1].costComplete=true;AZPCForeverDB.crafting.costing.positions[1].totalCopper=40
 text=hover();assert(text:find('Cost / each: coins(20)',1,true));assert(text:find('Est. profit / each: coins(75)',1,true));assert(not text:find('Owned (saved)',1,true));assert(not text:find('No data',1,true))
 local headings=0;for _,line in ipairs(GameTooltip.lines)do if line=='AZPC'then headings=headings+1 end end;assert(headings==1,'one shared heading')
+local prefs={tooltips='off',ownership=true};AZPCForeverSettings={Get=function(key)return prefs[key]end}
+text=hover();assert(text=='','Off adds no tooltip lines')
+prefs.tooltips='detailed';text=hover();assert(text:find('Wet:',1,true),'Detailed reveals saved breakdown without Shift')
+prefs.ownership=false;text=hover();assert(not text:find('Owned (saved)',1,true)and not text:find('Wet:',1,true),'ownership can be disabled independently')
+assert(text:find('Cost / each',1,true),'ownership toggle preserves cost and profit')
+AZPCForeverSettings=nil
 Auctionator=nil;Bagnon=nil;shift=true
 print('PASS compact: empty rows omitted, lazy heading, Shift details, Auctionator/Bagnon compatibility, disabled settings, missing price and failed API fallbacks')
 TooltipDataProcessor=nil;GameTooltip={HookScript=function()error('unsupported')end};ItemRefTooltip=nil;install()
