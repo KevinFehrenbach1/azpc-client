@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.66"
+local addon, VERSION = ..., "0.2.67"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2006,6 +2006,40 @@ do
         elseif type(GetItemCount)=='function' then value=GetItemCount(id,false,false,false) end
         return number(value)
     end
+    local function craftableCount(recipe,cache)
+        if not recipe or recipe.materialsKnown~=true or type(recipe.reagents)~='table'or #recipe.reagents==0 then return nil end
+        cache=cache or{}
+        if not cache.equipped then
+            cache.equipped={}
+            if type(GetInventoryItemID)=='function'then
+                for slot=1,(INVSLOT_LAST_EQUIPPED or 19)+(NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4)do
+                    local ok,id=pcall(GetInventoryItemID,'player',slot)
+                    if not ok then cache.unknownEquipment=true;break end
+                    if id then
+                        local q=1
+                        if type(GetInventoryItemCount)=='function'then local success,value=pcall(GetInventoryItemCount,'player',slot);if not success or type(value)~='number'or value<1 then cache.unknownEquipment=true;break end;q=value end
+                        cache.equipped[id]=(cache.equipped[id]or 0)+q
+                    end
+                end
+            end
+        end
+        if cache.unknownEquipment then return nil end
+        local needs={}
+        for _,m in ipairs(recipe.reagents)do
+            if type(m.itemId)~='number'or m.itemId<=0 or m.itemId~=math.floor(m.itemId)or type(m.quantity)~='number'or m.quantity<=0 or m.quantity~=math.floor(m.quantity)then return nil end
+            needs[m.itemId]=(needs[m.itemId]or 0)+m.quantity
+        end
+        local result
+        for id,needed in pairs(needs)do
+            if cache[id]==nil then
+                local ok,held=pcall(count,id)
+                cache[id]=ok and held~=nil and math.max(0,held-(cache.equipped[id]or 0))or false
+            end
+            local held=cache[id];if held==false then return nil end
+            local n=math.floor(held/needed);result=result and math.min(result,n)or n
+        end
+        return result
+    end
     local function position(id)
         local db=AZPCForeverDB and AZPCForeverDB.crafting
         if not db or db.costingError or db.vendorCostingBlocked then return end
@@ -2754,6 +2788,16 @@ do
         if refreshBrowser then refreshBrowser()end
         return true
     end
+    local function craftableOnly()
+        local saved=favoriteScope(false);return saved and saved.craftableOnly==true or false
+    end
+    local function setCraftableOnly(value)
+        if type(value)~='boolean'then return false end
+        local saved=favoriteScope(true);if not saved then return false end
+        saved.craftableOnly=value
+        if page and page.recipeScroll and page.recipeScroll.SetVerticalScroll then page.recipeScroll:SetVerticalScroll(0)end
+        if refreshBrowser then refreshBrowser()end;return true
+    end
     local function toggleFavorite(recipe)
         if not ownedRecipe(recipe)or type(recipe.recipeId)~='number'or recipe.recipeId<=0 or recipe.recipeId~=math.floor(recipe.recipeId)then return false end
         local saved=favoriteScope(true);if not saved then return false end
@@ -2762,7 +2806,7 @@ do
         if refreshBrowser then refreshBrowser()end
         return saved.recipes[id]==true
     end
-    local function catalog(profession,query,onlyFavorites)
+    local function catalog(profession,query,onlyFavorites,onlyCraftable)
         local db=AZPCForeverDB or {};local merged,groups={},{}
         for _,group in pairs(db.professionCatalog or {})do
             if ownedRecipe(group) then groups[group.profession]=true end
@@ -2773,15 +2817,15 @@ do
         for _,group in pairs(db.professionCatalog or {})do
             if ownedRecipe(group)then for _,r in ipairs(group.recipes or {})do merged[r.recipeId]=r end end
         end
-        local rows,names={},{}
+        local rows,names,bagCounts={},{},{}
         query=(query or ''):lower()
         for _,r in pairs(merged)do
             local name=r.profession or 'Other recipes';names[name]=true
-            if (not onlyFavorites or isFavorite(r))and(not profession or profession==name) and (query=='' or (r.name or ''):lower():find(query,1,true))then rows[#rows+1]=r end
+            if (not onlyFavorites or isFavorite(r))and(not profession or profession==name) and (query=='' or (r.name or ''):lower():find(query,1,true))and(not onlyCraftable or (craftableCount(r,bagCounts)or 0)>0)then rows[#rows+1]=r end
         end
         table.sort(rows,function(a,b)return (a.name or ''):lower()<(b.name or ''):lower()end)
         local professions={};for name in pairs(names)do professions[#professions+1]=name end;table.sort(professions)
-        return rows,professions
+        return rows,professions,bagCounts
     end
     local restoringBrowser,restorePending=false,false
     local function saveBrowser(recipe)
@@ -2856,7 +2900,9 @@ do
     refreshBrowser=function()
         if not page or not page.ready then return end
         local only=favoritesOnly()
-        local rows,professions=catalog(filterProfession,filterText,only)
+        local craftOnly=craftableOnly()
+        local rows,professions,bagCounts=catalog(filterProfession,filterText,only,craftOnly)
+        page.canCraft:SetChecked(craftOnly)
         page.profession:SetText(filterProfession or 'All professions')
         page.count:SetText(#rows..(only and ' favorite recipes'or' learned recipes'))
         page.allRecipes:SetText(not only and '|cff54dbd1All recipes|r'or'All recipes')
@@ -2869,7 +2915,8 @@ do
                 button.accent=button:CreateTexture(nil,'OVERLAY');button.accent:SetTexture('Interface/Buttons/WHITE8X8');button.accent:SetVertexColor(0.12,0.78,0.74);button.accent:SetWidth(2);button.accent:SetPoint('TOPLEFT');button.accent:SetPoint('BOTTOMLEFT')
                 button.icon=button:CreateTexture(nil,'ARTWORK');button.icon:SetSize(24,24);button.icon:SetPoint('LEFT',7,0)
                 button.iconBorder=button:CreateTexture(nil,'OVERLAY');button.iconBorder:SetTexture('Interface/Buttons/UI-Quickslot2');button.iconBorder:SetSize(37,37);button.iconBorder:SetPoint('CENTER',button.icon,'CENTER')
-                button.name=font(button,'GameFontHighlightSmall',37,-12,135)
+                button.name=font(button,'GameFontHighlightSmall',37,-6,135)
+                button.craftCount=font(button,'GameFontDisableSmall',37,-24,135)
                 button.favorite=CreateFrame('Button',nil,button);button.favorite:SetSize(26,30);button.favorite:SetPoint('TOPRIGHT',-2,-4)
                 button.favoriteIcon=button.favorite:CreateTexture(nil,'ARTWORK');button.favoriteIcon:SetSize(18,18);button.favoriteIcon:SetPoint('CENTER');button.favoriteIcon:SetTexture('Interface/Common/ReputationStar');button.favoriteIcon:SetTexCoord(0,0.5,0,0.5)
                 button.favorite:SetScript('OnClick',function()toggleFavorite(button.recipe)end)
@@ -2880,6 +2927,9 @@ do
                 page.recipeRows[i]=button
             end
             button.recipe=recipe;button.name:SetText(recipe.name)
+            local available=craftableCount(recipe,bagCounts)
+            button.craftCount:SetText(available and available>0 and ('Can craft '..available)or available==0 and 'Missing materials'or'Count unavailable')
+            if available and available>0 then button.craftCount:SetTextColor(0.48,0.88,0.62)else button.craftCount:SetTextColor(0.55,0.6,0.6)end
             if isFavorite(recipe)then button.favoriteIcon:SetVertexColor(1,0.82,0.25,1)else button.favoriteIcon:SetVertexColor(0.45,0.48,0.48,0.65)end
             local active=selected and recipeKey(selected)==recipeKey(recipe)
             surface(button,active and 0.025 or 0.04,active and 0.15 or 0.05,active and 0.15 or 0.05,active and {0.12,0.55,0.52} or {0.16,0.18,0.17})
@@ -2888,7 +2938,7 @@ do
             button.icon:SetTexture(icon or 'Interface/Icons/INV_Misc_QuestionMark');button:Show()
         end
         page.listChild:SetHeight(math.max(1,#rows*40))
-        page.empty:SetText(#rows==0 and (only and (filterText~=''and'No matching favorites.'or'Star recipes to add them to Favorites. Choose All recipes to browse.')or filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
+        page.empty:SetText(#rows==0 and (craftOnly and 'No matching recipes ready to craft from your bags. Clear Can craft now to see all.'or only and (filterText~=''and'No matching favorites.'or'Star recipes to add them to Favorites. Choose All recipes to browse.')or filterText~='' and 'No matching recipes.' or 'Open each profession once to capture your learned recipes, then return here.') or '')
         for _,button in ipairs(page.menuRows)do button:Hide()end
         local options={'All professions'};for _,name in ipairs(professions)do options[#options+1]=name end
         for i,name in ipairs(options)do
@@ -2941,11 +2991,14 @@ do
         page.search:HookScript('OnTextChanged',function(self)if self:GetText()==''then page.placeholder:Show()else page.placeholder:Hide()end end)
         page.allRecipes=uiButton(page,'All recipes',102,25);page.allRecipes:SetPoint('TOPLEFT',12,-111);page.allRecipes:SetScript('OnClick',function()setFavoritesOnly(false)end)
         page.favorites=uiButton(page,'Favorites',102,25);page.favorites:SetPoint('TOPLEFT',122,-111);page.favorites:SetScript('OnClick',function()setFavoritesOnly(true)end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-165);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        page.canCraft=CreateFrame('CheckButton',nil,page,'UICheckButtonTemplate');page.canCraft:SetSize(24,24);page.canCraft:SetPoint('TOPLEFT',10,-140)
+        font(page,'GameFontHighlightSmall',37,-147,180):SetText('Can craft now (bags)')
+        page.canCraft:SetScript('OnClick',function(self)setCraftableOnly(self:GetChecked()==true)end)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-195);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
         page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={}
-        page.empty=font(page,'GameFontHighlightSmall',18,-185,194)
-        page.count=font(page,'GameFontDisableSmall',12,-144,200)
+        page.empty=font(page,'GameFontHighlightSmall',18,-215,194)
+        page.count=font(page,'GameFontDisableSmall',12,-174,200)
         local hint=font(page,'GameFontDisableSmall',0,0,200);hint:ClearAllPoints();hint:SetPoint('BOTTOMLEFT',12,14);hint:SetText('Open a profession to refresh recipes.')
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
@@ -2981,7 +3034,7 @@ do
                 if InCombatLockdown and InCombatLockdown()then notify('Search after combat.');return end
                 local current=readSelection()
                 if not current then notify('Select a recipe in your profession window first.');return end
-                setFavoritesOnly(false)
+                setFavoritesOnly(false);setCraftableOnly(false)
                 showPage()
                 if page and page.ready and page:IsShown()then
                     filterProfession=current.profession;filterText=''
@@ -2994,7 +3047,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,RetryMaterial=retryMaterial,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,CraftableCount=craftableCount,CraftableOnly=craftableOnly,SetCraftableOnly=setCraftableOnly,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,RestoreBrowser=restoreBrowser,SaveBrowser=saveBrowser,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
