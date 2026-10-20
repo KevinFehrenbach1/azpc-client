@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Scan all learned recipes sequentially and offer a click-to-craft planned batch after material delivery.",
+  "notes": "Make the craft prompt draggable and remember its position across characters and reloads.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.71"
+  "foreverAddonVersion": "0.2.72"
 }
