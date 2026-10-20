@@ -728,25 +728,39 @@ assert((loadstring or load)('return function(currentRegion,number)'..block..'end
 AZPCForeverProfession.RefreshCraftPlan();assert(AZPCForeverCraftReady.anchor[2]==0 and AZPCForeverCraftReady.anchor[3]==140,'invalid position falls back safely')
 print('PASS craft popup drag: combat guard, normalized UI scaling, shared account save, reload restore and invalid position fallback')
 
--- A closed/unselected profession window is not an artificial blocker to the direct native request.
+
+-- Profession data must be ready before requesting the craft batch.
 assert(p.BuyMissing(planned,2))
-ProfessionsFrame=nil;TradeSkillFrame=nil;C_TradeSkillUI.GetRecipeInfo=function()return nil end
-local requested=0
+local recipeLoaded=false;local changing=false;local opened,requested=0,0;local windowOpen=false
+ProfessionsFrame={IsShown=function()return windowOpen end}
+C_TradeSkillUI.GetRecipeInfo=function()if recipeLoaded then return {learned=true}end end
+C_TradeSkillUI.IsDataSourceChanging=function()return changing end
+C_TradeSkillUI.OpenRecipe=function(id)assert(id==301);opened=opened+1;recipeLoaded=true;windowOpen=true end
 C_TradeSkillUI.CraftRecipe=function(id,n)requested=requested+1;assert(id==301 and n==2)end
-assert(p.CraftPlanned()and requested==1 and p.CraftPlan(),'request is not treated as confirmed casting')
+assert(p.CraftPlanned()and opened==1 and requested==1 and p.CraftPlan(),'same click loads profession and requests batch when ready')
 assert(not p.CraftPlanned()and requested==1 and not prompt.craft.enabled,'in-flight double click blocked')
 emit('UNIT_SPELLCAST_START','other','cast',301);assert(p.CraftPlan())
 emit('UNIT_SPELLCAST_START','player','cast',302);assert(p.CraftPlan(),'unrelated casts cannot consume plan')
-emit('UNIT_SPELLCAST_FAILED','player','cast',301);assert(p.CraftPlan()and prompt.craft.enabled,'failed start preserves plan')
-assert(p.CraftPlanned());local requestTimer=timeouts[#timeouts];requestTimer();assert(p.CraftPlan()and prompt.craft.enabled,'timeout preserves plan without retry')
+emit('UNIT_SPELLCAST_FAILED','player','cast',301);assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('could not start',1,true),'failed start preserves plan with visible reason')
+assert(p.CraftPlanned());local requestTimer=timeouts[#timeouts];requestTimer();assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('did not start',1,true),'timeout preserves plan without retry')
 C_TradeSkillUI.CraftRecipe=function()error('restricted or unavailable')end
 assert(not p.CraftPlanned()and p.CraftPlan()and prompt.craft.enabled,'native exception preserves plan')
 C_TradeSkillUI.CraftRecipe=function()return false end
 assert(not p.CraftPlanned()and p.CraftPlan(),'native rejection preserves plan')
-C_TradeSkillUI.GetRecipeInfo=function()return {learned=false}end
-assert(not p.CraftPlanned(),'known unlearned recipe rejected')
-C_TradeSkillUI.GetRecipeInfo=function()return {learned=true}end
-C_TradeSkillUI.CraftRecipe=function()end
-assert(p.CraftPlanned());emit('UNIT_SPELLCAST_SUCCEEDED','player','cast',301);assert(not p.CraftPlan(),'instant matching craft confirms plan')
+-- Asynchronous load waits for a fresh hardware click instead of crafting from a data event.
+recipeLoaded=false;changing=true
+C_TradeSkillUI.OpenRecipe=function()opened=opened+1 end
+C_TradeSkillUI.CraftRecipe=function()requested=requested+1 end
+local beforePrepare=requested
+assert(p.CraftPlanned()and requested==beforePrepare and not prompt.craft.enabled and prompt.detail.text:find('Preparing',1,true))
+assert(not p.CraftPlanned(),'repeat preparation click blocked')
+recipeLoaded=true;changing=false;emit('TRADE_SKILL_LIST_UPDATE')
+assert(prompt.craft.enabled and requested==beforePrepare,'ready event enables click but never crafts')
+assert(p.CraftPlanned()and requested==beforePrepare+1)
+emit('UNIT_SPELLCAST_SUCCEEDED','player','cast',301);assert(not p.CraftPlan(),'matching instant craft confirms plan')
 requestTimer();assert(not p.CraftPlan(),'old timeout cannot restore or repeat consumed plan')
-print('PASS direct popup craft: no menu/selection prerequisite, explicit exact batch request, confirmation events, double-click guard, unrelated cast isolation, timeout/error/rejection retention and no automatic retry')
+assert(p.BuyMissing(planned,2));recipeLoaded=false;changing=true
+assert(p.CraftPlanned());timeouts[#timeouts]();assert(p.CraftPlan()and prompt.craft.enabled and prompt.detail.text:find('did not finish loading',1,true),'preparation timeout preserves plan and explains failure')
+C_TradeSkillUI.OpenRecipe=function()return false end
+assert(not p.CraftPlanned()and p.CraftPlan(),'failed open does not craft or lose plan')
+print('PASS popup craft preparation: synchronous one-click load/craft, asynchronous readiness with fresh click, no event craft, failures/timeouts visible, cast confirmation, duplicate guard and no plan loss')
