@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Recipe summary shows scan age, incomplete material/output prices, limited stock and stale price warnings.",
+  "notes": "Amber missing-price material rows with individual Retry buttons. Exact-item retries retain other recipe prices and their scan age.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.64"
+  "foreverAddonVersion": "0.2.65"
 }

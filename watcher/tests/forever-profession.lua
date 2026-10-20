@@ -525,6 +525,34 @@ C_TradeSkillUI.OpenRecipe=function()return false end;assert(not p.OpenRecipe(),'
 C_TradeSkillUI.OpenRecipe=function()error('recipe unavailable')end;assert(not p.OpenRecipe(),'API errors are contained')
 assert(craftCalls==0 and #openedIds==2,'all navigation failures preserve explicit crafting control')
 print('PASS: Open Recipe native navigation, exact/cross-profession IDs, ownership, combat, unsupported/rejected/error guards, no automatic crafts or Auctionator changes')
+-- A missing-price row has its own exact-item retry without replacing other prices.
+local retryQueries={};ready=true;full=true
+C_AuctionHouse.IsThrottledMessageSystemReady=function()return ready end
+C_AuctionHouse.SearchForItemKeys=function(keys)retryQueries[#retryQueries+1]=keys end
+C_AuctionHouse.GetBrowseResults=function()return results end
+C_AuctionHouse.HasFullBrowseResults=function()return full end
+emit('AUCTION_HOUSE_SHOW');p.Select(recipe)
+local function missingQuote()
+ assert(p.SearchAll(recipe));results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}}
+ full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');emit('AUCTION_HOUSE_THROTTLED_SYSTEM_READY');emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+ assert(p.Quote(recipe,1).pricedMaterials==1)
+end
+missingQuote();local retryRow=panel.rows[2];assert(retryRow.material.itemId==2320 and retryRow.retryButton.shown and retryRow.retryButton.enabled and retryRow.total.text=='No price')
+local oldAt=p.Quote(recipe,1).quoteAt;local oldUnit=p.Quote(recipe,1).rows[1].unit
+assert(not p.RetryMaterial(999)and not p.RetryMaterial(2589),'only a missing reagent can be retried')
+combat=true;assert(not p.RetryMaterial(2320));combat=false;ready=false;assert(not p.RetryMaterial(2320));ready=true
+moneyNow=moneyNow+60;retryRow.retryButton:GetScript('OnClick')();local keys=retryQueries[#retryQueries];assert(#keys==1 and keys[1].itemID==2320,'Retry queries only clicked reagent')
+assert(not p.RetryMaterial(2320),'no overlapping retries')
+full=false;results={{itemKey={itemID=2320},minPrice=10,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1,'partial results do not publish')
+full=true;emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');local repaired=p.Quote(recipe,1)
+assert(repaired.ahCost==410 and repaired.salePrice==600 and repaired.rows[1].unit==oldUnit and repaired.quoteAt==oldAt,'merge only clicked material and preserve retained quote age')
+assert(not retryRow.retryButton.shown and retryRow.unit.shown and retryRow.button.text=='Buy','successful retry restores regular price and Buy action')
+missingQuote();oldAt=p.Quote(recipe,1).quoteAt;assert(p.RetryMaterial(2320));results={};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1 and p.Quote(recipe,1).quoteAt==oldAt,'empty exact result cannot invent a price or refresh other values')
+assert(p.RetryMaterial(2320));results={{itemKey={itemID=999},minPrice=1,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED');assert(p.Quote(recipe,1).pricedMaterials==1,'unrelated results rejected')
+assert(p.RetryMaterial(2320));for _,fn in ipairs(timeouts)do fn()end;assert(p.Quote(recipe,1).pricedMaterials==1,'timeout preserves quote')
+moneyNow=moneyNow+21601;assert(not p.RetryMaterial(2320),'stale recipes require full refresh');moneyNow=moneyNow-21601
+emit('AUCTION_HOUSE_CLOSED');assert(not p.RetryMaterial(2320));emit('AUCTION_HOUSE_SHOW')
+print('PASS material retry: amber missing-price row, one-item query, passive retained prices/age, atomic publication, empty/unrelated/timeout/stale/closed/combat/throttle guards and restored Buy controls')
 -- Favorites are UI preferences, separate from captured recipe/cost evidence.
 local fav=p.Catalog()[1];assert(fav and not p.IsFavorite(fav));local beforeFavorite=grouped
 local tradeCount=#(AZPCForeverDB.trades or{});local recipeName=fav.name
