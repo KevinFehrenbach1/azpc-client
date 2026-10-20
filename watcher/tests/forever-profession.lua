@@ -507,3 +507,25 @@ C_TradeSkillUI.OpenRecipe=function()return false end;assert(not p.OpenRecipe(),'
 C_TradeSkillUI.OpenRecipe=function()error('recipe unavailable')end;assert(not p.OpenRecipe(),'API errors are contained')
 assert(craftCalls==0 and #openedIds==2,'all navigation failures preserve explicit crafting control')
 print('PASS: Open Recipe native navigation, exact/cross-profession IDs, ownership, combat, unsupported/rejected/error guards, no automatic crafts or Auctionator changes')
+-- Favorites are UI preferences, separate from captured recipe/cost evidence.
+local fav=p.Catalog()[1];assert(fav and not p.IsFavorite(fav));local beforeFavorite=grouped
+local tradeCount=#(AZPCForeverDB.trades or{});local recipeName=fav.name
+assert(p.ToggleFavorite(fav)and p.IsFavorite(fav));assert(#p.Catalog(nil,'',true)==1)
+assert(#p.Catalog(fav.profession,'',true)==1 and #p.Catalog(nil,'does not match',true)==0,'favorites combine with existing filters')
+local changed={};for k,v in pairs(fav)do changed[k]=v end;changed.reagents={};assert(p.IsFavorite(changed),'stable recipe ID survives updated reagents')
+assert(not p.ToggleFavorite({recipeId=0})and not p.ToggleFavorite({recipeId=1.5}),'invalid IDs cannot write preferences')
+local originalName,originalRealm,originalFaction=UnitName,GetRealmName,UnitFactionGroup
+UnitName=function()return 'Other'end;assert(not p.IsFavorite(fav)and not p.FavoritesOnly());assert(not p.ToggleFavorite(fav));UnitName=originalName
+GetRealmName=function()return 'Launch realm'end;assert(not p.IsFavorite(fav));GetRealmName=originalRealm
+UnitFactionGroup=function()return 'Alliance'end;assert(not p.IsFavorite(fav));UnitFactionGroup=originalFaction
+page.menuRows[1]:GetScript('OnClick')();page.search:SetText('');page.search:GetScript('OnTextChanged')(page.search)
+p.SetFavoritesOnly(true);assert(p.FavoritesOnly()and page.recipeRows[1].recipe==fav)
+assert(page.favorites.text:find('Favorites',1,true));page.recipeRows[1].favorite:GetScript('OnClick')()
+assert(not p.IsFavorite(fav)and #p.Catalog(nil,'',true)==0 and page.empty.text:find('Star recipes',1,true),'unstar removes from filtered list with clear empty state')
+page.allRecipes:GetScript('OnClick')();assert(not p.FavoritesOnly());page.recipeRows[1].favorite:GetScript('OnClick')();fav=page.recipeRows[1].recipe;assert(p.IsFavorite(fav))
+assert(grouped==beforeFavorite,'star and filter clicks never start price queries')
+p.SetFavoritesOnly(true)
+assert((loadstring or load)('return function(currentRegion,number)'..block..'end'))()(currentRegion,number)
+local restored=AZPCForeverProfession;assert(restored.IsFavorite(fav)and restored.FavoritesOnly(),'favorites and filter survive module reload')
+assert(#(AZPCForeverDB.trades or{})==tradeCount and fav.name==recipeName,'favorites do not edit captured data')
+print('PASS favorites: stars, filtering/search/profession composition, no scans, empty/unstar behavior, per-character/realm/faction isolation, stable IDs and reload persistence')
