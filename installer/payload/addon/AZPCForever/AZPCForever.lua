@@ -3303,7 +3303,7 @@ do
         end
         page.filtersButton:SetScript('OnClick',function()page.menu:Hide();if page.filters:IsShown()then page.filters:Hide()else page.filters:Show()end end)
         page.canCraft:SetScript('OnClick',function(self)setCraftableOnly(self:GetChecked()==true);page.filters:Hide()end)
-        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-162);scroll:SetPoint('BOTTOMLEFT',12,38);scroll:SetWidth(204)
+        local scroll=CreateFrame('ScrollFrame',nil,page,'UIPanelScrollFrameTemplate');page.recipeScroll=scroll;scroll:SetPoint('TOPLEFT',12,-162);scroll:SetPoint('BOTTOMLEFT',12,68);scroll:SetWidth(204)
         page.listChild=CreateFrame('Frame',nil,scroll);page.listChild:SetSize(204,1);scroll:SetScrollChild(page.listChild)
         page.recipeRows={};page.menuRows={};page.categoryRows={}
         page.empty=font(page,'GameFontHighlightSmall',18,-180,194)
