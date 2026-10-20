@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.63"
+local addon, VERSION = ..., "0.2.64"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -2117,12 +2117,15 @@ do
         local data=model(recipe,batch)
         local complete=recipe and recipe.materialsKnown==true and #data.rows>0
         local missingKnown=true;local total,missing=0,0
+        data.materialCount=#data.rows;data.pricedMaterials=0;data.shortMaterials=0
         local now=GetServerTime and GetServerTime() or time()
         local previous=completedQuotes[recipeKey(recipe)]
         local valid=previous and previous.at and now>=previous.at and now-previous.at<=21600
+        data.quoteAt=previous and previous.at
         for _,row in ipairs(data.rows)do
             local unit=valid and previous.prices[row.itemId] or nil
             row.unit=unit;row.available=valid and previous.available[row.itemId] or nil
+            if unit and unit>0 then data.pricedMaterials=data.pricedMaterials+1;if not row.available or row.available<row.needed then data.shortMaterials=data.shortMaterials+1 end end
             row.lineCost=unit and unit*row.needed
             if not unit or not row.available or row.available<row.needed then complete=false else total=total+row.lineCost end
             if row.missing==nil then missingKnown=false
@@ -2135,8 +2138,32 @@ do
         data.quoteFresh=valid==true
         local output=valid and previous.prices[recipe.outputItemId] or nil
         data.salePrice=output
+        data.outputPriced=output~=nil and output>0
         if complete and output and recipe.outputMin==recipe.outputMax then data.ahProfit=math.floor(output*95/100)*recipe.outputMin*data.batch-total end
         return data
+    end
+    local function priceStatus(data,now)
+        if not data or not data.quoteAt then return 'No price scan yet',false end
+        local age=now-data.quoteAt
+        if age<0 then return 'Scan time unknown - scan again',false end
+        local when=age<60 and 'Updated just now' or ('Scanned '..(age<3600 and math.floor(age/60)..'m' or age<86400 and math.floor(age/3600)..'h' or math.floor(age/86400)..'d')..' ago')
+        if age>21600 then return when..' (stale) - scan again',false end
+        if data.pricedMaterials<data.materialCount then return when..' | '..data.pricedMaterials..'/'..data.materialCount..' materials priced',false end
+        if not data.outputPriced then return when..' | output price missing',false end
+        if data.shortMaterials>0 then return when..' | limited AH stock',false end
+        return when,true
+    end
+    local function updatePriceStatus(p,queue)
+        local data=p.priceSnapshot
+        if not data then return end
+        local text,complete=priceStatus(data,GetServerTime and GetServerTime()or time())
+        if queue then text=queue.status;complete=false
+        elseif scan and scan.waiting then text=(data.quoteAt and 'Refreshing prices... (showing last scan)'or'Scanning prices...');complete=false
+        elseif pendingAuto then text='Waiting for AH...';complete=false
+        elseif not selected then text='Choose a recipe to scan prices';complete=false
+        elseif not selected.materialsKnown then text='Recipe materials unavailable';complete=false end
+        p.market:SetText(text or 'Scanning prices...')
+        if complete then p.market:SetTextColor(0.4,0.84,0.63)else p.market:SetTextColor(0.9,0.72,0.4)end
     end
     local function readResults()
         if not scan or not scan.waiting or scan.retryPending then return end
@@ -2593,6 +2620,7 @@ do
         panel.note=uiText(panel,'GameFontDisableSmall',0,0,520);panel.note:ClearAllPoints();panel.note:SetPoint('BOTTOMLEFT',14,28)
         panel.note:SetText('Lowest unit prices; price depth and deposit excluded. Vendor materials may cost less.')
         panel.status=uiText(panel,'GameFontHighlightSmall',0,0,520);panel.status:ClearAllPoints();panel.status:SetPoint('BOTTOMLEFT',14,10)
+        local priceElapsed=0;panel:SetScript('OnUpdate',function(self,delta)priceElapsed=priceElapsed+delta;if priceElapsed>=15 then priceElapsed=0;updatePriceStatus(self,purchaseQueue)end end)
         return panel
     end
     render=function()
@@ -2609,8 +2637,7 @@ do
         p.batch:SetText(tostring(quantity))
         p.searchAll:SetEnabled(auctionOpen and selected~=nil and selected.materialsKnown==true and not(scan and scan.waiting))
         p.searchAll:SetText(pendingAuto and 'Waiting for AH…' or (scan and scan.waiting and 'Scanning…' or 'Scan prices'))
-        p.market:SetText(purchaseQueue and purchaseQueue.status or (scan and scan.waiting and (data.quoteFresh and 'Last scan prices - refreshing...' or 'Fetching AH prices…') or (data.quoteFresh and 'Latest AH search' or 'Scan for current prices')))
-        p.market:SetTextColor(data.quoteFresh and 0.4 or 0.65,data.quoteFresh and 0.84 or 0.67,data.quoteFresh and 0.63 or 0.67)
+        p.priceSnapshot=data;updatePriceStatus(p,purchaseQueue)
         for _,row in ipairs(p.rows)do row:Hide()end
         for i,m in ipairs(data.rows)do
             local row=p.rows[i]
@@ -2643,7 +2670,13 @@ do
         p.profit:SetText((data.ahProfit and data.ahProfit>0 and '+'or '')..money(data.ahProfit,12))
         if data.ahProfit==nil then p.profit:SetTextColor(0.65,0.67,0.67)
         elseif data.ahProfit<0 then p.profit:SetTextColor(1,0.4,0.4)else p.profit:SetTextColor(0.48,0.9,0.48)end
-        p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved • No data' or (scan and scan.complete and not data.quoteFresh and 'Prices are stale. Scan prices again.' or (scan and scan.status or 'Choose a recipe, then Scan prices.')))
+        local warning
+        if data.quoteAt and data.quoteFresh and not(scan and scan.waiting)then
+            if data.pricedMaterials<data.materialCount then warning='Prices incomplete - scan again.'
+            elseif not data.outputPriced then warning='Output price missing - scan again to estimate profit.'
+            elseif data.shortMaterials>0 then warning='Not enough AH stock for this quantity. Scan again or reduce crafts.'end
+        end
+        p.status:SetText(selected and not selected.materialsKnown and 'Material choices unresolved • No data' or warning or (data.quoteAt and not data.quoteFresh and 'Prices are stale. Scan prices again.' or (scan and scan.status or 'Choose a recipe, then Scan prices.')))
     end
     local function ownedRecipe(r)
         return type(r)=='table' and r.character==UnitName('player') and r.realm==GetRealmName() and r.faction==(UnitFactionGroup('player') or ''):lower() and r.region==currentRegion()
@@ -2890,7 +2923,7 @@ do
         craftSearchButton:SetEnabled(current~=nil and not(InCombatLockdown and InCombatLockdown()))
         craftSearchButton:Show()
     end
-    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
+    AZPCForeverProfession={Model=model,Search=search,ReadSelection=readSelection,OpenRecipe=openRecipe,Buy=buyMaterial,BuyMissing=buyMissing,Pending=pendingQuantity,CancelBuying=cancelQueue,PurchaseEvent=purchaseEvent,OpenQueuedQuote=openQueuedQuote,ReviewPurchase=reviewPurchase,ShowPurchasePopup=showReadyPopup,SearchAll=function(recipe)installQueryHooks();return searchAll(recipe)end,Quote=quote,PriceStatus=priceStatus,Show=showPage,Catalog=catalog,IsFavorite=isFavorite,ToggleFavorite=toggleFavorite,FavoritesOnly=favoritesOnly,SetFavoritesOnly=setFavoritesOnly,CaptureCatalog=captureCatalog,Select=selectRecipe}
     local events=CreateFrame('Frame')
     for _,event in ipairs({'TRADE_SKILL_SHOW','TRADE_SKILL_CLOSE','TRADE_SKILL_LIST_UPDATE','TRADE_SKILL_DATA_SOURCE_CHANGED','BAG_UPDATE_DELAYED','AUCTION_HOUSE_SHOW','AUCTION_HOUSE_CLOSED','GET_ITEM_INFO_RECEIVED','AUCTION_HOUSE_BROWSE_RESULTS_UPDATED','AUCTION_HOUSE_BROWSE_RESULTS_ADDED','AUCTION_HOUSE_THROTTLED_SYSTEM_READY','COMMODITY_PURCHASE_SUCCEEDED','COMMODITY_PURCHASE_FAILED','COMMODITY_PRICE_UPDATED','COMMODITY_PRICE_UNAVAILABLE','COMMODITY_SEARCH_RESULTS_RECEIVED','COMMODITY_SEARCH_RESULTS_ADDED','COMMODITY_SEARCH_RESULTS_UPDATED'})do pcall(events.RegisterEvent,events,event)end
     events:SetScript('OnEvent',function(_,event,id,total)
