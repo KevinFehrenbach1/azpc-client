@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.59"
+local addon, VERSION = ..., "0.2.60"
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -1813,7 +1813,8 @@ do
         return table.concat({currentRegion(),realm:lower(),faction},'|'),realm,faction,character
     end
     local function add(tooltip,label,value,r,g,b)
-        if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,1,0.82,0,r or 0.9,g or 0.95,b or 0.95)
+        if not tooltip.azpcForeverHeading then tooltip.azpcForeverHeading=true;tooltip:AddLine('AZPC',0.33,0.86,0.82)end
+        if type(tooltip.AddDoubleLine)=='function' then tooltip:AddDoubleLine(label,value,0.7,0.75,0.75,r or 0.9,g or 0.95,b or 0.95)
         else tooltip:AddLine(label..': '..value,r or 0.9,g or 0.95,b or 0.95,true) end
     end
 
@@ -1849,7 +1850,7 @@ do
         elseif age<86400 then return math.floor(age/3600)..'h ago'
         else return math.floor(age/86400)..'d ago'end
     end
-    local function ownership(tooltip,itemId,realm,faction,now)
+    local function ownership(tooltip,itemId,realm,faction,now,detailed)
         local db=AZPCForeverDB or {};local bags=db.bagStates or {};local prefix=table.concat({currentRegion(),realm,faction},'|')..'|'
         local owners={}
         for key in pairs(bags)do if type(key)=='string' and key:sub(1,#prefix)==prefix then owners[key]=true end end
@@ -1869,18 +1870,39 @@ do
             end
         end
         table.sort(rows,function(a,b)return a.name<b.name end)
-        add(tooltip,'AZPC Owned (saved)',#rows>0 and tostring(total)..' known' or (bankCursor<#(bankEvents or {})and 'Loading saved counts' or 'No saved copies'))
-        for _,r in ipairs(rows)do
-            add(tooltip,r.name,(r.bags~=nil and r.bags..' bags' or 'bags unknown')..' / '..(r.bank~=nil and r.bank..' bank' or 'bank unknown'))
-            tooltip:AddLine('  Saved: bags '..savedAge(r.bagAt,now)..'; bank '..savedAge(r.bankAt,now),0.6,0.6,0.6)
+        if #rows>0 then
+            add(tooltip,'Owned (saved)',tostring(total)..' known')
+            if detailed then
+                for _,r in ipairs(rows)do
+                    add(tooltip,r.name,(r.bags~=nil and r.bags..' bags' or 'bags unknown')..' / '..(r.bank~=nil and r.bank..' bank' or 'bank unknown'))
+                    tooltip:AddLine('  Bags '..savedAge(r.bagAt,now)..'; bank '..savedAge(r.bankAt,now),0.6,0.6,0.6,true)
+                end
+                tooltip:AddLine('Saved counts on this realm/faction; may have changed.',0.55,0.55,0.55,true)
+            end
         end
-        tooltip:AddLine('Current realm/faction; saved counts may have changed.',0.55,0.55,0.55)
         requestIndex()
     end
     if type(CreateFrame)=='function' then
         local observer=CreateFrame('Frame')
         for _,event in ipairs({'PLAYER_LOGIN','BAG_UPDATE_DELAYED','BANKFRAME_CLOSED'})do observer:RegisterEvent(event)end
         observer:SetScript('OnEvent',requestIndex)
+    end
+    local function otherAuctionPrice(itemId)
+        -- Explicit Auctionator configuration/API checks; never inspect localized tooltip text.
+        local a=Auctionator
+        if type(a)~='table' or not a.Config or not a.Config.Options or type(a.Config.Get)~='function' then return false end
+        local option=a.Config.Options.AUCTION_TOOLTIPS
+        if not option then return false end
+        local ok,enabled=pcall(a.Config.Get,option)
+        local api=a.API and a.API.v1 and a.API.v1.GetAuctionPriceByItemID
+        if not ok or enabled~=true or type(api)~='function' then return false end
+        local found,price=pcall(api,'AZPCForever',itemId)
+        local value=found and number(price)
+        return value~=nil and value~=false and value>0
+    end
+    local function otherInventory()
+        -- BagBrother's Bagnon tooltip module is enabled through sets.countItems.
+        return type(Bagnon)=='table' and type(Bagnon.sets)=='table' and Bagnon.sets.countItems==true
     end
     local function append(tooltip,itemId)
         itemId=number(itemId)
@@ -1892,11 +1914,12 @@ do
         local price=db.tooltipPrices and db.tooltipPrices[key] and db.tooltipPrices[key][itemId]
         local now=GetServerTime and GetServerTime() or time()
         local valid=price and number(price.unitCopper) and price.unitCopper>0 and number(price.observedAt) and price.observedAt<=now
-        local age
-        if valid then
-            age=now-price.observedAt
-            add(tooltip,'AZPC Auction / each'..(age>3600 and ' (stale)' or ''),money(price.unitCopper))
-        else add(tooltip,'AZPC Auction / each','No data',0.65,0.65,0.65) end
+        local detailed=type(IsShiftKeyDown)=='function' and IsShiftKeyDown()
+        local age=valid and now-price.observedAt
+        if valid and (detailed or not otherAuctionPrice(itemId)) then
+            add(tooltip,'Auction / each'..(age>3600 and ' (stale)' or ''),money(price.unitCopper))
+            if detailed then tooltip:AddLine('  Price checked '..savedAge(price.observedAt,now),0.6,0.6,0.6,true)end
+        end
         local materials=db.crafting;local cost
         if materials and not materials.costingError and not materials.vendorCostingBlocked then
             for _,p in ipairs(materials.costing and materials.costing.positions or {}) do
@@ -1906,16 +1929,17 @@ do
                 end
             end
         end
-        add(tooltip,'AZPC Cost / each',cost~=nil and money(cost) or 'No data')
+        if cost~=nil then add(tooltip,'Cost / each',money(cost))end
         if valid and cost~=nil and age<=21600 then
             local profit=math.floor(price.unitCopper*95/100)-cost
-            add(tooltip,'AZPC Est. profit / each*',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
-            tooltip:AddLine('*After 5% AH cut; excludes deposit.',0.55,0.55,0.55)
-        else add(tooltip,'AZPC Est. profit / each','No data',0.65,0.65,0.65) end
-        ownership(tooltip,itemId,realm,faction,now)
+            add(tooltip,'Est. profit / each',money(profit),profit>=0 and 0.5 or 1,profit>=0 and 0.86 or 0.5,profit>=0 and 0.65 or 0.45)
+            if detailed then tooltip:AddLine('After 5% AH cut; excludes deposit.',0.55,0.55,0.55,true)end
+        end
+        if detailed or not otherInventory()then ownership(tooltip,itemId,realm,faction,now,detailed)else requestIndex()end
+        if tooltip.azpcForeverHeading and not detailed then tooltip:AddLine('Hold Shift before hovering for AZPC details.',0.55,0.55,0.55,true)end
         if type(tooltip.Show)=='function' then tooltip:Show() end
     end
-    local function clear(tooltip)tooltip.azpcForeverItem=nil end
+    local function clear(tooltip)tooltip.azpcForeverItem=nil;tooltip.azpcForeverHeading=nil end
     local function legacy(tooltip)
         if type(tooltip.GetItem)~='function' then return end
         local _,link=tooltip:GetItem()
