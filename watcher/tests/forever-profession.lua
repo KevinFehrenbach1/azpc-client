@@ -146,7 +146,9 @@ local q=p.Quote(recipe,1)
 assert(q.ahCost==410 and q.missingCost==400 and q.ahProfit==160,'full recipe cost and only-missing cost are distinct')
 assert(p.Quote(recipe,3).ahCost==1230,'batch cost updates without another query')
 assert(p.SearchAll());assert(p.Quote(recipe,1).ahCost==410,'new scan retains the completed summary')
+local atBeforePartial=p.Quote(recipe,1).quoteAt
 full=false;results={{itemKey={itemID=2589},minPrice=250,totalQuantity=100}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+assert(p.Quote(recipe,1).quoteAt==atBeforePartial,'partial loading preserves timestamp of displayed prices')
 assert(p.Quote(recipe,1).ahCost==410 and p.Quote(recipe,1).salePrice==600,'partial scan cannot blank or mix summary prices')
 results[#results+1]={itemKey={itemID=2320},minPrice=20,totalQuantity=100};results[#results+1]={itemKey={itemID=2996},minPrice=700,totalQuantity=10};full=true
 emit('AUCTION_HOUSE_BROWSE_RESULTS_ADDED')
@@ -158,6 +160,22 @@ assert(p.Quote(recipe,3).ahCost==1560,'retained prices still scale with craft qu
 local originalRealm=GetRealmName;GetRealmName=function()return 'Other realm'end
 assert(p.Quote(recipe,1).ahCost==nil,'completed quote cannot cross realm scope');GetRealmName=originalRealm
 assert(p.SearchAll());results={{itemKey={itemID=2589},minPrice=200,totalQuantity=100},{itemKey={itemID=2320},minPrice=10,totalQuantity=100},{itemKey={itemID=2996},minPrice=600,totalQuantity=10}};emit('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+local fresh=p.Quote(recipe,1);assert(fresh.quoteAt and fresh.pricedMaterials==2 and fresh.materialCount==2 and fresh.outputPriced)
+local label,complete=p.PriceStatus(fresh,moneyNow);assert(label=='Updated just now'and complete)
+label,complete=p.PriceStatus(fresh,moneyNow+720);assert(label=='Scanned 12m ago'and complete)
+label,complete=p.PriceStatus(fresh,moneyNow+21601);assert(label:find('(stale)',1,true)and not complete)
+label,complete=p.PriceStatus(fresh,moneyNow-1);assert(not complete and label:find('unknown',1,true))
+assert(p.PriceStatus({},moneyNow)=='No price scan yet')
+local partial={quoteAt=moneyNow,pricedMaterials=1,materialCount=2,outputPriced=true,shortMaterials=0}
+label,complete=p.PriceStatus(partial,moneyNow);assert(not complete and label:find('1/2 materials priced',1,true))
+partial.pricedMaterials=2;partial.outputPriced=false;label,complete=p.PriceStatus(partial,moneyNow);assert(not complete and label:find('output price missing',1,true))
+partial.outputPriced=true;partial.shortMaterials=1;label,complete=p.PriceStatus(partial,moneyNow);assert(not complete and label:find('limited AH stock',1,true))
+local queriesBeforeAge=grouped;local savedQuoteAt=p.Quote(recipe,1).quoteAt
+moneyNow=moneyNow+720;panel:GetScript('OnUpdate')(panel,15)
+assert(panel.market.text:find('12m ago',1,true),'visible label ages without another query or full panel rerender')
+assert(grouped==queriesBeforeAge and p.Quote(recipe,1).quoteAt==savedQuoteAt,'age update cannot change scan evidence')
+moneyNow=moneyNow-720
+print('PASS price status: completed timestamp, relative age, stale/future guards, missing materials/output, limited stock, visible aging and no price queries')
 print('PASS: persistent summary during scans and AH reopen, completed snapshot replacement, failed-scan retention, batch recalculation and market isolation')
 
 assert(panel.cost.text:find('UI-SilverIcon',1,true)and panel.cost.text:find('UI-CopperIcon',1,true)and panel.sale.text:find('UI-SilverIcon',1,true),'summary cards show compact native silver/copper icons')

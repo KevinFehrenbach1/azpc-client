@@ -4,7 +4,7 @@
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
-  "notes": "Crop favorite recipe icons to a single clean star instead of the full reputation icon sheet.",
+  "notes": "Recipe summary shows scan age, incomplete material/output prices, limited stock and stale price warnings.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.63"
+  "foreverAddonVersion": "0.2.64"
 }

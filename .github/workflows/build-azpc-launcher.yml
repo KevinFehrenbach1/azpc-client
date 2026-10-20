@@ -163,5 +163,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.63 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.63 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.63 - Clean favorite stars" --notes "Crop the reputation texture sheet to one star per recipe. Favorites behavior, saved selections and scan/buy logic unchanged. Watcher 0.4.41 and TBC 0.4.29 unchanged."
+          if gh release view forever-addon-v0.2.64 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.64 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.64 - Recipe price freshness" --notes "Recipe summary displays Updated just now or relative scan age, incomplete material counts, missing output price, limited AH stock and stale scans. Age refreshes while visible without new AH queries. Partial refreshes retain the timestamp of the displayed quote. Existing scan and purchase flow preserved. Watcher 0.4.41 and TBC 0.4.29 unchanged."
