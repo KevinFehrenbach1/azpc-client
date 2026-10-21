@@ -4069,14 +4069,16 @@ end
 end
 -- END AZPC USER SETTINGS
 
--- AZPC Forever: optional first-run setup help for CurseForge-only installations.
--- The watcher writes AZPCForeverWatcherStatus into the addon on disk.
--- This is a last-known signal, not direct Windows process detection.
+-- AZPC Forever: nonintrusive onboarding for fresh CurseForge-only installs.
 local function now() return (GetServerTime and GetServerTime()) or (time and time()) or 0 end
 local function watcherSeen()
     local w=AZPCForeverWatcherStatus
     local checked=type(w)=='table' and tonumber(w.checkedAt)
     return checked and checked>0 and now()>=checked and (now()-checked)<3600
+end
+local function hasExistingHistory()
+    local db=AZPCForeverDB
+    return type(db)=='table' and ((type(db.trades)=='table' and next(db.trades)~=nil) or (type(db.snapshots)=='table' and next(db.snapshots)~=nil))
 end
 local function dismissed()
     return type(AZPCForeverDB)=='table' and AZPCForeverDB.setupPromptDismissed==true
@@ -4084,34 +4086,64 @@ end
 local function markDismissed()
     if type(AZPCForeverDB)=='table' then AZPCForeverDB.setupPromptDismissed=true end
 end
-local testing=false
+local window
+local function createWindow()
+    if window then return window end
+    local f=CreateFrame('Frame','AZPCForeverSetupWindow',UIParent,'BackdropTemplate')
+    f:SetSize(430,230)
+    f:SetPoint('CENTER')
+    f:SetFrameStrata('DIALOG')
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag('LeftButton')
+    f:SetScript('OnDragStart',function(self) self:StartMoving() end)
+    f:SetScript('OnDragStop',function(self) self:StopMovingOrSizing() end)
+    f:SetBackdrop({bgFile='Interface\\DialogFrame\\UI-DialogBox-Background',edgeFile='Interface\\DialogFrame\\UI-DialogBox-Border',edgeSize=26,insets={left=8,right=8,top=8,bottom=8}})
+    local title=f:CreateFontString(nil,'OVERLAY','GameFontNormalLarge')
+    title:SetPoint('TOP',0,-25)
+    title:SetText('Connect AZPC to Your Dashboard')
+    local body=f:CreateFontString(nil,'OVERLAY','GameFontHighlight')
+    body:SetPoint('TOPLEFT',30,-65)
+    body:SetPoint('TOPRIGHT',-30,-65)
+    body:SetJustifyH('LEFT')
+    body:SetText('The AZPC Watcher has not checked in.\\n\\nInstall the AZPC Launcher and Watcher from azpc.market to enable dashboard syncing.')
+    local url=f:CreateFontString(nil,'OVERLAY','GameFontNormal')
+    url:SetPoint('TOP',0,-157)
+    url:SetText('azpc.market')
+    local ok=CreateFrame('Button',nil,f,'UIPanelButtonTemplate')
+    ok:SetSize(160,26)
+    ok:SetPoint('BOTTOMLEFT',28,21)
+    ok:SetText('Got it')
+    ok:SetScript('OnClick',function() if not f.testMode then markDismissed() end f:Hide() end)
+    local later=CreateFrame('Button',nil,f,'UIPanelButtonTemplate')
+    later:SetSize(160,26)
+    later:SetPoint('BOTTOMRIGHT',-28,21)
+    later:SetText('Remind me later')
+    later:SetScript('OnClick',function() f:Hide() end)
+    f:Hide()
+    window=f
+    return f
+end
 local function show(force)
     force=force==true
-    if (not force and (watcherSeen() or dismissed())) or (InCombatLockdown and InCombatLockdown()) then return end
-    testing=force
-    if not StaticPopupDialogs or not StaticPopup_Show then return end
-    StaticPopupDialogs.AZPC_FOREVER_SETUP_HELP={
-        text='Connect AZPC to your dashboard!\\n\\nThe AZPC Watcher has not checked in recently. If you installed this addon from CurseForge, visit azpc.market to install the launcher and watcher.\\n\\nYour addon still works without the watcher, but dashboard sync needs it.',
-        button1='Got it',button2='Remind me later',
-        OnAccept=function() if not testing then markDismissed() end end,
-        timeout=0,whileDead=true,hideOnEscape=true,
-    }
-    StaticPopup_Show('AZPC_FOREVER_SETUP_HELP')
+    if InCombatLockdown and InCombatLockdown() then return end
+    -- An existing trading history indicates a configured installation.
+    -- Do not surprise established users after a launcher update resets the heartbeat.
+    if not force and (watcherSeen() or dismissed() or hasExistingHistory()) then return end
+    local f=createWindow()
+    f.testMode=force
+    f:Show()
 end
 local f=CreateFrame('Frame')
 f:RegisterEvent('PLAYER_LOGIN')
 f:SetScript('OnEvent',function()
-    if C_Timer and C_Timer.After then C_Timer.After(12,show) else show() end
+    if C_Timer and C_Timer.After then C_Timer.After(12,function() show(false) end) else show(false) end
 end)
 AZPCForeverSetupHelp={Show=show,WatcherSeen=watcherSeen}
--- Test the CurseForge setup popup without changing saved dismissal preferences.
 if SlashCmdList and SlashCmdList.AZPCFOREVER then
     local previous=SlashCmdList.AZPCFOREVER
     SlashCmdList.AZPCFOREVER=function(command)
-        if (command or ''):lower() == 'testsetup' then
-            show(true)
-            return
-        end
+        if (command or ''):lower()=='testsetup' then show(true) return end
         return previous(command)
     end
 end
