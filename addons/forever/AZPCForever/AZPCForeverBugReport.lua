@@ -6,7 +6,7 @@ local function addonVersion()
  return 'unknown'
 end
 local function makeEdit(parent,x,y,w,h,multi)
- local e=CreateFrame('EditBox',nil,parent,'InputBoxTemplate')
+ local e=CreateFrame('EditBox',nil,parent,multi and nil or 'InputBoxTemplate')
  e:SetPoint('TOPLEFT',x,y);e:SetSize(w,h);e:SetAutoFocus(false)
  if multi then e:SetMultiLine(true);e:SetMaxLetters(1500);e:SetTextInsets(8,8,5,5) end
  e:SetScript('OnEscapePressed',function(self)self:ClearFocus()end)
