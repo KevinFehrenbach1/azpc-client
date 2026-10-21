@@ -6,5 +6,5 @@
   "game": "tbc-anniversary",
   "notes": "Export crafting results as copyable CSV with existing profit estimates and scan prices.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.86"
+  "foreverAddonVersion": "0.2.87"
 }
