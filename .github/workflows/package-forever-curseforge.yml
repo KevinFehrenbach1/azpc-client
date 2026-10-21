@@ -1,0 +1,68 @@
+name: Package AZPC Forever for CurseForge
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'addons/forever/AZPCForever/**'
+      - 'curseforge/**'
+      - '.github/workflows/package-forever-curseforge.yml'
+  pull_request:
+    paths:
+      - 'addons/forever/AZPCForever/**'
+      - 'curseforge/**'
+      - '.github/workflows/package-forever-curseforge.yml'
+permissions:
+  contents: read
+jobs:
+  curseforge-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua and run existing addon regression suites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+          for test in watcher/tests/forever-*.lua; do
+            echo "Running $test"
+            lua5.1 "$test"
+          done
+      - name: Validate CurseForge addon files and create install-ready ZIP
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          import re
+          root = Path('addons/forever/AZPCForever')
+          toc = root / 'AZPCForever.toc'
+          assert toc.is_file(), 'Missing .toc'
+          lines = toc.read_text(encoding='utf-8').splitlines()
+          interface = next((x.split(':',1)[1].strip() for x in lines if x.startswith('## Interface:')), None)
+          version = next((x.split(':',1)[1].strip() for x in lines if x.startswith('## Version:')), None)
+          assert interface and re.fullmatch(r'\d+', interface), 'Invalid interface metadata'
+          assert version and re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid version metadata'
+          assert any(x.startswith('## SavedVariables: AZPCForeverDB') for x in lines), 'Missing saved variables declaration'
+          declared = [x.strip() for x in lines if x.strip() and not x.startswith('#')]
+          assert declared, 'No addon entry points'
+          for item in declared:
+              assert not Path(item).is_absolute() and '..' not in Path(item).parts, 'Unsafe TOC path'
+              assert (root / item).is_file(), f'Missing declared addon file: {item}'
+          actual = sorted(p.name for p in root.iterdir() if p.is_file())
+          assert sorted(['AZPCForever.toc'] + declared) == actual, f'Unexpected or undeclared addon files: {actual}'
+          assert all(p.suffix.lower() in ('.toc','.lua') for p in root.iterdir()), 'Unexpected file in addon directory'
+          assert not any(p.is_symlink() for p in root.iterdir()), 'Symlinks not allowed'
+          out = Path('dist')
+          out.mkdir(exist_ok=True)
+          package = out / f'AZPCForever-CurseForge-v{version}.zip'
+          with ZipFile(package, 'w', ZIP_DEFLATED) as archive:
+              for item in ['AZPCForever.toc'] + declared:
+                  archive.write(root / item, 'AZPCForever/' + item)
+          with ZipFile(package) as archive:
+              assert sorted(archive.namelist()) == sorted('AZPCForever/' + x for x in ['AZPCForever.toc'] + declared)
+              assert archive.testzip() is None
+          print(f'PASS: {package} - {len(declared)} Lua entry points, interface {interface}')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AZPCForever-CurseForge-package
+          path: dist/AZPCForever-CurseForge-v*.zip
+          if-no-files-found: error
