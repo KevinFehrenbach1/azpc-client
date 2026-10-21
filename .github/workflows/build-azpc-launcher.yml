@@ -168,5 +168,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.89 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.89 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.89 - Scrollable bug report layout" --notes "Fixes report overflow with scrollable text areas and removes redundant URL edit field. Watcher and TBC unchanged."
+          if gh release view forever-addon-v0.2.90 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.90 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.90 - Scrollable bug report layout corrected" --notes "Final corrected scrollable bug report with clean multiline diagnostics and no redundant URL input. Watcher and TBC unchanged."
