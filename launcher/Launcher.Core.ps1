@@ -192,7 +192,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
     New-Item -ItemType Directory -Path $target -Force | Out-Null
     $addonName=if($Manifest.game -eq 'forever'){'AZPCForever'}else{'AZPC'}
     $allowed = @(('addon/'+$addonName+'/'+$addonName+'.lua'),('addon/'+$addonName+'/'+$addonName+'.toc'),'watcher/AZPC-Watcher.ps1','VERSION.json')
-    if ($Manifest.game -eq 'forever') { $allowed += 'addon/AZPCForever/AZPCForeverBugReport.lua' }
+    if ($Manifest.game -eq 'forever') { $allowed += @('addon/AZPCForever/AZPCForeverBugReport.lua','addon/AZPCForever/AZPCForeverSetupHelp.lua') }
     $seen = @{}
     try {
         foreach ($entry in $zip.Entries) {
