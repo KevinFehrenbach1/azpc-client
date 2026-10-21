@@ -1,6 +1,8 @@
 name: Package AZPC Forever for CurseForge
 on:
   workflow_dispatch:
+  release:
+    types: [published]
   push:
     branches: [main]
     paths:
@@ -66,3 +68,45 @@ jobs:
           name: AZPCForever-CurseForge-package
           path: dist/AZPCForever-CurseForge-v*.zip
           if-no-files-found: error
+
+  curseforge-publish:
+    needs: curseforge-package
+    # Off by default. Enable only after initial CurseForge approval by setting
+    # repository variable CURSEFORGE_AUTO_PUBLISH to true.
+    if: ${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'forever-addon-v') && vars.CURSEFORGE_AUTO_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release tag matches packaged addon version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(sed -n 's/^## Version: *//p' addons/forever/AZPCForever/AZPCForever.toc | tr -d '\r')"
+          test "$RELEASE_TAG" = "forever-addon-v$version" || {
+            echo "::error::Release tag $RELEASE_TAG does not match addon version $version"
+            exit 1
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: AZPCForever-CurseForge-package
+          path: dist
+      - name: Select validated addon package
+        shell: bash
+        run: |
+          shopt -s nullglob
+          packages=(dist/AZPCForever-CurseForge-v*.zip)
+          test "${#packages[@]}" -eq 1 || { echo "::error::Expected exactly one addon ZIP"; exit 1; }
+          cp "${packages[0]}" dist/AZPCForever-CurseForge-upload.zip
+      - name: Upload AZPC Forever beta to CurseForge
+        uses: itsmeow/curseforge-upload@v3.1.2
+        with:
+          token: ${{ secrets.AZPC_GITHUB_CURSEFORGE }}
+          project_id: '1757256'
+          game_endpoint: wow
+          file_path: dist/AZPCForever-CurseForge-upload.zip
+          game_versions: '1.60.1'
+          release_type: beta
+          display_name: 'AZPC Forever ${{ github.event.release.tag_name }} — Beta'
+          changelog: ${{ github.event.release.body }}
+          changelog_type: markdown
