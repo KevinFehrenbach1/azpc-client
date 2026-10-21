@@ -4090,6 +4090,7 @@ local window
 local function createWindow()
     if window then return window end
     local f=CreateFrame('Frame','AZPCForeverSetupWindow',UIParent,'BackdropTemplate')
+    if not f or not f.SetSize then return nil end
     f:SetSize(430,230)
     f:SetPoint('CENTER')
     f:SetFrameStrata('DIALOG')
@@ -4131,6 +4132,7 @@ local function show(force)
     -- Do not surprise established users after a launcher update resets the heartbeat.
     if not force and (watcherSeen() or dismissed() or hasExistingHistory()) then return end
     local f=createWindow()
+    if not f then return end
     f.testMode=force
     f:Show()
 end
