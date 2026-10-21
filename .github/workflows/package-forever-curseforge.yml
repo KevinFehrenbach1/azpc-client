@@ -28,8 +28,9 @@ jobs:
             lua5.1 "$test"
           done
       - name: Validate CurseForge addon files and create install-ready ZIP
-        shell: python
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
           import re
@@ -66,3 +67,4 @@ jobs:
           name: AZPCForever-CurseForge-package
           path: dist/AZPCForever-CurseForge-v*.zip
           if-no-files-found: error
+          PY
