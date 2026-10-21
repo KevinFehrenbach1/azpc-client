@@ -2,6 +2,13 @@
 
 **Current candidate:** 0.2.90. This directory is for the *standalone WoW addon*, not the Windows launcher or watcher.
 
+## Release materials
+
+- [CurseForge listing copy](LISTING.md)
+- [Standalone and optional-sync setup](INSTALL.md)
+- [Player FAQ](FAQ.md)
+- [Public beta announcement and screenshot checklist](LAUNCH-ANNOUNCEMENT.md)
+
 ## Release procedure
 
 1. Run the GitHub Actions workflow **Package AZPC Forever for CurseForge** on the release commit. Wait for its Lua tests and ZIP validation to pass.
