@@ -168,5 +168,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.87 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.87 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.87 - Copyable setup website" --notes "Adds selectable azpc.market URL and Copy Website button in onboarding. Watcher and TBC unchanged."
+          if gh release view forever-addon-v0.2.88 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.88 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.88 - Opt-in bug report diagnostics" --notes "Adds local diagnostic summary to bug reports with opt-in character details and no credentials or raw error contents. Watcher and TBC unchanged."
