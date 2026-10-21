@@ -8,7 +8,7 @@ AZPC is a free World of Warcraft Forever addon for auction-house research, craft
 
 The addon works on its own. For optional account-based website dashboards and community scan uploads, install the separate AZPC Launcher and Watcher from **https://azpc.market**.
 
-**Project:** [AZPC Forever on CurseForge](https://www.curseforge.com/wow/addons/azpc-forever) *(verify the project URL before posting)*  
+**CurseForge project:** Add the verified public project URL before posting.  
 **Website:** https://forever.azpc.market/  
 **Setup:** https://azpc.market/
 
