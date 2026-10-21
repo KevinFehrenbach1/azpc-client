@@ -18,6 +18,10 @@ Install the addon through CurseForge, log in and open the **AZPC** minimap menu.
 
 This is beta software. Auction-house prices may be missing or stale until scans are collected. Estimated profits are not guaranteed sale proceeds. Some trading events may require opening the mailbox and reloading to save records. Not all costs can be reconstructed for historical materials. The watcher is an optional, separate Windows component and is **not bundled** in the CurseForge ZIP.
 
+## Frequently asked questions
+
+For answers about addon-only installation, optional watcher syncing, pricing coverage, crafting estimates and bug reporting, see [the AZPC Forever FAQ](FAQ.md).
+
 ## Support and feedback
 
 Use **Report Bug** in the AZPC minimap menu. Review the generated report before sharing it. Character details are excluded unless you explicitly opt in.
