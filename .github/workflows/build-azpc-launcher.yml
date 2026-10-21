@@ -69,18 +69,23 @@ jobs:
       - name: Build launcher and update bundle
         shell: powershell
         run: ./launcher/Build.ps1
-      - name: Verify live release lookup and component download
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify newly built component manifests and checksums
         shell: powershell
         run: |
-          . ./launcher/Launcher.Core.ps1
-          $manifest = Get-RemoteManifest -ApiToken $env:GH_TOKEN
-          $work = Join-Path $env:RUNNER_TEMP 'azpc-live-download'
-          New-Item -ItemType Directory $work -Force | Out-Null
-          $payload = Get-UpdatePayload $manifest $work
-          $versions = Read-JsonFile (Join-Path $payload 'VERSION.json')
-          Write-Host ('Verified released addon ' + $versions.addonVersion + ' and watcher ' + $versions.watcherVersion)
+          $ErrorActionPreference = 'Stop'
+          $out = './launcher/output'
+          foreach ($game in @('forever','tbc')) {
+            $prefix = if ($game -eq 'forever') { 'azpc-forever-' } else { 'azpc-' }
+            $manifest = Get-Content (Join-Path $out ($prefix+'update.json')) -Raw | ConvertFrom-Json
+            $bundle = Join-Path $out ($prefix+'components.zip')
+            $actual = (Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $manifest.bundleSha256) { throw ('Packaged '+$game+' checksum mismatch') }
+            if ($game -eq 'forever') {
+              $expected = (Get-Content './installer/payload/VERSION.json' -Raw | ConvertFrom-Json).foreverAddonVersion
+              if ($manifest.addonVersion -ne $expected) { throw 'Forever release manifest version mismatch' }
+            }
+            Write-Host ('PASS: '+$game+' package checksum and version '+$manifest.addonVersion)
+          }
       - name: Smoke test launcher window
         shell: powershell
         run: |
