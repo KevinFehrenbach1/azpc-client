@@ -1,5 +1,5 @@
 -- AZPC Forever: AH collector and profession planner. Searches require explicit user actions; never buys or sells.
-local addon, VERSION = ..., "0.2.77"
+local addon, VERSION = ..., ((C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata('AZPCForever','Version')) or (GetAddOnMetadata and GetAddOnMetadata('AZPCForever','Version')) or 'unknown')
 -- BEGIN AZPC TIMING DIAGNOSTICS
 local perf={enabled=false,stats={}}
 AZPCForeverDiagnostics=perf
@@ -3885,6 +3885,7 @@ function minimap.Invoke(action)
  elseif action=='sync' and AZPCForeverSyncStatus then return AZPCForeverSyncStatus.Show()
  elseif action=='setup' and AZPCForeverSetup then return AZPCForeverSetup.Show()
  elseif action=='settings' and AZPCForeverSettings then return AZPCForeverSettings.Show()
+ elseif action=='bug' and AZPCForeverBugReport then return AZPCForeverBugReport.Show()
  elseif action=='hide' then return minimap.SetHidden(true)end
  return false
 end
@@ -3907,7 +3908,7 @@ function minimap.ToggleMenu()
  if not button then return false end
  if not menu then
   menu=CreateFrame('Frame','AZPCForeverMinimapMenu',UIParent,BackdropTemplateMixin and 'BackdropTemplate' or nil)
-  menu:SetSize(212,232);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
+  menu:SetSize(212,266);menu:SetFrameStrata('DIALOG');menu:SetClampedToScreen(true);menu:EnableMouse(true)
   menu:SetMovable(true);menu:RegisterForDrag('LeftButton')
   local moving=false
   local function stopMoving()if moving then moving=false;menu:StopMovingOrSizing();saveMenuPosition()end end
@@ -3916,7 +3917,7 @@ function minimap.ToggleMenu()
   if menu.SetBackdrop then menu:SetBackdrop({bgFile='Interface/DialogFrame/UI-DialogBox-Background',edgeFile='Interface/DialogFrame/UI-DialogBox-Border',tile=true,tileSize=32,edgeSize=20,insets={left=6,right=6,top=6,bottom=6}})end
   local title=menu:CreateFontString(nil,'OVERLAY','GameFontNormal');title:SetPoint('TOPLEFT',16,-17);title:SetText('|cff54dbd1AZPC|r')
   local close=CreateFrame('Button',nil,menu,'UIPanelCloseButton');close:SetPoint('TOPRIGHT',-2,-2)
-  for i,row in ipairs({{'Crafting','crafting'},{'Sync Status','sync'},{'Getting Started','setup'},{'Settings','settings'},{'Hide minimap icon','hide'}})do
+  for i,row in ipairs({{'Crafting','crafting'},{'Sync Status','sync'},{'Getting Started','setup'},{'Settings','settings'},{'Report Bug','bug'},{'Hide minimap icon','hide'}})do
    local action=row[2];local b=CreateFrame('Button',nil,menu,'UIPanelButtonTemplate');b:SetSize(180,28);b:SetPoint('TOPLEFT',16,-43-(i-1)*34);b:SetText(row[1]);b:SetScript('OnClick',function()minimap.Invoke(action)end)
   end
   menu:Hide();if type(UISpecialFrames)=='table'then UISpecialFrames[#UISpecialFrames+1]='AZPCForeverMinimapMenu'end
