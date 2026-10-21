@@ -21,6 +21,10 @@ Visit https://azpc.market and install the AZPC Launcher. Select **Forever Beta**
 - `/azpcf bug` — Report Bug.
 - `/azpcf testsetup` — Preview the optional watcher setup reminder (for testing only).
 
+## Common questions
+
+See [the AZPC Forever FAQ](FAQ.md) for addon-only use, watcher requirements, privacy, market observations and live-server compatibility.
+
 ## Troubleshooting
 
 If the addon is absent, confirm you installed it under the correct game client's `Interface/AddOns/AZPCForever` folder, the `.toc` file is directly inside that folder, and the addon is enabled. If the dashboard is empty, check that the separate watcher is running, you have signed into the correct account, and you have captured supported data; then `/reload`. Do not delete SavedVariables or trading history as a troubleshooting shortcut.
