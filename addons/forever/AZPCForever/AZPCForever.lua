@@ -4104,16 +4104,11 @@ f:SetScript('OnEvent',function()
     if C_Timer and C_Timer.After then C_Timer.After(12,show) else show() end
 end)
 AZPCForeverSetupHelp={Show=show,WatcherSeen=watcherSeen}
--- Test the CurseForge setup popup without modifying saved dismissal preferences.
+-- Test the CurseForge setup popup without changing saved dismissal preferences.
 if SlashCmdList and SlashCmdList.AZPCFOREVER then
     local previous=SlashCmdList.AZPCFOREVER
     SlashCmdList.AZPCFOREVER=function(command)
-        if (command or ''):lower():match('^%s*testsetup%s*
-
--- AZPC WATCHER STATUS BEGIN
-AZPCForeverWatcherStatus = nil
--- AZPC WATCHER STATUS END
-) then
+        if (command or ''):lower() == 'testsetup' then
             show(true)
             return
         end
