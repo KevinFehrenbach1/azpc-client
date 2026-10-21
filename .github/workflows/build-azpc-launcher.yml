@@ -163,5 +163,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.78 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.78 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.78 - Export CSV button placement" --notes "Export currently filtered crafting recipes and scanned prices as copyable paginated CSV. Reuse existing profit estimates; incomplete prices are marked No data. WoW addon sandbox does not permit direct CSV file writes. Watcher and TBC unchanged."
+          if gh release view forever-addon-v0.2.79 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.79 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.79 - Forever update lookup fix" --notes "Export currently filtered crafting recipes and scanned prices as copyable paginated CSV. Reuse existing profit estimates; incomplete prices are marked No data. WoW addon sandbox does not permit direct CSV file writes. Watcher and TBC unchanged."
