@@ -4084,13 +4084,16 @@ end
 local function markDismissed()
     if type(AZPCForeverDB)=='table' then AZPCForeverDB.setupPromptDismissed=true end
 end
-local function show()
-    if watcherSeen() or dismissed() or (InCombatLockdown and InCombatLockdown()) then return end
+local testing=false
+local function show(force)
+    force=force==true
+    if (not force and (watcherSeen() or dismissed())) or (InCombatLockdown and InCombatLockdown()) then return end
+    testing=force
     if not StaticPopupDialogs or not StaticPopup_Show then return end
     StaticPopupDialogs.AZPC_FOREVER_SETUP_HELP={
         text='Connect AZPC to your dashboard!\\n\\nThe AZPC Watcher has not checked in recently. If you installed this addon from CurseForge, visit azpc.market to install the launcher and watcher.\\n\\nYour addon still works without the watcher, but dashboard sync needs it.',
         button1='Got it',button2='Remind me later',
-        OnAccept=markDismissed,
+        OnAccept=function() if not testing then markDismissed() end end,
         timeout=0,whileDead=true,hideOnEscape=true,
     }
     StaticPopup_Show('AZPC_FOREVER_SETUP_HELP')
@@ -4101,6 +4104,22 @@ f:SetScript('OnEvent',function()
     if C_Timer and C_Timer.After then C_Timer.After(12,show) else show() end
 end)
 AZPCForeverSetupHelp={Show=show,WatcherSeen=watcherSeen}
+-- Test the CurseForge setup popup without modifying saved dismissal preferences.
+if SlashCmdList and SlashCmdList.AZPCFOREVER then
+    local previous=SlashCmdList.AZPCFOREVER
+    SlashCmdList.AZPCFOREVER=function(command)
+        if (command or ''):lower():match('^%s*testsetup%s*
+
+-- AZPC WATCHER STATUS BEGIN
+AZPCForeverWatcherStatus = nil
+-- AZPC WATCHER STATUS END
+) then
+            show(true)
+            return
+        end
+        return previous(command)
+    end
+end
 
 -- AZPC WATCHER STATUS BEGIN
 AZPCForeverWatcherStatus = nil
