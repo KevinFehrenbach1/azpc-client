@@ -3310,7 +3310,7 @@ do
         page.count=font(page,'GameFontDisableSmall',12,-142,200)
         page.scanAll=uiButton(page,'Scan All Recipes',142,24);page.scanAll:SetPoint('BOTTOMLEFT',12,8);page.scanAll:SetScript('OnClick',startBatch)
         page.stopAll=uiButton(page,'Stop',62,24);page.stopAll:SetPoint('BOTTOMLEFT',158,8);page.stopAll:SetScript('OnClick',stopBatch)
-        page.exportButton=uiButton(page,'Export CSV',104,24);page.exportButton:SetPoint('BOTTOMLEFT',12,36);page.exportButton:SetScript('OnClick',showCraftingExport)
+        page.exportButton=uiButton(page,'Export CSV',104,24);page.exportButton:SetPoint('BOTTOMRIGHT',-12,8);page.exportButton:SetScript('OnClick',showCraftingExport)
         page.menu=CreateFrame('Frame',nil,page,'BackdropTemplate');page.menu:SetSize(204,100);page.menu:SetPoint('TOPLEFT',12,-66);page.menu:SetFrameLevel(page:GetFrameLevel()+20)
         page.menu:SetBackdrop({bgFile='Interface/Buttons/WHITE8X8'});page.menu:SetBackdropColor(0.04,0.06,0.065,1);page.menu:EnableMouse(true);page.menu:Hide()
         local ageElapsed=0
