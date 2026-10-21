@@ -163,5 +163,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.80 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.80 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.80 - In-game bug reporting" --notes "Adds Report Bug menu and /azpcf bug, movable copyable report, and correct in-game version display. Watcher and TBC unchanged."
+          if gh release view forever-addon-v0.2.81 >/dev/null 2>&1; then exit 0; fi
+          gh release create forever-addon-v0.2.81 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.81 - Bug report description field cleanup" --notes "Removes redundant input border from the multiline bug description. Watcher and TBC unchanged."
