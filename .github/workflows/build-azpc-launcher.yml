@@ -49,6 +49,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Guard watcher startup mutex and packaged version
+        shell: powershell
+        run: |
+          $source = Get-Content './installer/payload/watcher/AZPC-Watcher.ps1' -Raw
+          $version = Get-Content './installer/payload/VERSION.json' -Raw | ConvertFrom-Json
+          if (-not $source.Contains("'Local\AZPCWatcher_'")) { throw 'Watcher mutex namespace is malformed.' }
+          if ($source.Contains("'Local\\AZPCWatcher_'")) { throw 'Watcher mutex has a double separator.' }
+          if ($source -notmatch ('version\s*=\s*"' + [regex]::Escape($version.watcherVersion) + '"')) { throw 'Watcher version mismatch.' }
+          $name = 'Local\AZPCWatcher_AZPC_TEST'
+          $mutex = [System.Threading.Mutex]::new($false, $name)
+          try { if (-not $mutex.WaitOne(0)) { throw 'Watcher mutex lock unavailable.' } } finally { $mutex.ReleaseMutex(); $mutex.Dispose() }
       - name: Check syntax, updates, rollback, and history preservation
         shell: powershell
         run: ./launcher/tests/Run.Tests.ps1
