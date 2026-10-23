@@ -312,6 +312,49 @@ SlashCmdList.AZPCFOREVER=function(command)
             end
             if #events==0 then message("No saved acquisition/craft events for item "..itemId..". This does not prove none occurred.")end
         end
+    elseif command:match("^costaudit%s+") then
+        -- Read-only evidence audit: no cost replay, inventory mutation, or estimates.
+        local query=command:match("^costaudit%s+(.+)$")
+        query=query and query:lower():gsub("^%s+",""):gsub("%s+$","") or ""
+        local db=AZPCForeverDB and AZPCForeverDB.crafting or {}
+        local matches={}
+        for _,r in ipairs(db.crafts or {}) do
+            if type(r.name)=="string" and r.name:lower():find(query,1,true) then matches[#matches+1]=r end
+        end
+        table.sort(matches,function(a,b)return (tonumber(a.observedAt) or 0)>(tonumber(b.observedAt) or 0)end)
+        if query=="" then message("Usage: /azpcf costaudit Mystic Heavy Armor Kit")
+        else
+            message("READ-ONLY cost audit: "..#matches.." matching crafts; showing up to 4 newest. Historical records are not changed.")
+            for i=1,math.min(4,#matches) do
+                local r=matches[i];local at=tonumber(r.observedAt) or 0
+                local basis=r.costBasis or {}
+                message("Craft #"..i.." "..tostring(r.name).." x"..tostring(r.quantity or "?").." "..(at>0 and date("%m-%d %H:%M",math.floor(at/1000)) or "unknown time").." | "..(basis.complete and not r.costConflict and "verified complete " or "INCOMPLETE recorded ")..tostring(basis.totalCopper or basis.recordedCopper or "?").."c")
+                for _,m in ipairs(r.consumedReagents or {}) do
+                    local id=tonumber(m.itemId);local prior,later,unknown=0,0,0
+                    local sources={}
+                    local function consider(e,source)
+                        if tonumber(e.itemId)~=id or e.character~=r.character or e.realm~=r.realm or e.faction~=r.faction then return end
+                        local t=tonumber(e.observedAt) or 0
+                        if t>at then later=later+1;return end
+                        prior=prior+1
+                        local cost=e.costBasis
+                        local status=cost and (cost.complete and "complete "..tostring(cost.totalCopper or "?").."c" or "partial "..tostring(cost.recordedCopper or "?").."c") or (e.kind=="free" and "confirmed free" or e.kind=="buy" and e.purchaseCostKnown~=false and e.copper~=nil and ("recorded buy "..tostring(e.copper).."c") or "cost unverified")
+                        if status=="cost unverified" then unknown=unknown+1 end
+                        sources[#sources+1]={at=t,summary=source.." "..tostring(e.kind or "craft").." x"..tostring(e.quantity or "?").." "..status}
+                    end
+                    for _,e in ipairs(db.crafts or {}) do consider(e,"craft") end
+                    for _,e in ipairs(db.materialEvents or {}) do consider(e,"material") end
+                    for _,e in ipairs(db.vendorEvents or {}) do consider(e,"vendor") end
+                    table.sort(sources,function(a,b)return a.at>b.at end)
+                    message("  Item "..tostring(id or "?").." x"..tostring(m.quantity or "?")..": "..prior.." prior saved source events, "..later.." later (excluded); "..unknown.." unverified")
+                    for j=1,math.min(3,#sources) do
+                        local e=sources[j];message("    "..date("%m-%d %H:%M",math.floor(e.at/1000)).." "..e.summary)
+                    end
+                    if #sources==0 then message("    No matching earlier source event in local crafting/material/vendor ledgers.")end
+                end
+            end
+            message("Audit is evidence-only: source events do not prove which inventory units were consumed. AH mailbox buys are not included in this view.")
+        end
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
         message(ok and "Mailbox checked. /reload saves records for My Trades." or tostring(err))
