@@ -138,14 +138,15 @@ function Get-RemoteManifest {
     $release = Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $script:Repo + '/releases/latest') -Headers $headers -TimeoutSec 30
     $manifestName=if($Game -eq 'forever'){'azpc-forever-update.json'}else{'azpc-update.json'}
     $asset = @($release.assets | Where-Object { $_.name -eq $manifestName })
-    if($Game -eq 'forever' -and $asset.Count -eq 0){ throw 'The latest release has no Forever addon package. Try again after its release is published.' }
-    if ($asset.Count -eq 0) {
+
+    if ($Game -eq 'forever' -or $asset.Count -eq 0) {
         # Compatibility with existing releases: resolve the released tag once, then pin all files to its immutable commit.
         $tag=[uri]::EscapeDataString([string]$release.tag_name)
         $commit=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$script:Repo+'/commits/'+$tag) -Headers $headers -TimeoutSec 30
         if([string]$commit.sha -notmatch '^[a-f0-9]{40}$'){ throw 'Could not resolve the release commit.' }
         $files=@(); $versionData=$null
-        foreach($path in @('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')) {
+        $paths=if($Game -eq 'forever'){@('addon/AZPCForever/AZPCForever.lua','addon/AZPCForever/AZPCForever.toc','addon/AZPCForever/AZPCForeverBugReport.lua','watcher/AZPC-Watcher.ps1','VERSION.json')}else{@('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')}
+        foreach($path in $paths) {
             $entry=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$script:Repo+'/contents/installer/payload/'+$path+'?ref='+$commit.sha) -Headers $headers -TimeoutSec 30
             if($entry.encoding -ne 'base64' -or [long]$entry.size -gt 5242880){ throw 'Release file is missing or too large.' }
             $bytes=[Convert]::FromBase64String([string]$entry.content)
@@ -154,7 +155,8 @@ function Get-RemoteManifest {
             $files+=@{path=$path;sha256=$digest}
             if($path -eq 'VERSION.json'){ $versionData=[Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json }
         }
-        $manifest=@{schema=2;game=$versionData.game;addonVersion=$versionData.addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.21';sourceCommit=[string]$commit.sha;files=$files}
+        $addonVersion=if($Game -eq 'forever'){$versionData.foreverAddonVersion}else{$versionData.addonVersion}
+        $manifest=@{schema=2;game=$Game;addonVersion=$addonVersion;watcherVersion=$versionData.watcherVersion;launcherVersion='0.2.21';sourceCommit=[string]$commit.sha;files=$files}
         Test-Manifest $manifest
         return $manifest
     }
