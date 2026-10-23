@@ -6,6 +6,8 @@ if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $dist,(Join-Path $dist 'launcher'),(Join-Path $dist 'installer\payload') -Force | Out-Null
 Copy-Item (Join-Path $PSScriptRoot '*.ps1') (Join-Path $dist 'launcher')
 Copy-Item (Join-Path $repoRoot 'installer\payload\*') (Join-Path $dist 'installer\payload') -Recurse
+# Keep installed launcher payload aligned with the canonical Forever addon source.
+Copy-Item (Join-Path $repoRoot 'addons\forever\AZPCForever\*') (Join-Path $dist 'installer\payload\addon\AZPCForever') -Force
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $csc /nologo /target:winexe /platform:anycpu /reference:System.Windows.Forms.dll ('/out:' + (Join-Path $dist 'AZPC-Launcher.exe')) (Join-Path $PSScriptRoot 'Launcher.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Launcher EXE compilation failed.' }
