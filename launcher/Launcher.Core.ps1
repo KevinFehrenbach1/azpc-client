@@ -185,7 +185,15 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
     $archive = Join-Path $Workspace 'bundle.zip' 
     Invoke-WebRequest -UseBasicParsing -Uri $Manifest.bundleUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.21' }
     if ((Get-Item $archive).Length -gt 10485760) { throw 'Update download exceeds the maximum size.' }
-    if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) { throw 'Update checksum mismatch. Nothing was installed.' }
+    if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) {
+        # A stale CDN response can differ from the immutable release manifest.
+        # Retry once with a cache-busting query; never bypass the SHA-256 check.
+        $retryUrl = [string]$Manifest.bundleUrl + '?azpc_sha=' + [string]$Manifest.bundleSha256
+        Invoke-WebRequest -UseBasicParsing -Uri $retryUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.21'; 'Cache-Control' = 'no-cache' }
+        if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) {
+            throw 'Update checksum mismatch after fresh download. Nothing was installed.'
+        }
+    }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     $target = Join-Path $Workspace 'payload'
