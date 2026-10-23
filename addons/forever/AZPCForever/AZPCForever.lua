@@ -2912,10 +2912,17 @@ do
             frame.close:SetScript('OnClick',function()frame:Hide()end)
             frame.selectAll:SetScript('OnClick',function()edit:SetFocus();edit:HighlightText()end)
             local function showPart()
-                edit:SetText(frame.chunks[frame.index]or'');edit:SetHeight(math.max(230,edit:GetStringHeight()+18))
+                local content=frame.chunks[frame.index] or ''
+                edit:SetText(content)
+                local lines=1
+                for line in (content..'\n'):gmatch('(.-)\n') do
+                    lines=lines+math.max(1,math.ceil(#line/75))
+                end
+                edit:SetHeight(math.max(230,lines*16+18))
                 edit:SetFocus();edit:HighlightText()
                 frame.part:SetText('Recipes: '..frame.count..' | Part '..frame.index..' of '..#frame.chunks)
-                frame.previous:SetEnabled(frame.index>1);frame.next:SetEnabled(frame.index<#frame.chunks)
+                if frame.index>1 then frame.previous:Enable() else frame.previous:Disable() end
+                if frame.index<#frame.chunks then frame.next:Enable() else frame.next:Disable() end
             end
             frame.previous:SetScript('OnClick',function()frame.index=frame.index-1;showPart()end)
             frame.next:SetScript('OnClick',function()frame.index=frame.index+1;showPart()end)
