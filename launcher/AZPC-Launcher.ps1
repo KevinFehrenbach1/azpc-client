@@ -134,6 +134,15 @@ $watcherButton=Button $updateCard 'Install / Update' 612 131 158 { Begin-Action 
 $allButton=Button $updateCard 'Install / Update All' 23 200 240 { Begin-Action 'all' } $true
 $startButton=Button $updateCard 'Start watcher' 418 200 165 { Begin-Action 'start' }
 $stopButton=Button $updateCard 'Stop watcher' 605 200 165 { Begin-Action 'stop' }
+$launcherUpdateButton=Button $updates 'Update Launcher' 0 445 215 {
+    try {
+        $message.Text='Downloading and verifying launcher update...';$form.Refresh()
+        $message.Text=Start-LauncherSelfUpdate
+        [Windows.Forms.MessageBox]::Show('Launcher installer verified. The update will run automatically when you close AZPC Launcher.','AZPC Launcher Update')|Out-Null
+        $form.Close()
+    } catch { $message.Text=$_.Exception.Message }
+}
+$null=Label $updates 'Updates the launcher itself without manually downloading an installer.' 235 452 545 40 10
 $versionNote=Label $updates 'Available versions are bundled until you check online.' 0 368 785 55 11; $versionNote.ForeColor=$muted
 $null=Label $settingsPage 'Game folder' 0 0 790 35 18 $true
 $folderHint=Label $settingsPage 'Select the main World of Warcraft folder containing _anniversary_.' 0 39 790 28 11
