@@ -115,16 +115,16 @@ function Test-Manifest($Manifest) {
     $null = Assert-Version ([string]$Manifest.addonVersion)
     $null = Assert-Version ([string]$Manifest.watcherVersion)
     $null = Assert-Version ([string]$Manifest.launcherVersion)
-    if ($Manifest.game -eq 'forever' -and $Manifest.schema -ne 1) { throw 'Unsupported Forever source manifest.' }
+
     if ($Manifest.schema -eq 2) {
         if ([string]$Manifest.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid release source commit.' }
-        $allowed=@('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')
+        $allowed=if($Manifest.game -eq 'forever'){@('addon/AZPCForever/AZPCForever.lua','addon/AZPCForever/AZPCForever.toc','addon/AZPCForever/AZPCForeverBugReport.lua','watcher/AZPC-Watcher.ps1','VERSION.json')}else{@('addon/AZPC/AZPC.lua','addon/AZPC/AZPC.toc','watcher/AZPC-Watcher.ps1','VERSION.json')}
         $seen=@{}
         foreach($file in $Manifest.files) {
             if ($file.path -notin $allowed -or $seen.ContainsKey([string]$file.path) -or [string]$file.sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid release source file or checksum.' }
             $seen[[string]$file.path]=$true
         }
-        if($seen.Count -ne 4){ throw 'Release source is incomplete.' }
+        if($seen.Count -ne $allowed.Count){ throw 'Release source is incomplete.' }
         return
     }
     Assert-ReleaseUrl ([string]$Manifest.bundleUrl)
@@ -179,7 +179,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
             if((Get-Item $destination).Length -gt 5242880 -or (Get-FileHash $destination -Algorithm SHA256).Hash -ne $file.sha256){ throw 'Release source checksum mismatch. Nothing was installed.' }
         }
         $versions=Read-JsonFile (Join-Path $target 'VERSION.json')
-        if($versions.addonVersion -ne $Manifest.addonVersion -or $versions.watcherVersion -ne $Manifest.watcherVersion -or $versions.game -ne $Manifest.game){ throw 'Release source versions do not match.' }
+        if($(if($Manifest.game -eq 'forever'){$versions.foreverAddonVersion}else{$versions.addonVersion}) -ne $Manifest.addonVersion -or $versions.watcherVersion -ne $Manifest.watcherVersion){ throw 'Release source versions do not match.' }
         return $target
     }
     $archive = Join-Path $Workspace 'bundle.zip' 
