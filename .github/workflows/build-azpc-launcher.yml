@@ -44,6 +44,7 @@ jobs:
       - run: lua5.1 watcher/tests/forever-vendor.lua
       - run: lua5.1 watcher/tests/forever-sync.lua
       - run: lua5.1 watcher/tests/forever-materials.lua
+      - run: lua5.1 watcher/tests/forever-history-replay.lua
       - run: lua5.1 watcher/tests/forever-migrations.lua
   windows:
     runs-on: windows-latest
