@@ -1006,13 +1006,28 @@ local function rebuild(db,tradeRows,step,deferred)
         if c>MAX or q>10000000000 then error('Material cost totals exceed the supported exact range.') end
         return q,c,known
     end
+    -- Consume historical lots in acquisition order. Never blend a known paid lot
+    -- with an unknown-cost lot: that would turn missing evidence into a fake average.
     local function average(p,wanted)
-        local q,c,known=totals(p);local used=math.min(q,wanted)
-        local transferred=q>0 and share(c,used,q) or 0
-        p.lots={}
-        if q>used then p.lots[1]={quantity=q-used,copper=known and c-transferred or nil,partialCopper=not known and c-transferred or nil} end
-        if q==used then p.uncertain=nil end
-        return {quantity=wanted,availableQuantity=q,recordedQuantity=used,knownCopper=transferred,complete=known and used==wanted}
+        local q=totals(p)
+        local remaining=wanted
+        local used,recorded,complete=0,0,not p.uncertain
+        while remaining>0 and #p.lots>0 do step()
+            local lot=p.lots[1]
+            local take=math.min(remaining,lot.quantity)
+            local basis=lot.copper or lot.partialCopper or 0
+            local part=take==lot.quantity and basis or share(basis,take,lot.quantity)
+            recorded=recorded+part
+            if lot.copper==nil then complete=false end
+            if lot.copper~=nil then lot.copper=basis-part else lot.partialCopper=basis-part end
+            lot.quantity=lot.quantity-take
+            used=used+take
+            remaining=remaining-take
+            if lot.quantity==0 then table.remove(p.lots,1) end
+        end
+        if used<wanted then complete=false end
+        if #p.lots==0 then p.uncertain=nil end
+        return {quantity=wanted,availableQuantity=q,recordedQuantity=used,knownCopper=recorded,complete=complete}
     end
     local function sale(p,wanted)
         while wanted>0 and #p.lots>0 do step();
