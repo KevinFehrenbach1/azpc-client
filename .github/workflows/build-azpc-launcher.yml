@@ -5,6 +5,7 @@ on:
     branches: [main, launcher/forever-v0.2.3]
     paths:
       - 'launcher/**'
+      - 'addons/forever/AZPCForever/**'
       - 'watcher/tests/**'
       - 'installer/payload/**'
       - '.github/workflows/build-azpc-launcher.yml'
@@ -168,5 +169,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view forever-addon-v0.2.90 >/dev/null 2>&1; then exit 0; fi
-          gh release create forever-addon-v0.2.90 release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "Forever addon 0.2.90 - Scrollable bug report layout corrected" --notes "Final corrected scrollable bug report with clean multiline diagnostics and no redundant URL input. Watcher and TBC unchanged."
+          version="$(sed -n 's/^## Version: *//p' addons/forever/AZPCForever/AZPCForever.toc | tr -d '\r')"
+          tag="forever-addon-v${version}"
+          test "$(python -c 'import json; print(json.load(open("installer/payload/VERSION.json"))["foreverAddonVersion"])')" = "$version"
+          if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag already exists"; exit 0; fi
+          gh release create "$tag" release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Forever addon ${version}" --notes "Fix crafting CSV export nil-function crash and improve watcher reliability diagnostics."
