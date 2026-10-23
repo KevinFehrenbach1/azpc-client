@@ -279,6 +279,39 @@ SlashCmdList.AZPCFOREVER=function(command)
                 if r.costConflict then message("  Warning: saved cost conflict")end
             end
         end
+    elseif command:match("^matfind%s+") then
+        local itemId=tonumber(command:match("^matfind%s+(%d+)%s*$"))
+        if not itemId then message("Usage: /azpcf matfind 4265")
+        else
+            local db=AZPCForeverDB and AZPCForeverDB.crafting or {}
+            local events={}
+            local function add(e,source)
+                if tonumber(e.itemId)==itemId then
+                    events[#events+1]={e=e,source=source}
+                end
+            end
+            for _,e in ipairs(db.materialEvents or {}) do add(e,"material") end
+            for _,e in ipairs(db.vendorEvents or {}) do add(e,"vendor") end
+            for _,e in ipairs(db.crafts or {}) do add(e,"craft") end
+            for _,e in ipairs(AZPCForeverDB and AZPCForeverDB.trades or {}) do
+                if e.kind=="buy" or e.kind=="purchase" then add(e,"trade") end
+            end
+            table.sort(events,function(a,b)return (tonumber(a.e.observedAt) or 0)>(tonumber(b.e.observedAt) or 0)end)
+            message("Material "..itemId..": "..#events.." saved source records. Showing up to 15 newest (copper; no estimates).")
+            for i=1,math.min(15,#events) do
+                local e=events[i].e;local at=tonumber(e.observedAt) or 0
+                local when=at>0 and date("%m-%d %H:%M",math.floor(at/1000)) or "unknown"
+                local cost=e.costBasis
+                local detail=cost and (cost.complete and ("cost "..tostring(cost.totalCopper or 0).."c complete") or ("cost partial "..tostring(cost.recordedCopper or 0).."c")) or ("copper "..tostring(e.copper or e.totalCopper or "unknown"))
+                message("#"..i.." "..when.." "..events[i].source.."/"..tostring(e.kind or "craft").." x"..tostring(e.quantity or "?").." "..tostring(e.character or "?").." | "..detail)
+                if cost and not cost.complete then
+                    for _,m in ipairs(e.costingMissing or cost.missing or {}) do
+                        message("  Missing "..tostring(m.itemId or "?")..": "..tostring(m.reason or "unknown").." "..tostring(m.recordedQuantity or "?").."/"..tostring(m.quantity or "?"))
+                    end
+                end
+            end
+            if #events==0 then message("No saved acquisition/craft events for item "..itemId..". This does not prove none occurred.")end
+        end
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
         message(ok and "Mailbox checked. /reload saves records for My Trades." or tostring(err))
