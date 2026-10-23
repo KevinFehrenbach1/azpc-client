@@ -2851,6 +2851,8 @@ do
         local v=tostring(value==nil and '' or value):gsub('[\r\n]+',' ')
         return '"'..v:gsub('"','""')..'"'
     end
+    -- Forward declaration: CSV export is defined before the recipe catalog implementation.
+    local catalog
     local function exportCraftingRows()
         local rows=catalog(filterProfession,filterText,favoritesOnly(),craftableOnly())
         local chunks,current={},{exportHeader}
@@ -2975,7 +2977,7 @@ do
         saved.closedCategories[key]=not saved.closedCategories[key]or nil
         if refreshBrowser then refreshBrowser()end
     end
-    local function catalog(profession,query,onlyFavorites,onlyCraftable)
+    catalog = function(profession,query,onlyFavorites,onlyCraftable)
         local db=AZPCForeverDB or {};local merged,groups={},{}
         for _,group in pairs(db.professionCatalog or {})do
             if ownedRecipe(group) then groups[group.profession]=true end
