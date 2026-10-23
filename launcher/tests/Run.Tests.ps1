@@ -66,6 +66,28 @@ public static class AzpcRestrictedToken {
     Must-Throw { Test-Manifest $bad } 'Unsupported'
     $bad=$manifest.Clone(); $bad.bundleSha256=''
     Must-Throw { Test-Manifest $bad } 'checksum'
+    # Forever updates must use the same immutable commit-pinned transport as TBC.
+    $foreverPaths=@('addon/AZPCForever/AZPCForever.lua','addon/AZPCForever/AZPCForever.toc','addon/AZPCForever/AZPCForeverBugReport.lua','watcher/AZPC-Watcher.ps1','VERSION.json')
+    $source=Join-Path $script:AppRoot 'installer/payload'
+    $foreverFiles=@(foreach($path in $foreverPaths){@{path=$path;sha256=(Get-FileHash (Join-Path $source $path) -Algorithm SHA256).Hash.ToLowerInvariant()}})
+    $fm=@{schema=2;game='forever';addonVersion=$shipped.foreverAddonVersion;watcherVersion=$shipped.watcherVersion;launcherVersion='0.2.21';sourceCommit=('a'*40);files=$foreverFiles}
+    Test-Manifest $fm
+    Assert ($fm.files.Count -eq 5) 'Forever source manifest has five SHA256 verified files'
+    $badFm=$fm.Clone();$badFm.files=@($foreverFiles | Select-Object -Skip 1)
+    Must-Throw { Test-Manifest $badFm } 'incomplete'
+    $script:sourceForTest=$source
+    function Invoke-WebRequest {
+        param([switch]$UseBasicParsing,[string]$Uri,[string]$OutFile,$TimeoutSec,$Headers)
+        $relative=($Uri -split '/installer/payload/',2)[1]
+        if(-not $relative){throw 'Unexpected source URL'}
+        Copy-Item -LiteralPath (Join-Path $script:sourceForTest $relative) -Destination $OutFile
+    }
+    $staged=Get-UpdatePayload $fm (Join-Path $testRoot 'forever-stage')
+    Assert ((Get-FileHash (Join-Path $staged 'addon/AZPCForever/AZPCForever.lua')).Hash.ToLowerInvariant() -eq $foreverFiles[0].sha256) 'Forever source update downloads and verifies real addon'
+    $tampered=$fm.Clone()
+    $tampered.files=@(foreach($f in $foreverFiles){if($f.path -eq 'VERSION.json'){@{path=$f.path;sha256=('b'*64)}}else{$f}})
+    Must-Throw { Get-UpdatePayload $tampered (Join-Path $testRoot 'forever-tamper') } 'checksum mismatch'
+    Remove-Item Function:\Invoke-WebRequest
     $wow=Join-Path $testRoot 'Custom WoW path'
     $wtf=Join-Path $wow '_anniversary_\WTF\Account\Test\SavedVariables'
     New-Item -ItemType Directory -Path $wtf -Force | Out-Null
