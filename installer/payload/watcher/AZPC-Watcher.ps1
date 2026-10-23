@@ -1240,17 +1240,36 @@ $privateState = Read-PrivateState $privateClientId
 $lastObservedWrite = [datetime]::MinValue
 $lastServerHeartbeat = if ($initialHeartbeatOk) { Get-Date } else { [datetime]::MinValue }
 
+# One watcher per local data directory. A named mutex is held for this process lifetime.
+$mutexName = 'Local\\AZPCWatcher_' + ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($StateDir.ToLowerInvariant())))).Replace('-','').Substring(0,24)
+$watcherMutex = New-Object System.Threading.Mutex($false, $mutexName)
+$ownsWatcherMutex = $false
+try { $ownsWatcherMutex = $watcherMutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $ownsWatcherMutex = $true }
+if (-not $ownsWatcherMutex) {
+    Write-Log 'WATCHER INSTANCE SKIPPED: another watcher already owns this data directory.'
+    $watcherMutex.Dispose()
+    exit 0
+}
+Write-Log 'WATCHER SINGLE INSTANCE LOCK ACQUIRED.'
+$script:WatcherStage = 'starting loop'
 while ($true) {
     try {
+        $script:WatcherStage = 'write heartbeat'
         Write-Heartbeat "running" ([string]$azpcFile)
         if (((Get-Date) - $lastServerHeartbeat).TotalSeconds -ge 30) {
             if (Send-AzpcHeartbeat $privateClientId $watcherToken) { $lastServerHeartbeat = Get-Date }
         }
+        $script:WatcherStage = 'collect Forever SavedVariables'
         Collect-ForeverScans $WowRoot
+        $script:WatcherStage = 'upload Forever trades'
         Send-ForeverTrades $privateClientId $watcherToken
+        $script:WatcherStage = 'upload Forever crafting'
         Send-ForeverCrafting $privateClientId $watcherToken
+        $script:WatcherStage = 'sync material commands'
         Sync-ForeverMaterialCommands $privateClientId $watcherToken $WowRoot
+        $script:WatcherStage = 'upload Forever scans'
         Send-ForeverScans $privateClientId $watcherToken
+        $script:WatcherStage = 'write Forever addon status'
         Write-ForeverAddonStatus
         if (-not $azpcFile -or -not (Test-Path -LiteralPath $azpcFile)) {
             Write-Log "AZPC.lua disappeared; searching again..."
@@ -1259,6 +1278,7 @@ while ($true) {
             Write-Log ("Watching: " + $azpcFile)
         }
 
+        $script:WatcherStage = "read Anniversary file metadata"
         $fi = Get-Item -LiteralPath $azpcFile
         $writeUtc = $fi.LastWriteTimeUtc
 
@@ -1267,6 +1287,7 @@ while ($true) {
 
             # WoW may still be finishing the write; small debounce.
             Start-Sleep -Milliseconds 750
+            $script:WatcherStage = "read Anniversary SavedVariables"
             $text = Get-Content -LiteralPath $azpcFile -Raw -Encoding UTF8
 
             # Private ledger is completely separate from public market observations.
@@ -1311,10 +1332,11 @@ while ($true) {
             }
         }
 
+        $script:WatcherStage = "idle"
         if ($Once) { break }
         Start-Sleep -Seconds 1
     } catch {
-        Write-Log ("WATCH ERROR: " + $_.Exception.Message)
+        Write-Log ("WATCH ERROR at [" + $script:WatcherStage + "]: " + $_.Exception.ToString() + " | line: " + $_.InvocationInfo.ScriptLineNumber + " | command: " + $_.InvocationInfo.Line)
         if ($Once) { exit 1 }
         Start-Sleep -Seconds 5
     }
