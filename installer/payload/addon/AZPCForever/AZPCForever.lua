@@ -353,6 +353,50 @@ SlashCmdList.AZPCFOREVER=function(command)
                     if #sources==0 then message("    No matching earlier source event in local crafting/material/vendor ledgers.")end
                 end
             end
+            -- Quantity-aware, read-only reconciliation of intermediate craft outputs.
+            -- Work oldest-first so the same recorded output cannot be credited to
+            -- multiple later crafts. This is evidence, not an actual-cost rewrite.
+            local chronological={}
+            for _,craft in ipairs(db.crafts or {}) do
+                if type(craft.observedAt)=="number" then chronological[#chronological+1]=craft end
+            end
+            table.sort(chronological,function(a,b)
+                if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end
+                return tostring(a.eventId or "")<tostring(b.eventId or "")
+            end)
+            local balances={}
+            local auditTargets={}
+            for i=1,math.min(4,#matches) do auditTargets[matches[i]]=i end
+            for _,craft in ipairs(chronological) do
+                local scope=tostring(craft.region).."|"..tostring(craft.realm).."|"..tostring(craft.faction).."|"..tostring(craft.character)
+                for _,mat in ipairs(craft.consumedReagents or {}) do
+                    local key=scope.."|"..tostring(mat.itemId)
+                    local wanted=tonumber(mat.quantity) or 0
+                    local lots=balances[key] or {}
+                    local completeQty,partialQty,used=0,0,0
+                    for _,lot in ipairs(lots) do
+                        if used>=wanted then break end
+                        -- Same-timestamp events have no defensible ordering.
+                        if lot.at<craft.observedAt and lot.left>0 then
+                            local take=math.min(lot.left,wanted-used)
+                            lot.left=lot.left-take;used=used+take
+                            if lot.complete then completeQty=completeQty+take else partialQty=partialQty+take end
+                        end
+                    end
+                    if auditTargets[craft] then
+                        message("  QUANTITY CHECK craft #"..auditTargets[craft].." item "..tostring(mat.itemId).." x"..wanted..": "..completeQty.." complete-source, "..partialQty.." incomplete-source, "..(wanted-used).." unmatched (craft outputs only)")
+                    end
+                    balances[key]=lots
+                end
+                local id=tonumber(craft.itemId)
+                local qty=tonumber(craft.quantity) or 0
+                if id and qty>0 then
+                    local key=scope.."|"..id
+                    balances[key]=balances[key] or {}
+                    balances[key][#balances[key]+1]={at=craft.observedAt,left=qty,complete=craft.costBasis and craft.costBasis.complete==true and not craft.costConflict}
+                end
+            end
+            message("Quantity check excludes purchases, transfers, sales, and inventory snapshots. Results are provisional, never verified unit matches.")
             message("Audit is evidence-only: source events do not prove which inventory units were consumed. AH mailbox buys are not included in this view.")
         end
     elseif command == "mail" then
