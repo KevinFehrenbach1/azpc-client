@@ -1,4 +1,4 @@
-﻿param([string]$ReleaseTag = 'forever-addon-v0.2.90')
+﻿param([string]$ReleaseTag = 'forever-addon-v0.2.91')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
@@ -34,7 +34,7 @@ Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $portable
 
 $forever=Join-Path $dist 'forever-components'
 New-Item -ItemType Directory -Path (Join-Path $forever 'addon') -Force | Out-Null
-Copy-Item (Join-Path $payload 'addon/AZPCForever') (Join-Path $forever 'addon') -Recurse
+Copy-Item (Join-Path $repoRoot 'addons/forever/AZPCForever') (Join-Path $forever 'addon') -Recurse
 Copy-Item (Join-Path $payload 'watcher') $forever -Recurse
 $foreverVersions=@{game='forever';addonVersion=$version.foreverAddonVersion;watcherVersion=$version.watcherVersion}
 $foreverVersions | ConvertTo-Json | Set-Content (Join-Path $forever 'VERSION.json') -Encoding UTF8
