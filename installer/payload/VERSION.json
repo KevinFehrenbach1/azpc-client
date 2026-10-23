@@ -1,10 +1,10 @@
 {
   "packageVersion": "0.5.00",
-  "watcherVersion": "0.4.41",
+  "watcherVersion": "0.4.42",
   "addonVersion": "0.4.29",
   "channel": "alpha",
   "game": "tbc-anniversary",
   "notes": "Export crafting results as copyable CSV with existing profit estimates and scan prices.",
   "version": "0.5.00",
-  "foreverAddonVersion": "0.2.92"
+  "foreverAddonVersion": "0.2.93"
 }
