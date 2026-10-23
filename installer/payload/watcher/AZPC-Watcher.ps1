@@ -1241,7 +1241,7 @@ $lastObservedWrite = [datetime]::MinValue
 $lastServerHeartbeat = if ($initialHeartbeatOk) { Get-Date } else { [datetime]::MinValue }
 
 # One watcher per local data directory. A named mutex is held for this process lifetime.
-$mutexName = 'Local\\AZPCWatcher_' + ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($StateDir.ToLowerInvariant())))).Replace('-','').Substring(0,24)
+$mutexName = 'Local\AZPCWatcher_' + ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($StateDir.ToLowerInvariant())))).Replace('-','').Substring(0,24)
 $watcherMutex = New-Object System.Threading.Mutex($false, $mutexName)
 $ownsWatcherMutex = $false
 try { $ownsWatcherMutex = $watcherMutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $ownsWatcherMutex = $true }
