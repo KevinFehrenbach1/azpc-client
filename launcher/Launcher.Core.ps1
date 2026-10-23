@@ -191,7 +191,13 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
         $retryUrl = [string]$Manifest.bundleUrl + '?azpc_sha=' + [string]$Manifest.bundleSha256
         Invoke-WebRequest -UseBasicParsing -Uri $retryUrl -OutFile $archive -TimeoutSec 120 -Headers @{ 'User-Agent' = 'AZPC-Launcher/0.2.21'; 'Cache-Control' = 'no-cache' }
         if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $Manifest.bundleSha256) {
-            throw 'Update checksum mismatch after fresh download. Nothing was installed.'
+            $actualHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expectedHash = ([string]$Manifest.bundleSha256).ToLowerInvariant()
+            $bytes = [IO.File]::ReadAllBytes($archive)
+            $preview = if($bytes.Length -gt 0) { [Text.Encoding]::UTF8.GetString($bytes,0,[Math]::Min(120,$bytes.Length)) } else { '' }
+            $kind = if($preview -match '(?i)<!doctype|<html|rate limit|jwt:expired|not found|access denied') { 'non-ZIP server response' } elseif($bytes.Length -ge 4 -and $bytes[0] -eq 80 -and $bytes[1] -eq 75) { 'ZIP hash differs from manifest' } else { 'unexpected download content' }
+            throw ('Update checksum mismatch ('+$kind+'). Expected '+$expectedHash+', received '+$actualHash+', bytes '+$bytes.Length+'. Nothing was installed.')
+
         }
     }
     Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
