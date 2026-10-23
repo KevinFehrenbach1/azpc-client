@@ -32,7 +32,7 @@ function Write-Log([string]$Message) {
 
 function Write-Heartbeat([string]$Status, [string]$FilePath) {
     @{
-        version = "0.4.41"
+        version = "0.4.42"
         status = $Status
         savedVariables = $FilePath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -1217,7 +1217,7 @@ function Sync-ForeverMaterialCommands([string]$ClientId,[string]$Token,[string]$
 
 if ($FunctionsOnly) { return }
 
-Write-Log "AZPC Watcher v0.4.40 Alpha Account Lock starting."
+Write-Log "AZPC Watcher v0.4.42 Alpha Account Lock starting."
 Write-Log ("WATCHER INSTANCE: pid=" + $PID + " | script=" + $PSCommandPath + " | dataDir=" + $StateDir)
 $credentials = Get-WatcherCredentials $SetupCode
 $privateClientId = [string]$credentials.clientId
