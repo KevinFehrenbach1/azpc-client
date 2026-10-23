@@ -247,6 +247,38 @@ SlashCmdList.AZPCFOREVER=function(command)
     elseif command == "capture" then local ok,count,text=pcall(capture); message(ok and text or tostring(count))
     elseif command == "materials" then AZPCForeverProfession.Show()
     elseif command == "crafts" then AZPCForeverCrafting.Status()
+    elseif command:match("^craftfind%s+") then
+        local query=command:match("^craftfind%s+(.+)$")
+        query=query and query:lower():gsub("^%s+",""):gsub("%s+$","") or ""
+        local db=AZPCForeverDB and AZPCForeverDB.crafting
+        local crafts=db and db.crafts or {}
+        if query=="" then message("Usage: /azpcf craftfind Mystic Heavy Armor Kit")
+        else
+            local matches={}
+            for _,r in ipairs(crafts) do
+                if type(r.name)=="string" and r.name:lower():find(query,1,true) then matches[#matches+1]=r end
+            end
+            table.sort(matches,function(a,b)return (a.observedAt or 0)>(b.observedAt or 0)end)
+            message("Craft history for '"..query.."': "..#matches.." matching records. Showing up to 10 newest.")
+            for i=1,math.min(10,#matches) do
+                local r=matches[i];local b=r.costBasis
+                local at=tonumber(r.observedAt) or 0
+                local dateText=at>0 and date("%Y-%m-%d %H:%M",math.floor(at/1000)) or "unknown time"
+                local basis=b and (b.complete and not r.costConflict and ("complete "..tostring(b.totalCopper or 0).."c") or ("incomplete; recorded "..tostring(b.recordedCopper or 0).."c")) or "no saved cost basis"
+                message("#"..i.." "..tostring(r.name).." x"..tostring(r.quantity or "?").." | "..tostring(r.character or "?").." | "..dateText.." | "..basis)
+                local materials=r.consumedReagents or r.recipeReagents or {}
+                if #materials==0 then message("  Materials: unresolved/not captured")
+                else
+                    local parts={}
+                    for _,m in ipairs(materials) do parts[#parts+1]=tostring(m.itemId or "?").." x"..tostring(m.quantity or "?") end
+                    message("  Materials ("..(r.consumedReagents and "consumed" or "recipe only").."): "..table.concat(parts,", "))
+                end
+                for _,m in ipairs(r.costingMissing or (b and b.missing) or {}) do
+                    message("  Missing: "..tostring(m.reason or "unknown").." item "..tostring(m.itemId or "?").." recorded "..tostring(m.recordedQuantity or "?").."/"..tostring(m.quantity or "?"))
+                end
+                if r.costConflict then message("  Warning: saved cost conflict")end
+            end
+        end
     elseif command == "mail" then
         local ok,err=pcall(captureTrades)
         message(ok and "Mailbox checked. /reload saves records for My Trades." or tostring(err))
