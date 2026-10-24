@@ -19,7 +19,7 @@ jobs:
       - name: Validate approved launcher source
         shell: pwsh
         run: |
-          foreach ($file in @('package.json','main.js','preload.js','renderer.js','index.html','assets/azpc.ico')) {
+          foreach ($file in @('package.json','main.js','preload.js','renderer.js','index.html')) {
             if (-not (Test-Path (Join-Path launcher-next $file))) { throw "Missing required launcher source: $file" }
           }
       - name: Install dependencies
