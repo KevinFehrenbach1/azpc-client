@@ -6,11 +6,14 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis --publish never"
+    "dist": "electron-builder --win nsis --publish never",
+    "make-icon": "node scripts/make-icon.js"
   },
   "devDependencies": {
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.33.5",
+    "png-to-ico": "^2.1.8"
   },
   "build": {
     "appId": "market.azpc.launcher",
@@ -23,12 +26,14 @@
       "preload.js",
       "renderer.js",
       "index.html",
-      "assets/azpc-account-logo.png"
+      "assets/azpc-account-logo.png",
+      "assets/azpc.ico"
     ],
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "assets/azpc.ico"
     },
     "nsis": {
       "oneClick": false,
