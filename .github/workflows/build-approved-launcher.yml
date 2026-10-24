@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         working-directory: launcher-next
         run: npm install --no-audit --no-fund
+      - name: Generate AZPC Windows icon
+        working-directory: launcher-next
+        run: npm run make-icon
       - name: Build Windows installer
         working-directory: launcher-next
         env:
