@@ -1,0 +1,1 @@
+const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('azpc',{chooseFolder:()=>ipcRenderer.invoke('choose-folder'),openUrl:u=>ipcRenderer.invoke('open-url',u),status:()=>ipcRenderer.invoke('get-status'),releases:()=>ipcRenderer.invoke('check-releases')});
