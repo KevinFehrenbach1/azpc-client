@@ -27,7 +27,8 @@
       "renderer.js",
       "index.html",
       "assets/azpc-account-logo.png",
-      "assets/azpc.ico"
+      "assets/azpc.ico",
+      "game-detection.js"
     ],
     "win": {
       "target": [
