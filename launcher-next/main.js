@@ -16,10 +16,10 @@ function installed(game){
  const root=gameRoot(),forever=game==='forever';
  const toc=path.join(root,forever?'_classic_beta_':'_anniversary_','Interface','AddOns',forever?'AZPCForever':'AZPC',forever?'AZPCForever.toc':'AZPC.toc');
  const result={version:app.getVersion(),gameFolder:root,gameFolderExists:fs.existsSync(root),game,addon:{installed:false,version:null},watcher:{installed:false,version:null}};
- try{const text=fs.readFileSync(toc,'utf8');result.addon={installed:true,version:(text.match(/^## Version:\\s*(\\S+)/m)||[])[1]||'Unknown'}}catch{}
+ try{const text=fs.readFileSync(toc,'utf8');result.addon={installed:true,version:(text.match(/^## Version:\s*(\S+)/m)||[])[1]||'Unknown'}}catch{}
  const local=process.env.LOCALAPPDATA||path.join(os.homedir(),'AppData','Local');
  const candidates=[path.join(local,'AZPC','AZPC-Watcher.ps1'),path.join(local,'AZPC','watcher','AZPC-Watcher.ps1')];
- for(const file of candidates){try{const text=fs.readFileSync(file,'utf8');result.watcher={installed:true,version:(text.match(/version\\s*=\\s*["']([0-9.]+)["']/i)||[])[1]||'Unknown'};break}catch{}}
+ for(const file of candidates){try{const text=fs.readFileSync(file,'utf8');result.watcher={installed:true,version:(text.match(/version\s*=\s*["']([0-9.]+)["']/i)||[])[1]||'Unknown'};break}catch{}}
  return result;
 }
 ipcMain.handle('get-status',async(_e,game)=>installed(game==='tbc'?'tbc':'forever'));
