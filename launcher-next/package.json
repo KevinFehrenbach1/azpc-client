@@ -22,7 +22,8 @@
       "main.js",
       "preload.js",
       "renderer.js",
-      "index.html"
+      "index.html",
+      "assets/azpc-account-logo.png"
     ],
     "win": {
       "target": [
