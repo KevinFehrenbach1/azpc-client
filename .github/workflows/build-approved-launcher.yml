@@ -1,0 +1,43 @@
+name: Build Approved AZPC Desktop Launcher
+on:
+  workflow_dispatch:
+  push:
+    branches: [launcher/approved-electron-ui]
+    paths:
+      - 'launcher-next/**'
+      - '.github/workflows/build-approved-launcher.yml'
+permissions:
+  contents: read
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: launcher-next/package-lock.json
+      - name: Validate approved launcher source
+        shell: pwsh
+        run: |
+          foreach ($file in @('package.json','main.js','preload.js','renderer.js','index.html','assets/azpc.ico')) {
+            if (-not (Test-Path (Join-Path launcher-next $file))) { throw "Missing required launcher source: $file" }
+          }
+      - name: Install dependencies
+        working-directory: launcher-next
+        run: npm install --no-audit --no-fund
+      - name: Build Windows installer
+        working-directory: launcher-next
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ''
+        run: npx electron-builder --win nsis --publish never
+      - name: Upload downloadable Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AZPC-Approved-Launcher-Windows
+          path: |
+            launcher-next/dist/*.exe
+            launcher-next/dist/latest.yml
+          if-no-files-found: error
