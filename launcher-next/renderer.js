@@ -6,7 +6,7 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.7-pairing';
+const BUILD_MARK='1.0.8-account-pair-ui';
 
 async function refresh(){
  try{
@@ -36,11 +36,14 @@ async function refreshWatcher(){
  }catch(e){$$('.watcher-runtime').forEach(el=>el.textContent='Status unavailable')}
 }
 async function refreshAccount(){
- try{const state=await window.azpc.accountStatus();
- $$('.account-name').forEach(el=>el.textContent=state.authenticated?state.name:(state.pending?'Complete sign-in in your browser':'Not signed in'));
- $('.account-email').forEach(el=>el.textContent=state.authenticated?state.email:(state.pending?'Waiting for AZPC authorization…':'Google / Discord sign-in via your default browser'));
- $('[data-account-login]').forEach(el=>{el.hidden=!!state.authenticated;el.disabled=!!state.authenticated;});
- }catch(e){$$('.account-name').forEach(el=>el.textContent='Account status unavailable')}
+ try{
+  const state=await window.azpc.accountStatus();
+  $$('.account-name').forEach(el=>el.textContent=state.authenticated?state.name:(state.pending?'Complete sign-in in your browser':'Not signed in'));
+  $$('.account-email').forEach(el=>el.textContent=state.authenticated?state.email:(state.pending?'Waiting for AZPC authorization…':'Connect using your one-time code'));
+  $$('.pair-widget').forEach(el=>el.hidden=!!state.authenticated);
+  $$('[data-account-login]').forEach(el=>{el.hidden=!!state.authenticated;el.disabled=!!state.authenticated;});
+  $$('.pair-message').forEach(el=>{if(state.authenticated)el.textContent='Account connected successfully';});
+ }catch(e){console.error('Account refresh failed',e);$$('.account-name').forEach(el=>el.textContent='Account status unavailable')}
 }
 $$('[data-account-login]').forEach(button=>button.addEventListener('click',async()=>{
  button.disabled=true;try{await window.azpc.accountOpen();await refreshAccount()}catch(e){alert('Could not open AZPC sign in: '+e.message)}finally{button.disabled=false}
