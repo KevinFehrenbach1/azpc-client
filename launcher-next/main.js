@@ -94,7 +94,8 @@ ipcMain.handle('account-open',async()=>{
    const data=await response.json();
    if(!data.access_token||!data.user||!data.user.id)throw new Error('Invalid desktop authorization response');
    desktopSession={token:data.access_token,name:String(data.user.displayName||data.user.name||'AZPC member').slice(0,100),email:String(data.user.email||'').slice(0,160),provider:String(data.user.provider||'AZPC')};
-   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}).end('<h2>AZPC sign-in complete</h2><p>You may return to the launcher.</p>');
+   if(win&&!win.isDestroyed()){if(win.isMinimized())win.restore();win.show();win.focus();}
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="1;url=https://azpc.market/account"><title>AZPC — Connected</title><style>body{background:#0b1116;color:#f1f3f5;font:16px Segoe UI,Arial,sans-serif;min-height:100vh;display:grid;place-items:center;margin:0}.card{border:1px solid #46545c;background:#151e24;border-radius:14px;padding:32px;max-width:430px;text-align:center}a{color:#fff}</style></head><body><main class="card"><h1>AZPC Launcher connected</h1><p>Opening your account dashboard…</p><a href="https://azpc.market/account">Open dashboard now</a></main></body></html>');
   }catch(err){res.writeHead(502,{'Content-Type':'text/plain'}).end('AZPC desktop sign-in could not finish: '+err.message)}finally{close()}
  });
  const authUrl=new URL('https://azpc.market/desktop-auth/authorize');
