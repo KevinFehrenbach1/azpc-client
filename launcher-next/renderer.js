@@ -21,7 +21,7 @@ $('[data-launcher-install]').addEventListener('click',async()=>{
  finally{button.disabled=false}
 });
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.9-launcher-updates';
+const BUILD_MARK='1.0.12-game-panel';
 
 async function refresh(){
  try{
@@ -32,6 +32,7 @@ async function refresh(){
  document.querySelectorAll('.addons-path').forEach(e=>e.textContent=state.addonsFolder||'Not detected');
  document.querySelectorAll('.detected-games').forEach(e=>e.textContent=Object.entries(state.games).filter(([key,val])=>val.detected).map(([key])=>({forever:'Forever Beta',tbc:'TBC Anniversary',retail:'Retail'})[key]).join(' · ')||'None found');
  document.querySelectorAll('.current-game').forEach(e=>e.textContent=$('.game').selectedOptions[0].textContent);
+ const badge=$('.game-version-icon');if(badge){const key=game();badge.className='game-version-icon game-icon-'+key;badge.textContent=({forever:'F',tbc:'T',retail:'R'})[key]||'?';}
  const addon=state.addon.installed?'v'+state.addon.version:'Not installed';
  const watcher=state.watcher.installed?'v'+state.watcher.version:'Not detected';
  document.querySelectorAll('.addon-status').forEach(e=>e.textContent=addon);
@@ -42,6 +43,7 @@ async function refresh(){
 }
 document.querySelectorAll('[data-folder]').forEach(e=>e.addEventListener('click',async()=>{try{const p=await window.azpc.chooseFolder();if(p){await window.azpc.saveFolder(p,game());await refresh()}}catch(e){alert('Could not save game folder: '+e.message)}}));
 $('.game').addEventListener('change',refresh);
+$('[data-change-game]').forEach(button=>button.addEventListener('click',()=>{const selector=$('.game');selector.focus();if(typeof selector.showPicker==='function'){try{selector.showPicker();return}catch(e){}}selector.click()}));
 refresh();
 console.info('AZPC launcher renderer',BUILD_MARK);
 
