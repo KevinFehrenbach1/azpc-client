@@ -6,7 +6,7 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.2-account-watcher';
+const BUILD_MARK='1.0.3-browser-auth';
 
 async function refresh(){
  try{
@@ -37,8 +37,8 @@ async function refreshWatcher(){
 }
 async function refreshAccount(){
  try{const state=await window.azpc.accountStatus();
- $$('.account-name').forEach(el=>el.textContent=state.authenticated?state.name:'Not signed in');
- $$('.account-email').forEach(el=>el.textContent=state.authenticated?state.email:'Sign in securely with your AZPC account');
+ $$('.account-name').forEach(el=>el.textContent=state.authenticated?state.name:(state.pending?'Complete sign-in in your browser':'Not signed in'));
+ $$('.account-email').forEach(el=>el.textContent=state.authenticated?state.email:(state.pending?'Waiting for AZPC authorization…':'Google / Discord sign-in via your default browser'));
  }catch(e){$$('.account-name').forEach(el=>el.textContent='Account status unavailable')}
 }
 $$('[data-account-login]').forEach(button=>button.addEventListener('click',async()=>{
