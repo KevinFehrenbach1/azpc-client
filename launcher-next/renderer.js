@@ -20,7 +20,7 @@ async function refresh(){
  $('.watcher-status').forEach(e=>e.textContent=watcher);
  $('.addon-badge').forEach(e=>e.textContent=state.addon.installed?'Detected':'Not installed');
  $('.watcher-badge').forEach(e=>e.textContent=state.watcher.installed?'Detected':'Not detected');
- }catch(e){console.error(e)}
+ }catch(e){console.error('AZPC detection failed',e);$('.addon-status,.watcher-status').forEach(el=>el.textContent='Detection error');$('.addon-badge,.watcher-badge').forEach(el=>el.textContent='Error');$('.folder-path').forEach(el=>el.textContent='Detection error: '+e.message)}
 }
 $('[data-folder]').forEach(e=>e.addEventListener('click',async()=>{try{const p=await window.azpc.chooseFolder();if(p){await window.azpc.saveFolder(p,game());await refresh()}}catch(e){alert('Could not save game folder: '+e.message)}}));
 $('.game').addEventListener('change',refresh);
