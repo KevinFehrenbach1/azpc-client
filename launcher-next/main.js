@@ -64,7 +64,7 @@ function accountSession(){
 ipcMain.handle('account-open',async()=>{
  if(accountWindow&&!accountWindow.isDestroyed()){accountWindow.focus();return {opened:true}}
  accountWindow=new BrowserWindow({width:900,height:720,minWidth:650,minHeight:500,parent:win,icon:path.join(__dirname,'assets','azpc.ico'),title:'AZPC Account',autoHideMenuBar:true,webPreferences:{partition:'persist:azpc-account',contextIsolation:true,nodeIntegration:false,sandbox:true}});
- accountWindow.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://')){shell.openExternal(url)}return {action:'deny'}});
+ accountWindow.webContents.setWindowOpenHandler(({url})=>{if(/^https:\/\/(?:accounts\.google\.com|discord\.com|azpc\.market)(?:\/|$)/i.test(url))return {action:'allow',overrideBrowserWindowOptions:{webPreferences:{partition:'persist:azpc-account',nodeIntegration:false,contextIsolation:true,sandbox:true}}};return {action:'deny'}});
  accountWindow.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith('https://'))event.preventDefault()});
  await accountWindow.loadURL('https://azpc.market/login?return='+encodeURIComponent('https://azpc.market/account'));
  return {opened:true};
