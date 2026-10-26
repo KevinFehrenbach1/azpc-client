@@ -45,6 +45,40 @@ ipcMain.handle('check-releases',async()=>{try{
  const d=await r.json();return {ok:true,tag:d.tag_name,url:d.html_url,checkedAt:new Date().toISOString(),note:'GitHub release lookup succeeded; component updates are not yet integrated.'};
  }catch(e){return {ok:false,error:e.message}}});
 
+
+const LAUNCHER_RELEASE_PREFIX='launcher-v';
+function versionParts(v){return String(v).replace(/^v/i,'').split('.').map(x=>Number(x)||0)}
+function newer(a,b){const x=versionParts(a),y=versionParts(b);for(let i=0;i<Math.max(x.length,y.length);i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)}return false}
+async function launcherRelease(){
+ const r=await fetch('https://api.github.com/repos/KevinFehrenbach1/azpc-client/releases?per_page=50',{headers:{'User-Agent':'AZPC-Launcher','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(15000)});
+ if(!r.ok)throw new Error('GitHub releases unavailable (HTTP '+r.status+')');
+ const releases=await r.json();
+ const candidates=releases.filter(x=>!x.draft&&!x.prerelease&&/^launcher-v\\d+\\.\\d+\\.\\d+$/.test(x.tag_name)).sort((a,b)=>newer(a.tag_name.slice(10),b.tag_name.slice(10))?-1:1);
+ const found=candidates.find(x=>x.assets?.some(a=>/^AZPC.Launcher.*\\.exe$/i.test(a.name)));
+ if(!found)return {available:false,installed:app.getVersion(),reason:'No dedicated launcher installer release published yet'};
+ const asset=found.assets.find(a=>/^AZPC.Launcher.*\\.exe$/i.test(a.name));
+ const version=found.tag_name.slice('launcher-v'.length);
+ return {available:newer(version,app.getVersion()),installed:app.getVersion(),latest:version,downloadUrl:asset.browser_download_url,assetName:asset.name,assetSize:asset.size,digest:asset.digest||null};
+}
+ipcMain.handle('launcher-update-check',async()=>launcherRelease());
+ipcMain.handle('launcher-update-install',async()=>{
+ const info=await launcherRelease();
+ if(!info.available)throw new Error(info.reason||'Launcher is already up to date');
+ if(!/^https:\\/\\/github\\.com\\/KevinFehrenbach1\\/azpc-client\\/releases\\/download\\//.test(info.downloadUrl))throw new Error('Unexpected update URL');
+ const confirmation=await dialog.showMessageBox(win,{type:'question',buttons:['Cancel','Download installer'],defaultId:1,cancelId:0,title:'AZPC Launcher update',message:'Update AZPC Launcher to v'+info.latest+'?',detail:'The installer will be downloaded and opened. Your account and game files will not be modified by this download.'});
+ if(confirmation.response!==1)return {cancelled:true};
+ const r=await fetch(info.downloadUrl,{signal:AbortSignal.timeout(180000)});
+ if(!r.ok)throw new Error('Installer download failed (HTTP '+r.status+')');
+ const bytes=Buffer.from(await r.arrayBuffer());
+ if(bytes.length<1000000||bytes.length>250000000||info.assetSize&&bytes.length!==info.assetSize)throw new Error('Unexpected installer size');
+ if(info.digest?.startsWith('sha256:')&&crypto.createHash('sha256').update(bytes).digest('hex')!==info.digest.slice(7))throw new Error('Installer checksum mismatch');
+ const file=path.join(app.getPath('temp'),'AZPC-Launcher-update-'+info.latest+'.exe');
+ fs.writeFileSync(file,bytes,{flag:'w'});
+ const result=await shell.openPath(file);
+ if(result)throw new Error('Could not open installer: '+result);
+ return {started:true,version:info.latest};
+});
+
 function watcherRuntime(){
  return new Promise(resolve=>{
  if(process.platform!=='win32')return resolve({running:false,detail:'Windows only'});
