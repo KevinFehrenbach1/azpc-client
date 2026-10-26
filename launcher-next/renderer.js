@@ -5,8 +5,23 @@ $$('[data-link]').forEach(e=>e.addEventListener('click',()=>window.azpc.openUrl(
 async function check(){const status=$('#update-message');status.textContent='Checking GitHub releases…';const r=await window.azpc.releases();status.textContent=r.ok?'✓ GitHub connection successful · Latest release: '+r.tag+' · Checked '+new Date(r.checkedAt).toLocaleTimeString()+' · Addon/watcher updates not yet integrated.':'✕ Update check failed: '+r.error;}
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
+async function checkLauncher(){
+ const label=$('.launcher-update-state'),button=$('[data-launcher-install]');
+ label.textContent='Checking launcher…';button.hidden=true;
+ try{const r=await window.azpc.launcherUpdateCheck();
+  label.textContent=r.available?'v'+r.latest+' available':(r.reason||'Up to date · v'+r.installed);
+  button.hidden=!r.available;
+ }catch(e){label.textContent='Check failed: '+e.message}
+}
+$('[data-launcher-check]').addEventListener('click',checkLauncher);
+$('[data-launcher-install]').addEventListener('click',async()=>{
+ const button=$('[data-launcher-install]');button.disabled=true;
+ try{const result=await window.azpc.launcherUpdateInstall();$('.launcher-update-state').textContent=result.started?'Installer opened — follow Windows setup': 'Update cancelled'}
+ catch(e){$('.launcher-update-state').textContent='Update failed: '+e.message}
+ finally{button.disabled=false}
+});
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.8-account-pair-ui';
+const BUILD_MARK='1.0.9-launcher-updates';
 
 async function refresh(){
  try{
