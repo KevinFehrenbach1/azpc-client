@@ -59,7 +59,7 @@ async function launcherRelease(){
  if(!found)return {available:false,installed:app.getVersion(),reason:'No dedicated launcher installer release published yet'};
  const asset=found.assets.find(a=>/^AZPC.Launcher.*\.exe$/i.test(a.name));
  const version=found.tag_name.slice('launcher-v'.length);
- return {available:newer(version,app.getVersion()),installed:app.getVersion(),latest:version,downloadUrl:asset.browser_download_url,assetName:asset.name,assetSize:asset.size,digest:asset.digest||null};
+ return {available:newer(version,app.getVersion()),installed:app.getVersion(),latest:version,downloadUrl:asset.browser_download_url,assetName:asset.name,assetSize:asset.size,digest:asset.digest||null,executable:process.execPath};
 }
 ipcMain.handle('launcher-update-check',async()=>launcherRelease());
 ipcMain.handle('launcher-update-install',async()=>{
