@@ -6,7 +6,7 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.4-dashboard-handoff';
+const BUILD_MARK='1.0.6-account-render-fix';
 
 async function refresh(){
  try{
