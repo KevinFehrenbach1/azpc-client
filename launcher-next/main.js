@@ -56,17 +56,54 @@ function watcherRuntime(){
  });
 }
 ipcMain.handle('watcher-runtime',watcherRuntime);
-let accountWindow=null;
-function accountSession(){
- if(!accountWindow||accountWindow.isDestroyed())return Promise.resolve({authenticated:false});
- return accountWindow.webContents.executeJavaScript(`(async()=>{try{const r=await fetch('https://azpc.market/api/account/session',{credentials:'include',cache:'no-store'});if(!r.ok)return {authenticated:false};const d=await r.json();if(d.authenticated!==true)return {authenticated:false};return {authenticated:true,name:String(d.displayName||d.name||d.user?.name||d.user?.displayName||'AZPC member').slice(0,100),email:String(d.email||d.user?.email||'').slice(0,160),characters:Array.isArray(d.characters)?d.characters.length:null}}catch(e){return {authenticated:false,error:String(e.message)}}})()`,true).catch(()=>({authenticated:false}));
-}
+
+/*
+ * Desktop authentication uses the system browser, never an embedded OAuth
+ * password form. The AZPC backend must implement the documented desktop
+ * authorization-code endpoints before account pairing can succeed.
+ */
+const http=require('http');
+const crypto=require('crypto');
+let desktopSession=null;
+let pendingLogin=null;
+function publicAccount(){return desktopSession?{authenticated:true,name:desktopSession.name,email:desktopSession.email,provider:desktopSession.provider}:{authenticated:false,pending:!!pendingLogin,reason:pendingLogin?'Waiting for browser authorization':'Not connected'};}
+ipcMain.handle('account-status',()=>publicAccount());
 ipcMain.handle('account-open',async()=>{
- if(accountWindow&&!accountWindow.isDestroyed()){accountWindow.focus();return {opened:true}}
- accountWindow=new BrowserWindow({width:900,height:720,minWidth:650,minHeight:500,parent:win,icon:path.join(__dirname,'assets','azpc.ico'),title:'AZPC Account',autoHideMenuBar:true,webPreferences:{partition:'persist:azpc-account',contextIsolation:true,nodeIntegration:false,sandbox:true}});
- accountWindow.webContents.setWindowOpenHandler(({url})=>{if(/^https:\/\/(?:accounts\.google\.com|discord\.com|azpc\.market)(?:\/|$)/i.test(url))return {action:'allow',overrideBrowserWindowOptions:{webPreferences:{partition:'persist:azpc-account',nodeIntegration:false,contextIsolation:true,sandbox:true}}};return {action:'deny'}});
- accountWindow.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith('https://'))event.preventDefault()});
- await accountWindow.loadURL('https://azpc.market/login?return='+encodeURIComponent('https://azpc.market/account'));
- return {opened:true};
+ if(pendingLogin)return {opened:true,pending:true};
+ const state=crypto.randomBytes(24).toString('hex');
+ const verifier=crypto.randomBytes(32).toString('base64url');
+ const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
+ const server=http.createServer();
+ let timeout;
+ try{
+ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
+ const port=server.address().port;
+ const callback='http://127.0.0.1:'+port+'/callback';
+ pendingLogin={server,state,verifier};
+ const close=()=>{clearTimeout(timeout);pendingLogin=null;server.close()};
+ timeout=setTimeout(close,180000);
+ server.on('request',async(req,res)=>{
+  const u=new URL(req.url,'http://127.0.0.1:'+port);
+  if(u.pathname!=='/callback'){res.writeHead(404).end();return}
+  if(u.searchParams.get('state')!==state){res.writeHead(403).end('Invalid login state');return}
+  const code=u.searchParams.get('code');
+  if(!code){res.writeHead(400).end('No authorization code supplied');close();return}
+  try{
+   const response=await fetch('https://azpc.market/api/desktop-auth/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,code_verifier:verifier,redirect_uri:callback}),signal:AbortSignal.timeout(12000)});
+   if(!response.ok)throw new Error('AZPC desktop authorization endpoint unavailable (HTTP '+response.status+')');
+   const data=await response.json();
+   if(!data.access_token||!data.user||!data.user.id)throw new Error('Invalid desktop authorization response');
+   desktopSession={token:data.access_token,name:String(data.user.displayName||data.user.name||'AZPC member').slice(0,100),email:String(data.user.email||'').slice(0,160),provider:String(data.user.provider||'AZPC')};
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}).end('<h2>AZPC sign-in complete</h2><p>You may return to the launcher.</p>');
+  }catch(err){res.writeHead(502,{'Content-Type':'text/plain'}).end('AZPC desktop sign-in could not finish: '+err.message)}finally{close()}
+ });
+ const authUrl=new URL('https://azpc.market/desktop-auth/authorize');
+ authUrl.searchParams.set('redirect_uri',callback);
+ authUrl.searchParams.set('state',state);
+ authUrl.searchParams.set('code_challenge',challenge);
+ authUrl.searchParams.set('code_challenge_method','S256');
+ await shell.openExternal(authUrl.toString());
+ return {opened:true,pending:true};
+ }catch(err){if(pendingLogin){clearTimeout(timeout);pendingLogin=null;server.close()}throw err}
 });
-ipcMain.handle('account-status',accountSession);
+ipcMain.handle('account-signout',()=>{desktopSession=null;return {authenticated:false}});
