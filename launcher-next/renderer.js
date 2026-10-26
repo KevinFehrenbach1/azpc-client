@@ -9,9 +9,9 @@ async function checkLauncher(){
  const label=$('.launcher-update-state'),button=$('[data-launcher-install]');
  label.textContent='Checking launcher…';button.hidden=true;
  try{const r=await window.azpc.launcherUpdateCheck();
-  label.textContent=r.available?'v'+r.latest+' available':(r.reason||'Up to date · v'+r.installed);
+  label.textContent=r.available?'Installed v'+r.installed+' → v'+r.latest+' available':(r.reason||'Up to date · v'+r.installed);
   button.hidden=!r.available;
- }catch(e){label.textContent='Check failed: '+e.message}
+ }catch(e){label.textContent='Check failed: '+e.message;console.error('Launcher update check:',e)}
 }
 $('[data-launcher-check]').addEventListener('click',checkLauncher);
 $('[data-launcher-install]').addEventListener('click',async()=>{
@@ -21,7 +21,7 @@ $('[data-launcher-install]').addEventListener('click',async()=>{
  finally{button.disabled=false}
 });
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.13-update-controls';
+const BUILD_MARK='1.0.14-update-diagnostics';
 
 async function refresh(){
  try{
