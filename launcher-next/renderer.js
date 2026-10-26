@@ -6,7 +6,7 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.6-account-render-fix';
+const BUILD_MARK='1.0.7-pairing';
 
 async function refresh(){
  try{
@@ -48,3 +48,13 @@ $$('[data-account-login]').forEach(button=>button.addEventListener('click',async
 window.addEventListener('focus',()=>{refreshWatcher();refreshAccount()});
 refreshWatcher();refreshAccount();
 setInterval(()=>{refreshWatcher();refreshAccount()},12000);
+
+$$('[data-pair]').forEach(button=>button.addEventListener('click',async()=>{
+ const input=$('.pair-code'),message=$('.pair-message');
+ const raw=(input.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ if(raw.length!==12){message.textContent='Enter the 12-character code from your AZPC account.';return}
+ button.disabled=true;message.textContent='Connecting account…';
+ try{await window.azpc.accountPair(raw.slice(0,6)+'-'+raw.slice(6));input.value='';message.textContent='Account connected successfully';await refreshAccount()}
+ catch(e){message.textContent='Connection failed: '+e.message}
+ finally{button.disabled=false}
+}));
