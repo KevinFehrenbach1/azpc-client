@@ -6,7 +6,7 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
-const BUILD_MARK='1.0.1-detection';
+const BUILD_MARK='1.0.2-account-watcher';
 
 async function refresh(){
  try{
@@ -29,3 +29,21 @@ document.querySelectorAll('[data-folder]').forEach(e=>e.addEventListener('click'
 $('.game').addEventListener('change',refresh);
 refresh();
 console.info('AZPC launcher renderer',BUILD_MARK);
+
+async function refreshWatcher(){
+ try{const state=await window.azpc.watcherRuntime();const label=state.running?'Running ('+state.processCount+' process'+(state.processCount===1?'':'es')+')':(state.detail||'Not running'+(state.taskState?' · Task: '+state.taskState:''));
+ $$('.watcher-runtime').forEach(el=>el.textContent=label);
+ }catch(e){$$('.watcher-runtime').forEach(el=>el.textContent='Status unavailable')}
+}
+async function refreshAccount(){
+ try{const state=await window.azpc.accountStatus();
+ $$('.account-name').forEach(el=>el.textContent=state.authenticated?state.name:'Not signed in');
+ $$('.account-email').forEach(el=>el.textContent=state.authenticated?state.email:'Sign in securely with your AZPC account');
+ }catch(e){$$('.account-name').forEach(el=>el.textContent='Account status unavailable')}
+}
+$$('[data-account-login]').forEach(button=>button.addEventListener('click',async()=>{
+ button.disabled=true;try{await window.azpc.accountOpen();await refreshAccount()}catch(e){alert('Could not open AZPC sign in: '+e.message)}finally{button.disabled=false}
+}));
+window.addEventListener('focus',()=>{refreshWatcher();refreshAccount()});
+refreshWatcher();refreshAccount();
+setInterval(()=>{refreshWatcher();refreshAccount()},12000);
