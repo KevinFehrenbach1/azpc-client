@@ -7,7 +7,7 @@ on:
       - 'launcher-next/**'
       - '.github/workflows/build-approved-launcher.yml'
 permissions:
-  contents: read
+  contents: write
 jobs:
   windows-installer:
     runs-on: windows-latest
@@ -42,3 +42,20 @@ jobs:
             launcher-next/dist/*.exe
             launcher-next/dist/latest.yml
           if-no-files-found: error
+
+      - name: Publish dedicated launcher release (versioned)
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content launcher-next/package.json | ConvertFrom-Json).version
+          $tag = "launcher-v$version"
+          $installer = Get-ChildItem launcher-next/dist -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'No installer to publish' }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Launcher release $tag already exists. Skipping."
+            exit 0
+          }
+          gh release create $tag $installer.FullName --target "${{ github.sha }}" --title "AZPC Launcher v$version" --notes "Versioned Windows launcher installer for in-app updates."
