@@ -108,3 +108,14 @@ ipcMain.handle('account-open',async()=>{
  }catch(err){if(pendingLogin){clearTimeout(timeout);pendingLogin=null;server.close()}throw err}
 });
 ipcMain.handle('account-signout',()=>{desktopSession=null;return {authenticated:false}});
+
+ipcMain.handle('account-pair',async(_event,code)=>{
+ const normalized=String(code||'').trim().toUpperCase();
+ if(!/^[A-Z0-9]{6}-[A-Z0-9]{6}$/.test(normalized))throw new Error('Enter the 12-character pairing code');
+ const response=await fetch('https://azpc.market/api/desktop-auth/pair/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:normalized}),signal:AbortSignal.timeout(15000)});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(data.error||'Pairing failed (HTTP '+response.status+')');
+ if(!data.access_token||!data.user?.id)throw new Error('Invalid AZPC account response');
+ desktopSession={token:data.access_token,name:String(data.user.displayName||'AZPC member'),email:String(data.user.email||''),provider:'AZPC'};
+ return publicAccount();
+});
