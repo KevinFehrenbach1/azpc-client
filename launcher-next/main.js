@@ -2,6 +2,7 @@ const {app,BrowserWindow,ipcMain,dialog,shell}=require('electron');
 const path=require('path'); const fs=require('fs');
 const os=require('os');
 const {scan,games}=require('./game-detection');
+const {execFile}=require('child_process');
 app.setAppUserModelId('market.azpc.launcher');
 let win;
 function createWindow(){win=new BrowserWindow({width:1040,height:770,minWidth:920,minHeight:680,center:true,icon:path.join(__dirname,'assets','azpc.ico'),backgroundColor:'#080c0f',title:'AZPC Launcher',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
@@ -43,3 +44,29 @@ ipcMain.handle('check-releases',async()=>{try{
  if(!r.ok)throw new Error('GitHub HTTP '+r.status);
  const d=await r.json();return {ok:true,tag:d.tag_name,url:d.html_url,checkedAt:new Date().toISOString(),note:'GitHub release lookup succeeded; component updates are not yet integrated.'};
  }catch(e){return {ok:false,error:e.message}}});
+
+function watcherRuntime(){
+ return new Promise(resolve=>{
+ if(process.platform!=='win32')return resolve({running:false,detail:'Windows only'});
+ const script=`$ErrorActionPreference='SilentlyContinue'; $task=Get-ScheduledTask -TaskName 'AZPC Watcher' -ErrorAction SilentlyContinue; $procs=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(powershell|pwsh)\\.exe$' -and $_.CommandLine -match 'AZPC[-_]?Watcher\\.ps1' }); [pscustomobject]@{ running=($procs.Count -gt 0); processCount=$procs.Count; taskState=if($task){[string]$task.State}else{'Not registered'} } | ConvertTo-Json -Compress`;
+ execFile('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:7000,maxBuffer:20000},(err,stdout)=>{
+ if(err)return resolve({running:false,detail:'Unable to inspect watcher process'});
+ try{const d=JSON.parse(stdout);resolve({running:d.running===true,processCount:d.processCount||0,taskState:d.taskState||'Unknown'})}catch{resolve({running:false,detail:'Watcher status unavailable'})}
+ });
+ });
+}
+ipcMain.handle('watcher-runtime',watcherRuntime);
+let accountWindow=null;
+function accountSession(){
+ if(!accountWindow||accountWindow.isDestroyed())return Promise.resolve({authenticated:false});
+ return accountWindow.webContents.executeJavaScript(`(async()=>{try{const r=await fetch('https://azpc.market/api/account/session',{credentials:'include',cache:'no-store'});if(!r.ok)return {authenticated:false};const d=await r.json();if(d.authenticated!==true)return {authenticated:false};return {authenticated:true,name:String(d.displayName||d.name||d.user?.name||d.user?.displayName||'AZPC member').slice(0,100),email:String(d.email||d.user?.email||'').slice(0,160),characters:Array.isArray(d.characters)?d.characters.length:null}}catch(e){return {authenticated:false,error:String(e.message)}}})()`,true).catch(()=>({authenticated:false}));
+}
+ipcMain.handle('account-open',async()=>{
+ if(accountWindow&&!accountWindow.isDestroyed()){accountWindow.focus();return {opened:true}}
+ accountWindow=new BrowserWindow({width:900,height:720,minWidth:650,minHeight:500,parent:win,icon:path.join(__dirname,'assets','azpc.ico'),title:'AZPC Account',autoHideMenuBar:true,webPreferences:{partition:'persist:azpc-account',contextIsolation:true,nodeIntegration:false,sandbox:true}});
+ accountWindow.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://')){shell.openExternal(url)}return {action:'deny'}});
+ accountWindow.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith('https://'))event.preventDefault()});
+ await accountWindow.loadURL('https://azpc.market/login?return='+encodeURIComponent('https://azpc.market/account'));
+ return {opened:true};
+});
+ipcMain.handle('account-status',accountSession);
