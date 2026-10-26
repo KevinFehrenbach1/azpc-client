@@ -53,10 +53,10 @@ async function launcherRelease(){
  const r=await fetch('https://api.github.com/repos/KevinFehrenbach1/azpc-client/releases?per_page=50',{headers:{'User-Agent':'AZPC-Launcher','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw new Error('GitHub releases unavailable (HTTP '+r.status+')');
  const releases=await r.json();
- const candidates=releases.filter(x=>!x.draft&&!x.prerelease&&/^launcher-v\\d+\\.\\d+\\.\\d+$/.test(x.tag_name)).sort((a,b)=>newer(a.tag_name.slice(10),b.tag_name.slice(10))?-1:1);
- const found=candidates.find(x=>x.assets?.some(a=>/^AZPC.Launcher.*\\.exe$/i.test(a.name)));
+ const candidates=releases.filter(x=>!x.draft&&!x.prerelease&&/^launcher-v\d+\.\d+\.\d+$/.test(x.tag_name)).sort((a,b)=>newer(a.tag_name.slice(10),b.tag_name.slice(10))?-1:1);
+ const found=candidates.find(x=>x.assets?.some(a=>/^AZPC.Launcher.*\.exe$/i.test(a.name)));
  if(!found)return {available:false,installed:app.getVersion(),reason:'No dedicated launcher installer release published yet'};
- const asset=found.assets.find(a=>/^AZPC.Launcher.*\\.exe$/i.test(a.name));
+ const asset=found.assets.find(a=>/^AZPC.Launcher.*\.exe$/i.test(a.name));
  const version=found.tag_name.slice('launcher-v'.length);
  return {available:newer(version,app.getVersion()),installed:app.getVersion(),latest:version,downloadUrl:asset.browser_download_url,assetName:asset.name,assetSize:asset.size,digest:asset.digest||null};
 }
@@ -64,7 +64,7 @@ ipcMain.handle('launcher-update-check',async()=>launcherRelease());
 ipcMain.handle('launcher-update-install',async()=>{
  const info=await launcherRelease();
  if(!info.available)throw new Error(info.reason||'Launcher is already up to date');
- if(!/^https:\\/\\/github\\.com\\/KevinFehrenbach1\\/azpc-client\\/releases\\/download\\//.test(info.downloadUrl))throw new Error('Unexpected update URL');
+ if(!/^https:\/\/github\.com\/KevinFehrenbach1\/azpc-client\/releases\/download\//.test(info.downloadUrl))throw new Error('Unexpected update URL');
  const confirmation=await dialog.showMessageBox(win,{type:'question',buttons:['Cancel','Download installer'],defaultId:1,cancelId:0,title:'AZPC Launcher update',message:'Update AZPC Launcher to v'+info.latest+'?',detail:'The installer will be downloaded and opened. Your account and game files will not be modified by this download.'});
  if(confirmation.response!==1)return {cancelled:true};
  const r=await fetch(info.downloadUrl,{signal:AbortSignal.timeout(180000)});
