@@ -1,0 +1,36 @@
+name: Publish AZPC Launcher Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/launcher/approved-electron-ui'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: launcher-next
+        run: npm install --no-audit --no-fund
+      - name: Generate icon
+        working-directory: launcher-next
+        run: npm run make-icon
+      - name: Build installer
+        working-directory: launcher-next
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --publish never
+      - name: Publish versioned launcher installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content launcher-next/package.json | ConvertFrom-Json).version
+          $tag = "launcher-v$version"
+          $installer = Get-ChildItem launcher-next/dist -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'No launcher installer produced' }
+          if (gh release view $tag 2>$null) { throw "Release $tag already exists; bump the version before publishing" }
+          gh release create $tag $installer.FullName --target "${{ github.sha }}" --title "AZPC Launcher v$version" --notes "AZPC desktop launcher release. Installer replaces previous launcher version without touching WoW addon or watcher."
