@@ -1,6 +1,6 @@
 {
   "name": "azpc-approved-launcher",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "private": true,
   "description": "AZPC desktop launcher",
   "main": "main.js",
