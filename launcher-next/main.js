@@ -98,7 +98,6 @@ ipcMain.handle('watcher-runtime',watcherRuntime);
  * authorization-code endpoints before account pairing can succeed.
  */
 const http=require('http');
-const crypto=require('crypto');
 let desktopSession=null;
 let pendingLogin=null;
 function publicAccount(){return desktopSession?{authenticated:true,name:desktopSession.name,email:desktopSession.email,provider:desktopSession.provider}:{authenticated:false,pending:!!pendingLogin,reason:pendingLogin?'Waiting for browser authorization':'Not connected'};}
