@@ -20,7 +20,7 @@ function installed(game){
  const result={version:app.getVersion(),game:selected,games:found,gameFolder:target.root,addonsFolder:target.addonPath,gameFolderExists:target.detected,addon:target.addon,watcher:{installed:false,version:null}};
  const local=process.env.LOCALAPPDATA||path.join(os.homedir(),'AppData','Local');
  for(const file of [path.join(local,'AZPC','AZPC-Watcher.ps1'),path.join(local,'AZPC','watcher','AZPC-Watcher.ps1')]){
- try{const data=fs.readFileSync(file,'utf8');result.watcher={installed:true,version:(data.match(/version\\s*=\\s*["']([0-9.]+)["']/i)||[])[1]||'Unknown'};break}catch{}
+ try{const data=fs.readFileSync(file,'utf8');result.watcher={installed:true,version:(data.match(/(?:version|watcherVersion)\s*[:=]\s*["']?v?([0-9]+(?:\.[0-9]+)+)/i)||[])[1]||'Unknown'};break}catch{}
  }
  return result;
 }
