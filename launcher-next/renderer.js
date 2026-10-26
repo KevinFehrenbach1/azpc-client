@@ -6,9 +6,12 @@ async function check(){const status=$('#update-message');status.textContent='Che
 $$('[data-check]').forEach(e=>e.addEventListener('click',check));
 $$('[data-update]').forEach(e=>e.addEventListener('click',()=>{$('#update-message').textContent='Automatic installation is not connected yet. Your existing addon and watcher have not been modified.';page('updates')}));
 const game=()=>$('.game').value;
+const BUILD_MARK='1.0.1-detection';
+
 async function refresh(){
  try{
  const state=await window.azpc.status(game());
+ if(!state||!state.games)throw new Error('No game scan data returned');
  $('.launcher-version').forEach(e=>e.textContent='Launcher v'+state.version);
  $('.folder-path').forEach(e=>e.textContent=state.gameFolderExists?state.gameFolder:'Not detected — choose Browse');
  $('.addons-path').forEach(e=>e.textContent=state.addonsFolder||'Not detected');
@@ -25,3 +28,4 @@ async function refresh(){
 $('[data-folder]').forEach(e=>e.addEventListener('click',async()=>{try{const p=await window.azpc.chooseFolder();if(p){await window.azpc.saveFolder(p,game());await refresh()}}catch(e){alert('Could not save game folder: '+e.message)}}));
 $('.game').addEventListener('change',refresh);
 refresh();
+console.info('AZPC launcher renderer',BUILD_MARK);
