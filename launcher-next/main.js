@@ -1,6 +1,7 @@
 const {app,BrowserWindow,ipcMain,dialog,shell}=require('electron');
 const path=require('path'); const fs=require('fs');
 const os=require('os');
+const crypto=require('crypto');
 const {scan,games}=require('./game-detection');
 const {execFile}=require('child_process');
 app.setAppUserModelId('market.azpc.launcher');
@@ -53,7 +54,7 @@ async function launcherRelease(){
  const r=await fetch('https://api.github.com/repos/KevinFehrenbach1/azpc-client/releases?per_page=50',{headers:{'User-Agent':'AZPC-Launcher','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw new Error('GitHub releases unavailable (HTTP '+r.status+')');
  const releases=await r.json();
- const candidates=releases.filter(x=>!x.draft&&!x.prerelease&&/^launcher-v\d+\.\d+\.\d+$/.test(x.tag_name)).sort((a,b)=>newer(a.tag_name.slice(10),b.tag_name.slice(10))?-1:1);
+ const candidates=releases.filter(x=>!x.draft&&!x.prerelease&&/^launcher-v\d+\.\d+\.\d+$/.test(x.tag_name)).sort((a,b)=>newer(a.tag_name.slice(10),b.tag_name.slice(10))?-1:newer(b.tag_name.slice(10),a.tag_name.slice(10))?1:0);
  const found=candidates.find(x=>x.assets?.some(a=>/^AZPC.Launcher.*\.exe$/i.test(a.name)));
  if(!found)return {available:false,installed:app.getVersion(),reason:'No dedicated launcher installer release published yet'};
  const asset=found.assets.find(a=>/^AZPC.Launcher.*\.exe$/i.test(a.name));
