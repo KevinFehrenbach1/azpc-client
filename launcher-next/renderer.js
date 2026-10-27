@@ -43,7 +43,10 @@ async function refresh(){
 }
 document.querySelectorAll('[data-folder]').forEach(e=>e.addEventListener('click',async()=>{try{const p=await window.azpc.chooseFolder();if(p){await window.azpc.saveFolder(p,game());await refresh()}}catch(e){alert('Could not save game folder: '+e.message)}}));
 $('.game').addEventListener('change',refresh);
-$$('[data-change-game]').forEach(button=>button.addEventListener('click',()=>{const selector=$('.game');selector.focus();if(typeof selector.showPicker==='function'){try{selector.showPicker();return}catch(e){}}selector.click()}));
+function syncGameChoices(){const selected=game();$('[data-select-game]').forEach(button=>{button.setAttribute('aria-checked',String(button.dataset.selectGame===selected))})}
+$('[data-select-game]').forEach(button=>button.addEventListener('click',()=>{const selector=$('.game');if(selector.value!==button.dataset.selectGame){selector.value=button.dataset.selectGame;selector.dispatchEvent(new Event('change',{bubbles:true}))}syncGameChoices()}));
+$('.game').addEventListener('change',syncGameChoices);
+syncGameChoices();
 refresh();
 console.info('AZPC launcher renderer',BUILD_MARK);
 
