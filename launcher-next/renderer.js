@@ -32,7 +32,7 @@ async function refresh(){
  document.querySelectorAll('.addons-path').forEach(e=>e.textContent=state.addonsFolder||'Not detected');
  document.querySelectorAll('.detected-games').forEach(e=>e.textContent=Object.entries(state.games).filter(([key,val])=>val.detected).map(([key])=>({forever:'Forever Beta',tbc:'TBC Anniversary',retail:'Retail'})[key]).join(' · ')||'None found');
  document.querySelectorAll('.current-game').forEach(e=>e.textContent=$('.game').selectedOptions[0].textContent);
- const badge=$('.game-version-icon');if(badge){const key=game();badge.className='game-version-icon game-icon-'+key;badge.textContent=({forever:'F',tbc:'T',retail:'R'})[key]||'?';}
+ // Game choice icons are fixed per row; only selection state changes.
  const addon=state.addon.installed?'v'+state.addon.version:'Not installed';
  const watcher=state.watcher.installed?'v'+state.watcher.version:'Not detected';
  document.querySelectorAll('.addon-status').forEach(e=>e.textContent=addon);
