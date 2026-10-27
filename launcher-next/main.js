@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,dialog,shell}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,shell,safeStorage}=require('electron');
 const path=require('path'); const fs=require('fs');
 const os=require('os');
 const crypto=require('crypto');
@@ -100,6 +100,24 @@ ipcMain.handle('watcher-runtime',watcherRuntime);
 const http=require('http');
 let desktopSession=null;
 let pendingLogin=null;
+const sessionFile=()=>path.join(app.getPath('userData'),'account-session.enc');
+function persistSession(){
+ if(!safeStorage.isEncryptionAvailable())return false;
+ const encrypted=safeStorage.encryptString(JSON.stringify(desktopSession));
+ fs.mkdirSync(path.dirname(sessionFile()),{recursive:true});
+ const temp=sessionFile()+'.tmp';
+ fs.writeFileSync(temp,encrypted,{mode:0o600});
+ fs.renameSync(temp,sessionFile());
+ return true;
+}
+function restoreSession(){
+ try{
+  if(!safeStorage.isEncryptionAvailable())return;
+  const data=JSON.parse(safeStorage.decryptString(fs.readFileSync(sessionFile())));
+  if(data&&typeof data.token==='string'&&data.token&&typeof data.name==='string')desktopSession=data;
+ }catch{desktopSession=null}
+}
+app.whenReady().then(restoreSession);
 function publicAccount(){return desktopSession?{authenticated:true,name:desktopSession.name,email:desktopSession.email,provider:desktopSession.provider}:{authenticated:false,pending:!!pendingLogin,reason:pendingLogin?'Waiting for browser authorization':'Not connected'};}
 ipcMain.handle('account-status',()=>publicAccount());
 ipcMain.handle('account-open',async()=>{
@@ -128,6 +146,7 @@ ipcMain.handle('account-open',async()=>{
    const data=await response.json();
    if(!data.access_token||!data.user||!data.user.id)throw new Error('Invalid desktop authorization response');
    desktopSession={token:data.access_token,name:String(data.user.displayName||data.user.name||'AZPC member').slice(0,100),email:String(data.user.email||'').slice(0,160),provider:String(data.user.provider||'AZPC')};
+   try{persistSession()}catch(e){console.error('Could not securely save AZPC session:',e.message)}
    if(win&&!win.isDestroyed()){if(win.isMinimized())win.restore();win.show();win.focus();}
    res.writeHead(303,{'Location':'https://azpc.market/account','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Length':'0'}).end();
   }catch(err){res.writeHead(502,{'Content-Type':'text/plain'}).end('AZPC desktop sign-in could not finish: '+err.message)}finally{close()}
@@ -141,7 +160,7 @@ ipcMain.handle('account-open',async()=>{
  return {opened:true,pending:true};
  }catch(err){if(pendingLogin){clearTimeout(timeout);pendingLogin=null;server.close()}throw err}
 });
-ipcMain.handle('account-signout',()=>{desktopSession=null;return {authenticated:false}});
+ipcMain.handle('account-signout',()=>{desktopSession=null;try{fs.rmSync(sessionFile(),{force:true})}catch(e){console.error('Could not clear saved session:',e.message)}return {authenticated:false}});
 
 ipcMain.handle('account-pair',async(_event,code)=>{
  const normalized=String(code||'').trim().toUpperCase();
@@ -151,5 +170,6 @@ ipcMain.handle('account-pair',async(_event,code)=>{
  if(!response.ok)throw new Error(data.error||'Pairing failed (HTTP '+response.status+')');
  if(!data.access_token||!data.user?.id)throw new Error('Invalid AZPC account response');
  desktopSession={token:data.access_token,name:String(data.user.displayName||'AZPC member'),email:String(data.user.email||''),provider:'AZPC'};
+ try{persistSession()}catch(e){console.error('Could not securely save AZPC session:',e.message)}
  return publicAccount();
 });
