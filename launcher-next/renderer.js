@@ -43,14 +43,14 @@ async function refresh(){
 }
 document.querySelectorAll('[data-folder]').forEach(e=>e.addEventListener('click',async()=>{try{const p=await window.azpc.chooseFolder();if(p){await window.azpc.saveFolder(p,game());await refresh()}}catch(e){alert('Could not save game folder: '+e.message)}}));
 $('.game').addEventListener('change',refresh);
-$('[data-change-game]').forEach(button=>button.addEventListener('click',()=>{const selector=$('.game');selector.focus();if(typeof selector.showPicker==='function'){try{selector.showPicker();return}catch(e){}}selector.click()}));
+$$('[data-change-game]').forEach(button=>button.addEventListener('click',()=>{const selector=$('.game');selector.focus();if(typeof selector.showPicker==='function'){try{selector.showPicker();return}catch(e){}}selector.click()}));
 refresh();
 console.info('AZPC launcher renderer',BUILD_MARK);
 
 async function refreshWatcher(){
  try{const state=await window.azpc.watcherRuntime();const label=state.running?'Running ('+state.processCount+' process'+(state.processCount===1?'':'es')+')':(state.detail||'Not running'+(state.taskState?' · Task: '+state.taskState:''));
- $('.watcher-runtime').forEach(el=>el.textContent=label);$('.watcher-badge').forEach(el=>{el.textContent=state.running?'● Online':'Offline';el.classList.toggle('watcher-online',!!state.running);el.classList.toggle('watcher-offline',!state.running)});
- }catch(e){$('.watcher-runtime').forEach(el=>el.textContent='Status unavailable');$('.watcher-badge').forEach(el=>{el.textContent='Unknown';el.classList.remove('watcher-online','watcher-offline')})}
+ $$('.watcher-runtime').forEach(el=>el.textContent=label);$$('.watcher-badge').forEach(el=>{el.textContent=state.running?'● Online':'Offline';el.classList.toggle('watcher-online',!!state.running);el.classList.toggle('watcher-offline',!state.running)});
+ }catch(e){$$('.watcher-runtime').forEach(el=>el.textContent='Status unavailable');$$('.watcher-badge').forEach(el=>{el.textContent='Unknown';el.classList.remove('watcher-online','watcher-offline')})}
 }
 async function refreshAccount(){
  try{
