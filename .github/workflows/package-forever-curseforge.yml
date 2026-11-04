@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check addon version and existing publication tag
+      - name: Check addon version and CurseForge publication marker
         id: version
         shell: bash
         env:
@@ -86,14 +86,16 @@ jobs:
         run: |
           version="$(sed -n 's/^## Version: *//p' addons/forever/AZPCForever/AZPCForever.toc | tr -d '\r')"
           tag="forever-addon-v$version"
+          marker="curseforge-published-v$version"
           if [[ -n "$RELEASE_TAG" && "$RELEASE_TAG" != "$tag" ]]; then
             echo "::error::Release tag does not match addon version"
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+          echo "marker=$marker" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$marker" >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Already published: $tag"
+            echo "CurseForge publication marker already exists: $marker"
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
@@ -125,7 +127,7 @@ jobs:
       - name: Mark successfully published addon version
         if: steps.version.outputs.publish == 'true'
         env:
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ steps.version.outputs.marker }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
