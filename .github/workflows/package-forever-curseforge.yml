@@ -98,7 +98,7 @@ jobs:
           packages=(dist/AZPCForever-CurseForge-v*.zip)
           test "${#packages[@]}" -eq 1 || { echo "::error::Expected exactly one addon ZIP"; exit 1; }
           cp "${packages[0]}" dist/AZPCForever-CurseForge-upload.zip
-      - name: Upload AZPC Forever beta to CurseForge
+      - name: Upload AZPC Forever stable release to CurseForge
         uses: itsmeow/curseforge-upload@v3.1.2
         with:
           token: ${{ secrets.AZPC_GITHUB_CURSEFORGE }}
@@ -106,7 +106,7 @@ jobs:
           game_endpoint: wow
           file_path: dist/AZPCForever-CurseForge-upload.zip
           game_versions: '1.60.1'
-          release_type: beta
-          display_name: 'AZPC Forever ${{ github.event.release.tag_name }} — Beta'
+          release_type: release
+          display_name: 'AZPC Forever ${{ github.event.release.tag_name }}'
           changelog: ${{ github.event.release.body }}
           changelog_type: markdown
