@@ -15,7 +15,10 @@ on:
       - 'curseforge/**'
       - '.github/workflows/package-forever-curseforge.yml'
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: curseforge-forever-publish
+  cancel-in-progress: false
 jobs:
   curseforge-package:
     runs-on: ubuntu-latest
@@ -71,27 +74,35 @@ jobs:
 
   curseforge-publish:
     needs: curseforge-package
-    # Off by default. Enable only after initial CurseForge approval by setting
-    # repository variable CURSEFORGE_AUTO_PUBLISH to true.
-    if: ${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'forever-addon-v') && vars.CURSEFORGE_AUTO_PUBLISH == 'true' }}
+    if: ${{ vars.CURSEFORGE_AUTO_PUBLISH == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'forever-addon-v'))) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify release tag matches packaged addon version
+      - name: Check addon version and existing publication tag
+        id: version
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           version="$(sed -n 's/^## Version: *//p' addons/forever/AZPCForever/AZPCForever.toc | tr -d '\r')"
-          test "$RELEASE_TAG" = "forever-addon-v$version" || {
-            echo "::error::Release tag $RELEASE_TAG does not match addon version $version"
+          tag="forever-addon-v$version"
+          if [[ -n "$RELEASE_TAG" && "$RELEASE_TAG" != "$tag" ]]; then
+            echo "::error::Release tag does not match addon version"
             exit 1
-          }
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Already published: $tag"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
         with:
           name: AZPCForever-CurseForge-package
           path: dist
       - name: Select validated addon package
+        if: steps.version.outputs.publish == 'true'
         shell: bash
         run: |
           shopt -s nullglob
@@ -99,6 +110,7 @@ jobs:
           test "${#packages[@]}" -eq 1 || { echo "::error::Expected exactly one addon ZIP"; exit 1; }
           cp "${packages[0]}" dist/AZPCForever-CurseForge-upload.zip
       - name: Upload AZPC Forever stable release to CurseForge
+        if: steps.version.outputs.publish == 'true'
         uses: itsmeow/curseforge-upload@v3.1.2
         with:
           token: ${{ secrets.AZPC_GITHUB_CURSEFORGE }}
@@ -107,6 +119,15 @@ jobs:
           file_path: dist/AZPCForever-CurseForge-upload.zip
           game_versions: '1.60.1'
           release_type: release
-          display_name: 'AZPC Forever ${{ github.event.release.tag_name }}'
-          changelog: ${{ github.event.release.body }}
+          display_name: 'AZPC Forever ${{ steps.version.outputs.tag }}'
+          changelog: 'AZPC Forever stable addon update. See https://azpc.market for setup and release information.'
           changelog_type: markdown
+      - name: Mark successfully published addon version
+        if: steps.version.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
