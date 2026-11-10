@@ -91,7 +91,7 @@ $null=Label $sidebar 'Launcher 0.2.22' 25 704 175 20 8
 $title=Label $form 'Overview' 250 27 560 60 28 $true
 $game=New-Object Windows.Forms.ComboBox; $game.SetBounds([int](859*$script:layoutScale),[int](40*$script:layoutScale),[int](184*$script:layoutScale),[int](30*$script:layoutScale)); $game.DropDownStyle='DropDownList'
 $game.BackColor=$card; $game.ForeColor=$form.ForeColor
-$null=$game.Items.Add('Anniversary / TBC'); $null=$game.Items.Add('Forever Beta'); $game.SelectedIndex=0; $form.Controls.Add($game)
+$null=$game.Items.Add('Anniversary / TBC'); $null=$game.Items.Add('Forever Live'); $game.SelectedIndex=0; $form.Controls.Add($game)
 $overview=Panel $form 250 111 793 461 $bg
 $updates=Panel $form 250 111 793 461 $bg
 $settingsPage=Panel $form 250 111 793 461 $bg
@@ -193,7 +193,7 @@ function Refresh-Status {
         $selected=Get-SelectedGame
         $state=Get-InstalledStatus $rootBox.Text $selected
         $addonNameLabel.Text=if($selected -eq 'forever'){'AZPC Forever addon'}else{'AZPC addon'}
-        $folderHint.Text=if($selected -eq 'forever'){'Select the main WoW folder containing _classic_beta_.'}else{'Select the main WoW folder containing _anniversary_.'}
+        $folderHint.Text=if($selected -eq 'forever'){'Select the main WoW folder containing _forever_.'}else{'Select the main WoW folder containing _anniversary_.'}
         $addonInstalled.Text=$state.Addon; $watcherInstalled.Text=$state.Watcher
         $connection.Text=if($state.Connected){'Account connected'}else{'Connect your account'}
         $accountDetail.Text=if($selected -eq 'forever'){'Forever AH scans upload with watcher 0.4.37. Older watchers save scans locally.'}elseif($state.Connected){'Your saved account connection is ready.'}else{'Link the watcher to upload your saved game activity.'}
@@ -255,7 +255,7 @@ try {
     }
 } catch { $message.Text='Choose your WoW folder to get started.' }
 if($PreviewGame -eq 'forever'){$game.SelectedIndex=1}
-$game.Add_SelectedIndexChanged({ $script:remote=$null; Save-Settings; Refresh-Status; $message.Text=if((Get-SelectedGame) -eq 'forever'){'Forever Beta selected. Install the addon and update to watcher 0.4.37 for scan uploads.'}else{'Anniversary / TBC selected.'} })
+$game.Add_SelectedIndexChanged({ $script:remote=$null; Save-Settings; Refresh-Status; $message.Text=if((Get-SelectedGame) -eq 'forever'){'Forever Live selected. Install the addon and update to watcher 0.4.37 for scan uploads.'}else{'Anniversary / TBC selected.'} })
 $timer=New-Object Windows.Forms.Timer; $timer.Interval=1000
 $timer.Add_Tick({
     if ($script:job -and $script:job.HasExited) {
