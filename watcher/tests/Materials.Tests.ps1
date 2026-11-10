@@ -3,7 +3,7 @@ $root=Join-Path ([IO.Path]::GetTempPath()) ('azpc-materials-'+[guid]::NewGuid().
 function Assert($condition,$message){if(-not $condition){throw $message};Write-Host ('PASS: '+$message)}
 try {
  . (Join-Path $PSScriptRoot '../../installer/payload/watcher/AZPC-Watcher.ps1') -DataDir (Join-Path $root 'state') -FunctionsOnly
- $wow=Join-Path $root 'WoW';$saved=Join-Path $wow '_classic_beta_\WTF\Account\A\SavedVariables\AZPCForever.lua';$addon=Join-Path $wow '_classic_beta_\Interface\AddOns\AZPCForever\AZPCForever.lua'
+ $wow=Join-Path $root 'WoW';$saved=Join-Path $wow '_forever_\WTF\Account\A\SavedVariables\AZPCForever.lua';$addon=Join-Path $wow '_forever_\Interface\AddOns\AZPCForever\AZPCForever.lua'
  New-Item -ItemType Directory -Path (Split-Path $saved),(Split-Path $addon) -Force | Out-Null
  Set-Content $saved 'saved variables sentinel' -Encoding UTF8
  Set-Content $addon 'AZPCForeverCrafting.ApplyMaterialCommands=function()end' -Encoding UTF8
