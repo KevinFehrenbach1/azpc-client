@@ -19,13 +19,17 @@ try {
     }
     $wow=Join-Path $root 'WoW'
     foreach($account in @('A','B')){
-        $sv=Join-Path $wow "_classic_beta_/WTF/Account/$account/SavedVariables"
+        $sv=Join-Path $wow "_forever_/WTF/Account/$account/SavedVariables"
         New-Item -ItemType Directory -Path $sv -Force | Out-Null
         Set-Content (Join-Path $sv 'AZPCForever.lua') ('AZPCForeverDB = { ["snapshots"] = { { ["export"] = "'+$export+'" } } }')
     }
     Set-Content (Join-Path $data 'watcher-credentials.json') 'credential sentinel'
     Set-Content (Join-Path $data 'private-ledger-state.json') 'private sentinel'
-    Assert (@(Find-ForeverSavedVariables $wow).Count -eq 2) 'Find all beta accounts'
+    Assert (@(Find-ForeverSavedVariables $wow).Count -eq 2) 'Find all live client accounts'
+    $betaOnly=Join-Path $wow '_classic_beta_/WTF/Account/Archived/SavedVariables'
+    New-Item -ItemType Directory -Path $betaOnly -Force | Out-Null
+    Set-Content (Join-Path $betaOnly 'AZPCForever.lua') 'archived beta sentinel'
+    Assert (@(Find-ForeverSavedVariables $wow).Count -eq 2) 'Live watcher does not scan archived beta SavedVariables'
     Collect-ForeverScans $wow;Collect-ForeverScans $wow
     $files=@(Get-ChildItem (Join-Path $data 'Forever/scans') -Filter '*.json')
     Assert ($files.Count -eq 1) 'Repeated captures deduplicate across accounts'
@@ -33,7 +37,7 @@ try {
     Assert ($queued.game -eq 'forever' -and $queued.scope -eq 'loaded_browse_results') 'Queue explicitly identifies Forever browse coverage'
     Assert ((Get-Content (Join-Path $data 'watcher-credentials.json') -Raw).Trim() -eq 'credential sentinel') 'Credentials preserved'
     Assert ((Get-Content (Join-Path $data 'private-ledger-state.json') -Raw).Trim() -eq 'private sentinel') 'Private ledger preserved'
-    $svFile=Join-Path $wow '_classic_beta_/WTF/Account/A/SavedVariables/AZPCForever.lua'
+    $svFile=Join-Path $wow '_forever_/WTF/Account/A/SavedVariables/AZPCForever.lua'
     $invalid=$export.Replace('|horde|','|invalid|')
     Set-Content $svFile ('{ ["export"]="'+$invalid+'", ["snapshots"]={ { ["export"]="'+$betaExport+'" } } }')
     Collect-ForeverScans $wow

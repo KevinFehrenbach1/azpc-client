@@ -32,7 +32,7 @@ function Assert-WowRoot([string]$Root, [string]$Game='tbc-anniversary') {
     if ([string]::IsNullOrWhiteSpace($Root)) { throw 'Choose your main World of Warcraft folder first.' }
     $full = [IO.Path]::GetFullPath($Root.Trim())
     if ($full.Contains('"')) { throw 'The folder path contains an unsupported character.' }
-    $folder=if($Game -eq 'forever'){'_classic_beta_'}else{'_anniversary_'}
+    $folder=if($Game -eq 'forever'){'_forever_'}else{'_anniversary_'}
     if (-not (Test-Path -LiteralPath (Join-Path $full $folder) -PathType Container)) {
         throw ('Choose the main WoW folder that contains '+$folder+'.')
     }
@@ -74,7 +74,7 @@ function Get-InstalledStatus([string]$Root, [string]$Game='tbc-anniversary') {
     $profile = Get-Profile
     $addonVersion = 'Not installed'; $watcherVersion = 'Not installed'
     if ($Root) {
-        $tocPath=if($Game -eq 'forever'){'_classic_beta_\Interface\AddOns\AZPCForever\AZPCForever.toc'}else{'_anniversary_\Interface\AddOns\AZPC\AZPC.toc'}
+        $tocPath=if($Game -eq 'forever'){'_forever_\Interface\AddOns\AZPCForever\AZPCForever.toc'}else{'_anniversary_\Interface\AddOns\AZPC\AZPC.toc'}
         $toc = Join-Path $Root $tocPath
         if (Test-Path -LiteralPath $toc) {
             $match = [regex]::Match((Get-Content -LiteralPath $toc -Raw), '(?m)^## Version:\s*(\S+)')
@@ -232,7 +232,7 @@ function Get-UpdatePayload($Manifest, [string]$Workspace) {
     return $target
 }
 function Install-Addon([string]$Payload, [string]$Root, [string]$Game='tbc-anniversary') {
-    $folder=if($Game -eq 'forever'){'_classic_beta_'}else{'_anniversary_'}
+    $folder=if($Game -eq 'forever'){'_forever_'}else{'_anniversary_'}
     $name=if($Game -eq 'forever'){'AZPCForever'}else{'AZPC'}
     $parent = Join-Path $Root ($folder+'\Interface\AddOns')
     New-Item -ItemType Directory -Path $parent -Force | Out-Null

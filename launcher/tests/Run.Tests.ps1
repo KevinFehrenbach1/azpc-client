@@ -221,7 +221,7 @@ public static class AzpcRestrictedToken {
     Assert ($releaseManifest.schema -eq 2 -and $releaseManifest.addonVersion -eq $shipped.addonVersion -and $releaseManifest.watcherVersion -eq $shipped.watcherVersion -and $releaseManifest.sourceCommit -eq ('b'*40)) 'Existing release resolved to pinned source versions'
     Write-Host 'All launcher checks passed.'
     # Forever installs only into beta; both games' SavedVariables and addons survive.
-    $beta=Join-Path $wow '_classic_beta_'
+    $beta=Join-Path $wow '_forever_'
     New-Item -ItemType Directory -Path (Join-Path $beta 'WTF/Account/Test/SavedVariables') -Force | Out-Null
     $foreverSaved=Join-Path $beta 'WTF/Account/Test/SavedVariables/AZPCForever.lua'
     Set-Content $foreverSaved 'forever-history-sentinel'
