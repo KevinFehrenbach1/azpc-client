@@ -186,4 +186,4 @@ jobs:
           tag="watcher-v${watcher_version}"
           test "$(python -c 'import json; print(json.load(open("installer/payload/VERSION.json"))["foreverAddonVersion"])')" = "$version"
           if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag already exists"; exit 0; fi
-          gh release create "$tag" release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Watcher ${watcher_version}" --notes "Fix Forever live SavedVariables discovery under _retail_ while retaining legacy _forever_ support. No addon changes."
+          gh release create "$tag" release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Watcher ${watcher_version}" --notes "Rotate failed Forever trade upload batches to prevent queue starvation while preserving local records. No addon changes."
