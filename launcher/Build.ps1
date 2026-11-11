@@ -1,4 +1,4 @@
-﻿param([string]$ReleaseTag = 'watcher-v0.4.43')
+﻿param([string]$ReleaseTag = 'watcher-v0.4.44')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $PSScriptRoot 'dist'
