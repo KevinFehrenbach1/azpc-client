@@ -1045,7 +1045,8 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
     $script:ForeverUploadAttempt=Get-Date
     $directory=Join-Path $StateDir 'Forever\trades'
     if(-not (Test-Path -LiteralPath $directory)){return}
-    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} | Select-Object -First 100)
+    # Retry the least recently attempted records first; preserve unsent JSON and acknowledgments.
+    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} | Sort-Object @{Expression={if(Test-Path -LiteralPath ($_.FullName+'.attempt')){(Get-Item -LiteralPath ($_.FullName+'.attempt')).LastWriteTimeUtc}else{[datetime]::MinValue}}},Name | Select-Object -First 100)
     if(-not $files.Count){return}
     try{
         $events=@($files | ForEach-Object {Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json})
@@ -1055,7 +1056,10 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
         foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
         Save-ForeverUploadStatus $events.Count
         Write-Log ('FOREVER TRADES UPLOADED: '+$events.Count+' confirmed mailbox records.')
-    }catch{Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
+    }catch{
+        foreach($file in $files){try{Set-Content -LiteralPath ($file.FullName+'.attempt') -Value ([DateTime]::UtcNow.ToString('o')) -Encoding ASCII}catch{}}
+        Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')
+    }
 }
 
 $script:ForeverScanUploadAttempt=[datetime]::MinValue
