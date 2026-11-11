@@ -182,7 +182,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="$(sed -n 's/^## Version: *//p' addons/forever/AZPCForever/AZPCForever.toc | tr -d '\r')"
-          tag="forever-addon-v${version}"
+          watcher_version="$(python -c 'import json; print(json.load(open("installer/payload/VERSION.json"))["watcherVersion"])')"
+          tag="watcher-v${watcher_version}"
           test "$(python -c 'import json; print(json.load(open("installer/payload/VERSION.json"))["foreverAddonVersion"])')" = "$version"
           if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag already exists"; exit 0; fi
-          gh release create "$tag" release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Forever addon ${version}" --notes "Fix crafting CSV export nil-function crash and improve watcher reliability diagnostics."
+          gh release create "$tag" release/AZPC-Launcher-Setup.exe release/AZPC-Launcher-Portable.zip release/azpc-components.zip release/azpc-update.json release/azpc-forever-components.zip release/azpc-forever-update.json --target "$GITHUB_SHA" --latest --title "AZPC Watcher ${watcher_version}" --notes "Fix Forever live SavedVariables discovery under _retail_ while retaining legacy _forever_ support. No addon changes."
