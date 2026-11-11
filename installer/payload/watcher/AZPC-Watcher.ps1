@@ -1045,17 +1045,28 @@ function Send-ForeverTrades([string]$ClientId,[string]$Token) {
     $script:ForeverUploadAttempt=Get-Date
     $directory=Join-Path $StateDir 'Forever\trades'
     if(-not (Test-Path -LiteralPath $directory)){return}
-    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' | Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} | Select-Object -First 100)
+    # Rotate failed batches so one malformed or rejected event cannot starve the queue.
+    # Keep original JSON and only write .sent after exact server acknowledgment.
+    $files=@(Get-ChildItem -LiteralPath $directory -Filter '*.json' -File |
+        Where-Object {-not (Test-Path -LiteralPath ($_.FullName+'.sent'))} |
+        Sort-Object @{Expression={if(Test-Path -LiteralPath ($_.FullName+'.attempt')){(Get-Item -LiteralPath ($_.FullName+'.attempt')).LastWriteTimeUtc}else{[datetime]::MinValue}}},Name |
+        Select-Object -First 100)
     if(-not $files.Count){return}
     try{
+        foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.attempt') -Value 'pending' -Encoding ASCII}
         $events=@($files | ForEach-Object {Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json})
         $body=@{game='forever';schema=2;events=$events} | ConvertTo-Json -Depth 8 -Compress
         $result=Invoke-RestMethod -Uri 'https://forever.azpc.market/api/trades/upload' -Method Post -Headers @{'x-azpc-client-id'=$ClientId;'x-azpc-watcher-token'=$Token} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 20
         if(-not $result.ok -or $result.accepted -ne $events.Count){throw 'Receiver did not acknowledge this trade batch.'}
-        foreach($file in $files){Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII}
+        foreach($file in $files){
+            Set-Content -LiteralPath ($file.FullName+'.sent') -Value 'acknowledged' -Encoding ASCII
+            Remove-Item -LiteralPath ($file.FullName+'.attempt') -Force -ErrorAction SilentlyContinue
+        }
         Save-ForeverUploadStatus $events.Count
-        Write-Log ('FOREVER TRADES UPLOADED: '+$events.Count+' confirmed mailbox records.')
-    }catch{Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Records kept locally; retrying later.')}
+        Write-Log ('FOREVER TRADES UPLOADED: '+$events.Count+' acknowledged records.')
+    }catch{
+        Write-Log ('FOREVER TRADE UPLOAD PENDING: '+$_.Exception.Message+' Batch of '+$files.Count+' records retained; rotating retry order.')
+    }
 }
 
 $script:ForeverScanUploadAttempt=[datetime]::MinValue
