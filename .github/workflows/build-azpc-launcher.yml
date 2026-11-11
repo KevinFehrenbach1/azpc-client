@@ -1,3 +1,4 @@
+# Retry trigger for watcher v0.4.44 release after queued run #337 (no build logic changed).
 name: Build AZPC Launcher
 on:
   workflow_dispatch:
