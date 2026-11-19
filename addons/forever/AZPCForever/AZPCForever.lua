@@ -663,10 +663,10 @@ end
 tradeFrame:SetScript("OnEvent",function(_,event)
     mailboxCaptureGeneration = mailboxCaptureGeneration + 1
     local generation = mailboxCaptureGeneration
-    if event=='MAIL_SHOW' then
-        mailboxReceipts.Open()
-        runMailboxCapture()
-    end
+    if event=='MAIL_SHOW' then mailboxReceipts.Open() end
+    -- Receipt identity and sale counts must update synchronously for every inbox
+    -- change; only the follow-up hydration scan is coalesced.
+    runMailboxCapture()
     C_Timer.After(0.5,function()
         if generation ~= mailboxCaptureGeneration then return end
         runMailboxCapture()
