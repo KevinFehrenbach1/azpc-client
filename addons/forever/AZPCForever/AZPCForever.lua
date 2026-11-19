@@ -653,10 +653,18 @@ captureTrades=function()
 end
 captureTrades=perf.Wrap("Mailbox capture",captureTrades)
 for _, event in ipairs({"MAIL_SHOW","MAIL_INBOX_UPDATE"}) do pcall(tradeFrame.RegisterEvent,tradeFrame,event) end
+-- Coalesce bursts of mailbox events into a single capture after the inbox settles.
+-- A generation token prevents stale timers from rescanning the same inbox.
+local mailboxCaptureGeneration = 0
 tradeFrame:SetScript("OnEvent",function(_,event)
-    if event=='MAIL_SHOW'then mailboxReceipts.Open()end
-    local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err))end
-    C_Timer.After(0.5,function() local ok,err=pcall(captureTrades);if not ok then message("Mailbox capture unavailable: "..tostring(err)) end end)
+    if event=='MAIL_SHOW' then mailboxReceipts.Open() end
+    mailboxCaptureGeneration = mailboxCaptureGeneration + 1
+    local generation = mailboxCaptureGeneration
+    C_Timer.After(0.5,function()
+        if generation ~= mailboxCaptureGeneration then return end
+        local ok,err=pcall(captureTrades)
+        if not ok then message("Mailbox capture unavailable: "..tostring(err)) end
+    end)
 end)
 
 
