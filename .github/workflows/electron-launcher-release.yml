@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     tags: ['launcher-v*']
+    branches: ['launcher/restore-live-windows-1031']
 permissions:
   contents: write
 jobs:
@@ -16,6 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Recover original Electron source
+        if: ${{ hashFiles('launcher-electron/main.js') == '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./recover-live.ps1
       - name: Verify recovered source
         shell: pwsh
         run: |
@@ -35,20 +42,47 @@ jobs:
           node --check renderer.js
           node --check preload.js
           node --check game-detection.js
+      - name: Verify Forever live detection
+        shell: pwsh
+        run: |
+          node -e "const assert=require('assert'),fs=require('fs'),os=require('os'),p=require('path'),d=require('./game-detection');const r=fs.mkdtempSync(p.join(os.tmpdir(),'azpc-'));fs.mkdirSync(p.join(r,'_beta_'));assert.equal(d.games.forever.folder,'_forever_');assert.notEqual(d.scan(r).forever.root,r);fs.mkdirSync(p.join(r,'_forever_'));assert.equal(d.scan(r).forever.root,r);fs.rmSync(r,{recursive:true,force:true})"
       - name: Build Windows installer
         run: npx electron-builder --win nsis --x64 --publish never
+      - name: Windows installer smoke test
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
+          if (!$exe) { throw 'Missing installer' }
+          $install = Join-Path $env:RUNNER_TEMP 'AZPCSmoke'
+          $p = Start-Process $exe.FullName -ArgumentList '/S',"/D=$install" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Installer failed' }
+          $app = Join-Path $install 'AZPC Launcher.exe'
+          if (!(Test-Path $app)) { throw 'Installed launcher missing' }
+          $p = Start-Process $app -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) { throw 'Launcher exited during smoke test' }
+          Stop-Process -Id $p.Id -Force
       - uses: actions/upload-artifact@v4
         with:
           name: AZPC-Launcher-v1.0.31-Windows
           path: launcher-electron/dist/*.exe
           if-no-files-found: error
+      - name: Preserve recovered source
+        if: github.ref_name == 'launcher/restore-live-windows-1031'
+        shell: pwsh
+        working-directory: .
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add launcher-electron
+          if (git status --porcelain) { git commit -m 'Restore complete Electron launcher source'; git push }
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/launcher-v')
+        if: startsWith(github.ref, 'refs/tags/launcher-v') || github.ref_name == 'launcher/restore-live-windows-1031'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         working-directory: .
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "launcher-v1.0.31"
           if ($tag -ne 'launcher-v1.0.31') { throw "Unexpected launcher tag $tag" }
-          gh release create $tag launcher-electron/dist/*.exe --title "AZPC Launcher v1.0.31" --notes "Forever Live replaces Forever Beta and detects the _forever_ game installation." --verify-tag
+          gh release create $tag launcher-electron/dist/*.exe --title "AZPC Launcher v1.0.31" --notes "Forever Live replaces Forever Beta and detects the _forever_ game installation." --target "${{ github.sha }}"
